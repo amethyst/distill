@@ -1,0 +1,18 @@
+[package]
+name = "atelier-assets"
+version = "0.1.0"
+build = "build.rs"
+
+[dependencies]
+#amethyst = "0.8.0"
+capnp = "0.9.0"
+notify = "4.0.0"
+lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
+rayon = "1.0"
+capnp-rpc = "0.9.0"
+tokio-core = "0.1"
+tokio-io = "0.1"
+futures = "0.1"
+
+[build-dependencies]
+capnpc = "0.9"
