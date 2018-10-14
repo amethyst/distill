@@ -4,6 +4,7 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use data_capnp::dirty_file_info;
 use file_tracker::FileTracker;
 use futures::{Future, Stream};
+use owning_ref::OwningHandle;
 use service_capnp::{file_tracker, file_tracker::snapshot};
 use std::error;
 use std::fmt;
@@ -11,44 +12,39 @@ use std::sync::Arc;
 use tokio_core::reactor;
 use tokio_io::AsyncRead;
 
-struct FileTrackerSnapshotImpl {
-    txn: RoTransaction<'static>,
+pub struct FileService {
     tracker: Arc<FileTracker>,
+}
+
+struct FileTrackerSnapshotImpl<'a> {
+    txn: OwningHandle<Arc<FileTracker>, Box<RoTransaction<'a>>>,
 }
 
 struct FileTrackerImpl {
     tracker: Arc<FileTracker>,
 }
 
-impl file_tracker::snapshot::Server for FileTrackerSnapshotImpl {
+impl<'a> file_tracker::snapshot::Server for FileTrackerSnapshotImpl<'a> {
     fn get_all_files(
         &mut self,
         _params: file_tracker::snapshot::GetAllFilesParams,
         mut results: file_tracker::snapshot::GetAllFilesResults,
     ) -> Promise<(), capnp::Error> {
-        match self
-            .tracker
-            .get_txn()
-            .map_err(|_| capnp::Error::failed("Failed to open RO txn".to_string()))
-        {
-            Err(err) => Promise::err(err),
-            Ok(iter_txn) => {
-                let all_files_vec = self
-                    .tracker
-                    .read_all_files(&iter_txn)
-                    .expect("Failed to read all files");
-                let mut results = results.get();
-                let mut files = results.init_files(all_files_vec.len() as u32);
-                for (i, v) in all_files_vec.iter().enumerate() {
-                    files
-                        .reborrow()
-                        .get(i as u32)
-                        .set_path(&v.path.to_string_lossy());
-                    files.reborrow().get(i as u32).set_state(v.state);
-                }
-                Promise::ok(())
-            }
+        let all_files_vec = self
+            .txn
+            .as_owner()
+            .read_all_files(&self.txn)
+            .expect("Failed to read all files");
+        let mut results = results.get();
+        let mut files = results.init_files(all_files_vec.len() as u32);
+        for (i, v) in all_files_vec.iter().enumerate() {
+            files
+                .reborrow()
+                .get(i as u32)
+                .set_path(&v.path.to_string_lossy());
+            files.reborrow().get(i as u32).set_state(v.state);
         }
+        Promise::ok(())
     }
 
     fn get_type(
@@ -75,18 +71,15 @@ impl file_tracker::Server for FileTrackerImpl {
     ) -> Promise<(), capnp::Error> {
         let arc_ref = Arc::clone(&self.tracker);
         let snapshot = FileTrackerSnapshotImpl {
-            txn: arc_ref.get_txn().expect("Failed to open RO txn"),
-            tracker: arc_ref,
+            txn: OwningHandle::new_with_fn(arc_ref, |t| unsafe {
+                Box::new((*t).get_txn().unwrap())
+            }),
         };
         results.get().set_snapshot(
             file_tracker::snapshot::ToClient::new(snapshot).from_server::<::capnp_rpc::Server>(),
         );
         Promise::ok(())
     }
-}
-
-pub struct FileService {
-    tracker: Arc<FileTracker>,
 }
 
 impl FileService {

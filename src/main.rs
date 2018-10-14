@@ -5,6 +5,7 @@ extern crate capnp_rpc;
 extern crate tokio_io;
 extern crate tokio_core;
 extern crate futures;
+extern crate owning_ref;
 
 pub mod watcher;
 pub mod file_error;
