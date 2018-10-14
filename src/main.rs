@@ -30,7 +30,7 @@ pub mod service_capnp {
 
 fn main() {
     let tracker =
-        Arc::new(Box::new(FileTracker::new(Path::new(".amethyst")).expect("failed to create tracker")));
+        Arc::new(FileTracker::new(Path::new(".amethyst")).expect("failed to create tracker"));
     let handle = {
         let run_tracker = tracker.clone();
         thread::spawn(move || {

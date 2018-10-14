@@ -13,11 +13,11 @@ use tokio_io::AsyncRead;
 
 struct FileTrackerSnapshotImpl {
     txn: RoTransaction<'static>,
-    tracker: Arc<Box<FileTracker>>,
+    tracker: Arc<FileTracker>,
 }
 
 struct FileTrackerImpl {
-    tracker: Arc<Box<FileTracker>>,
+    tracker: Arc<FileTracker>,
 }
 
 impl file_tracker::snapshot::Server for FileTrackerSnapshotImpl {
@@ -86,11 +86,11 @@ impl file_tracker::Server for FileTrackerImpl {
 }
 
 pub struct FileService {
-    tracker: Arc<Box<FileTracker>>,
+    tracker: Arc<FileTracker>,
 }
 
 impl FileService {
-    pub fn new(tracker: Arc<Box<FileTracker>>) -> FileService {
+    pub fn new(tracker: Arc<FileTracker>) -> FileService {
         FileService { tracker: tracker }
     }
     pub fn run(&self) -> Result<(), Error> {
