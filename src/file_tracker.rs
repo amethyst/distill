@@ -3,6 +3,7 @@ extern crate lmdb;
 extern crate rayon;
 
 use capnp_db::{self, CapnpCursor, DBTransaction, Environment, RoTransaction, RwTransaction};
+use crossbeam_channel::{self as channel, Receiver, Sender};
 use data_capnp::{self, dirty_file_info, source_file_info, FileType};
 use file_error::FileError;
 use lmdb::Cursor;
@@ -15,10 +16,36 @@ use std::iter::FromIterator;
 use std::ops::IndexMut;
 use std::path::{Path, PathBuf};
 use std::str;
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
 use watcher::{self, FileEvent, FileMetadata};
+
+#[derive(Clone)]
+pub struct FileTrackerTables {
+    source_files: lmdb::Database,
+    dirty_files: lmdb::Database,
+}
+pub enum FileTrackerEvent {
+    Updated,
+}
+pub struct FileTracker {
+    pub db: Environment,
+    pub tables: FileTrackerTables,
+    listener_rx: Receiver<Sender<FileTrackerEvent>>,
+    listener_tx: Sender<Sender<FileTrackerEvent>>,
+}
+
+#[derive(Clone)]
+pub struct FileState {
+    pub path: PathBuf,
+    pub state: data_capnp::FileState,
+    pub last_modified: u64,
+    pub length: u64,
+}
+struct ScanContext {
+    path: PathBuf,
+    files: HashMap<PathBuf, FileMetadata>,
+}
 
 fn db_file_type(t: fs::FileType) -> FileType {
     if t.is_dir() {
@@ -76,24 +103,6 @@ where
         txn.put(tables.dirty_files, key, &dirty_value.unwrap())?;
     }
     Ok(())
-}
-
-#[derive(Clone)]
-pub struct FileTrackerTables {
-    source_files: lmdb::Database,
-    dirty_files: lmdb::Database,
-}
-pub struct FileTracker {
-    pub db: Environment,
-    pub tables: FileTrackerTables,
-}
-pub struct FileState {
-    pub path: PathBuf,
-    pub state: data_capnp::FileState,
-}
-struct ScanContext {
-    path: PathBuf,
-    files: HashMap<PathBuf, FileMetadata>,
 }
 
 fn handle_file_event(
@@ -256,21 +265,20 @@ fn read_file_events(
     scan_stack: &mut Vec<ScanContext>,
 ) -> Result<(), FileError> {
     while *is_running {
-        match rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(evt) => {
-                // println!("evt: {:?}", evt);
-                handle_file_event(txn, tables, evt, scan_stack)?;
-            }
-            Err(err) => match err {
-                RecvTimeoutError::Disconnected => {
-                    println!("asset error: {}", err);
+        let timeout = Duration::from_millis(100);
+        select! {
+            recv(rx, evt) => {
+                if let Some(evt) = evt {
+                    handle_file_event(txn, tables, evt, scan_stack)?;
+                } else {
+                    println!("receive error");
                     *is_running = false;
                     break;
                 }
-                RecvTimeoutError::Timeout => {
-                    break;
-                }
-            },
+            }
+            recv(channel::after(timeout)) => {
+                break;
+            }
         }
     }
     Ok(())
@@ -280,6 +288,7 @@ impl FileTracker {
     pub fn new(db_dir: &Path) -> Result<FileTracker, FileError> {
         let _ = fs::create_dir(db_dir);
         let asset_db = Environment::new(db_dir)?;
+        let (tx, rx) = channel::unbounded();
         Ok(FileTracker {
             tables: FileTrackerTables {
                 source_files: asset_db
@@ -288,7 +297,32 @@ impl FileTracker {
                     .create_db(Some("dirty_files"), lmdb::DatabaseFlags::default())?,
             },
             db: asset_db,
+            listener_rx: rx,
+            listener_tx: tx,
         })
+    }
+    
+    pub fn read_dirty_files<'a>(
+        &self,
+        iter_txn: &RoTransaction,
+    ) -> Result<Vec<FileState>, FileError> {
+        let mut file_states = Vec::new();
+        {
+            let mut cursor = iter_txn.open_ro_cursor(self.tables.dirty_files)?;
+            for (key_result, value_result) in cursor.capnp_iter_start() {
+                let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
+                let value_result = value_result?;
+                let info = value_result.get_root::<dirty_file_info::Reader>()?;
+                let source_info = info.get_source_info()?;
+                file_states.push(FileState {
+                    path: PathBuf::from(key),
+                    state: info.get_state()?,
+                    last_modified: source_info.get_last_modified(),
+                    length: source_info.get_length(),
+                });
+            }
+        }
+        Ok(file_states)
     }
 
     pub fn read_all_files<'a>(
@@ -301,22 +335,50 @@ impl FileTracker {
             for (key_result, value_result) in cursor.capnp_iter_start() {
                 let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
                 let value_result = value_result?;
-                let info = value_result.get_root::<dirty_file_info::Reader>()?;
+                let info = value_result.get_root::<source_file_info::Reader>()?;
                 file_states.push(FileState {
                     path: PathBuf::from(key),
-                    state: info.get_state()?,
+                    state: data_capnp::FileState::Exists,
+                    last_modified: info.get_last_modified(),
+                    length: info.get_length(),
                 });
             }
         }
         Ok(file_states)
     }
 
-    pub fn get_txn<'a>(&'a self) -> Result<RoTransaction<'a>, FileError> {
+    pub fn get_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(&self, txn: &'a V, path: &PathBuf) -> Result<Option<FileState>, FileError> {
+        let key_str = path.to_string_lossy();
+        let key = key_str.as_bytes();
+        match txn.get(self.tables.source_files, &key)? {
+            Some(value) => {
+                let info = value.get_root::<source_file_info::Reader>()?;
+                Ok(Some(FileState{
+                    path: path.clone(),
+                    state: data_capnp::FileState::Exists,
+                    last_modified: info.get_last_modified(),
+                    length: info.get_length(),
+                }))
+            },
+            None => {
+                Ok(None)
+            }
+        }
+    }
+
+    pub fn get_ro_txn<'a>(&'a self) -> Result<RoTransaction<'a>, FileError> {
         Ok(self.db.ro_txn()?)
+    }
+    pub fn get_rw_txn<'a>(&'a self) -> Result<RwTransaction<'a>, FileError> {
+        Ok(self.db.rw_txn()?)
+    }
+
+    pub fn register_listener(&self, sender: Sender<FileTrackerEvent>) {
+        self.listener_tx.send(sender)
     }
 
     pub fn run(&self, to_watch: Vec<&str>) -> Result<(), FileError> {
-        let (tx, rx) = channel();
+        let (tx, rx) = channel::unbounded();
         let mut watcher = watcher::DirWatcher::new(to_watch, tx)?;
 
         let stop_handle = watcher.stop_handle();
@@ -324,7 +386,16 @@ impl FileTracker {
             watcher.run();
         });
         let mut is_running = true;
+        let mut listeners = vec![];
         while is_running {
+            select! {
+                recv(self.listener_rx, listener) => {
+                    if let Some(listener) = listener {
+                        listeners.push(listener);
+                    }
+                },
+                default => {}
+            }
             {
                 let mut txn = self.db.rw_txn()?;
                 let mut scan_stack = Vec::new();
@@ -339,85 +410,12 @@ impl FileTracker {
                 if txn.dirty {
                     txn.commit()?;
                     println!("Commit");
-                }
-            }
-
-            {
-                let mut to_hash = Vec::new();
-                let mut iter_txn = self.db.rw_txn()?;
-                {
-                    let mut cursor = iter_txn.open_ro_cursor(self.tables.dirty_files)?;
-                    for (key_result, value_result) in cursor.capnp_iter_start() {
-                        let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
-                        let value_result = value_result?;
-                        to_hash.push(key.clone())
-                    }
-                }
-
-                if !to_hash.is_empty() {
-                    let hashed_files = Vec::from_par_iter(
-                        to_hash
-                            .par_iter()
-                            .filter(|p| {
-                                fs::metadata(p)
-                                    .and_then(|m| Ok(m.is_file())) // only hash files
-                                    .unwrap_or(false)
-                            }).map(|p| {
-                                return (
-                                    p,
-                                    fs::OpenOptions::new().read(true).open(p).and_then(|f| {
-                                        let mut hasher =
-                                            ::std::collections::hash_map::DefaultHasher::new();
-                                        let mut reader =
-                                            ::std::io::BufReader::with_capacity(64000, f);
-                                        loop {
-                                            let length = {
-                                                let buffer = reader.fill_buf()?;
-                                                hasher.write(buffer);
-                                                buffer.len()
-                                            };
-                                            if length == 0 {
-                                                break;
-                                            }
-                                            reader.consume(length);
-                                        }
-                                        Ok(hasher.finish())
-                                    }),
-                                );
-                            }),
-                    );
-
-                    for (path, result) in &hashed_files {
-                        match result {
-                            Err(err) => {
-                                println!("Error hashing {}:{}", path, err);
-                            }
-                            Ok(hash) => {
-                                println!("path {} hash {}", path, hash);
-                            }
+                    for listener in &listeners {
+                        select! {
+                            send(listener, FileTrackerEvent::Updated) => {}
+                            default => {}
                         }
                     }
-                    println!("Hashed {}", hashed_files.len());
-                    iter_txn.clear_db(self.tables.dirty_files)?;
-                    iter_txn.commit()?;
-                    // {
-                    //     let mut cursor = iter_txn.open_ro_cursor(self.tables.source_files)?;
-                    //     for (key_result, value_result) in cursor.capnp_iter_start() {
-                    //         let key_result = key_result?;
-                    //         let value_result = value_result?;
-                    //         let key =
-                    //             key_result.get_root::<data_capnp::source_file_info_key::Reader>()?;
-                    //         let value =
-                    //             value_result.get_root::<data_capnp::source_file_info::Reader>()?;
-                    //         println!(
-                    //             "length {} last_modified {} path {}",
-                    //             value.get_length(),
-                    //             value.get_last_modified(),
-                    //             key.get_path()?
-                    //         );
-                    //     }
-                    // }
-                    println!("End loop");
                 }
             }
         }

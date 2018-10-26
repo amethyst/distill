@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, SendError, Sender};
+use crossbeam_channel::{Sender as cbSender};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, UNIX_EPOCH};
 
 /// The purpose of this module is to provide enough information to
@@ -19,7 +20,7 @@ pub struct DirWatcher {
     dirs: Vec<PathBuf>,
     rx: Receiver<DebouncedEvent>,
     tx: Sender<DebouncedEvent>,
-    asset_tx: Sender<FileEvent>,
+    asset_tx: cbSender<FileEvent>,
 }
 
 pub struct StopHandle {
@@ -44,7 +45,7 @@ pub enum FileEvent {
     // ScanEnd indicates the end of a scan. The set of all watched directories is also sent
     ScanEnd(PathBuf, Vec<PathBuf>),
 }
-fn file_metadata(metadata: fs::Metadata) -> FileMetadata {
+pub fn file_metadata(metadata: fs::Metadata) -> FileMetadata {
     let modify_time = metadata.modified().unwrap_or(UNIX_EPOCH);
     let since_epoch = modify_time
         .duration_since(UNIX_EPOCH)
@@ -58,7 +59,7 @@ fn file_metadata(metadata: fs::Metadata) -> FileMetadata {
 }
 
 impl DirWatcher {
-    pub fn from_path_iter<'a, T>(paths: T, chan: Sender<FileEvent>) -> Result<DirWatcher, FileError>
+    pub fn from_path_iter<'a, T>(paths: T, chan: cbSender<FileEvent>) -> Result<DirWatcher, FileError>
     where
         T: Iterator<Item = &'a str>,
     {
@@ -78,7 +79,7 @@ impl DirWatcher {
         }
         Ok(asset_watcher)
     }
-    pub fn new<'a, I, T>(paths: I, chan: Sender<FileEvent>) -> Result<DirWatcher, FileError>
+    pub fn new<'a, I, T>(paths: I, chan: cbSender<FileEvent>) -> Result<DirWatcher, FileError>
     where
         I: IntoIterator<Item = &'a str, IntoIter = T>,
         T: Iterator<Item = &'a str>,
@@ -147,18 +148,18 @@ impl DirWatcher {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), SendError<FileEvent>> {
+    pub fn run(&mut self) -> Result<(), FileError> {
         for dir in &self.dirs.clone() {
             let err = self.scan_directory(&dir, &|path| DebouncedEvent::Create(path));
             if err.is_err() {
-                self.asset_tx.send(FileEvent::FileError(err.unwrap_err()))?;
+                self.asset_tx.send(FileEvent::FileError(err.unwrap_err()));
             }
         }
         loop {
             match self.rx.recv() {
                 Ok(event) => match self.handle_notify_event(event, false) {
                     Ok(maybe_event) => match maybe_event {
-                        Some(evt) => self.asset_tx.send(evt)?,
+                        Some(evt) => self.asset_tx.send(evt),
                         None => {}
                     },
                     Err(err) => match err {
@@ -167,7 +168,7 @@ impl DirWatcher {
                                 let err =
                                     self.scan_directory(&dir, &|path| DebouncedEvent::Create(path));
                                 if err.is_err() {
-                                    self.asset_tx.send(FileEvent::FileError(err.unwrap_err()))?;
+                                    self.asset_tx.send(FileEvent::FileError(err.unwrap_err()));
                                 }
                             }
                         }
@@ -175,13 +176,13 @@ impl DirWatcher {
                             break;
                         }
                         _ => {
-                            self.asset_tx.send(FileEvent::FileError(err))?;
+                            self.asset_tx.send(FileEvent::FileError(err));
                         }
                     },
                 },
-                Err(e) => {
+                Err(_) => {
                     self.asset_tx
-                        .send(FileEvent::FileError(FileError::RecvError(e)))?;
+                        .send(FileEvent::FileError(FileError::RecvError));
                     return Ok(());
                 }
             }

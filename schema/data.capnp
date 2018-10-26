@@ -35,6 +35,14 @@ struct SourceFileInfo {
   length @2 :UInt64;
 }
 
+# Based on the set of candidate files and updates provided by FileTracker,
+# the hash is determined for all changed files.
+struct FileHashInfo {
+  hash @0 :Data;
+  lastModified @1 :UInt64;
+  length @2 :UInt64;
+}
+
 # The identifier for an import artifact is the hash of 
 # - Source asset contents
 # - Source metadata contents

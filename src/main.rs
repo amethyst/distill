@@ -1,3 +1,4 @@
+#![feature(generators, generator_trait)]
 extern crate capnp;
 extern crate lmdb;
 extern crate rayon;
@@ -6,12 +7,15 @@ extern crate tokio_io;
 extern crate tokio_core;
 extern crate futures;
 extern crate owning_ref;
+#[macro_use]
+extern crate crossbeam_channel;
 
 pub mod watcher;
 pub mod file_error;
 pub mod capnp_db;
 pub mod file_tracker;
-pub mod file_service;
+mod asset_hub_service;
+mod asset_hub;
 
 use std::sync::Arc;
 use std::thread;
@@ -44,8 +48,10 @@ fn main() {
         })
     };
 
-    let service = file_service::FileService::new(tracker.clone());
-    service.run();
+let hub = asset_hub::AssetHub::new(tracker);
+hub.run();
+    // let service = asset_hub_service::AssetHubService::new(tracker.clone());
+    // service.run();
     loop {
         // tracker.clone().read_all_files().expect("failed to read all files");
         thread::sleep(Duration::from_millis(100));

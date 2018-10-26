@@ -5,6 +5,7 @@ use std::io;
 use lmdb;
 use capnp;
 use std::error::{self, Error};
+
 #[derive(Debug)]
 pub enum FileError {
     Notify(notify::Error),
@@ -13,7 +14,7 @@ pub enum FileError {
     LMDB(lmdb::Error),
     Capnp(capnp::Error),
     NotInSchema(capnp::NotInSchema),
-    RecvError(::std::sync::mpsc::RecvError),
+    RecvError,
     Exit,
 }
 
@@ -26,7 +27,7 @@ impl error::Error for FileError {
             FileError::LMDB(ref e) => e.description(),
             FileError::Capnp(ref e) => e.description(),
             FileError::NotInSchema(ref e) => e.description(),
-            FileError::RecvError(ref e) => e.description(),
+            FileError::RecvError => "Receive error",
             FileError::Exit => "Exit",
         }
     }
@@ -39,7 +40,7 @@ impl error::Error for FileError {
             FileError::LMDB(ref e) => Some(e),
             FileError::Capnp(ref e) => Some(e),
             FileError::NotInSchema(ref e) => Some(e),
-            FileError::RecvError(ref e) => Some(e),
+            FileError::RecvError => None,
             FileError::Exit => None,
         }
     }
@@ -53,7 +54,7 @@ impl fmt::Display for FileError {
             FileError::LMDB(ref e) => e.fmt(f),
             FileError::Capnp(ref e) => e.fmt(f),
             FileError::NotInSchema(ref e) => e.fmt(f),
-            FileError::RecvError(ref e) => e.fmt(f),
+            FileError::RecvError => f.write_str(self.description()),
             FileError::Exit => f.write_str(self.description()),
         }
     }
@@ -81,10 +82,5 @@ impl From<capnp::Error> for FileError {
 impl From<capnp::NotInSchema> for FileError {
     fn from(err: capnp::NotInSchema) -> FileError {
         FileError::NotInSchema(err)
-    }
-}
-impl From<::std::sync::mpsc::RecvError> for FileError {
-    fn from(err: ::std::sync::mpsc::RecvError) -> FileError {
-        FileError::RecvError(err)
     }
 }
