@@ -34,8 +34,20 @@ pub struct FileTracker {
     listener_rx: Receiver<Sender<FileTrackerEvent>>,
     listener_tx: Sender<Sender<FileTrackerEvent>>,
 }
-
-#[derive(Clone)]
+impl ::std::fmt::Debug for data_capnp::FileState {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match self {
+            data_capnp::FileState::Exists => {
+        write!(f, "FileState::Exists");
+            },
+            data_capnp::FileState::Deleted => {
+        write!(f, "FileState::Deleted");
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Debug)]
 pub struct FileState {
     pub path: PathBuf,
     pub state: data_capnp::FileState,
