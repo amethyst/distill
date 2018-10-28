@@ -1,4 +1,3 @@
-#![feature(generators, generator_trait)]
 extern crate capnp;
 extern crate lmdb;
 extern crate rayon;
@@ -7,8 +6,14 @@ extern crate tokio_io;
 extern crate tokio_core;
 extern crate futures;
 extern crate owning_ref;
+extern crate amethyst;
 #[macro_use]
 extern crate crossbeam_channel;
+extern crate serde;
+extern crate serde_derive;
+extern crate erased_serde;
+#[macro_use]
+extern crate downcast;
 
 pub mod watcher;
 pub mod file_error;
@@ -16,6 +21,8 @@ pub mod capnp_db;
 pub mod file_tracker;
 mod asset_hub_service;
 mod asset_hub;
+mod asset_import;
+
 
 use std::sync::Arc;
 use std::thread;

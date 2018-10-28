@@ -3,11 +3,15 @@ use data_capnp::{self, file_hash_info};
 use file_error::FileError;
 use file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use rayon::prelude::*;
+use erased_serde::{Deserializer, Serialize};
 use std::collections::HashMap;
+use downcast::Any;
 use std::{
-    ffi::OsStr, fs, hash::Hasher, io::BufRead, iter::FromIterator, path::PathBuf, sync::Arc,
+     ffi::OsStr, fs, hash::Hasher, io::BufRead, io::Read, iter::FromIterator,
+    path::PathBuf, sync::Arc,
 };
 use watcher::file_metadata;
+use asset_import::format_from_ext;
 
 pub struct AssetHub {
     tracker: Arc<FileTracker>,
@@ -92,13 +96,13 @@ where
         })
     }))
 }
-
-fn process_pair(pair: &HashedAssetFilePair) {
+fn process_pair(pair: &HashedAssetFilePair) -> Result<(), FileError> {
     match pair {
         HashedAssetFilePair {
             meta: Some((meta, Some(meta_hash))),
             source: Some((source, Some(source_hash))),
         } => {
+
             // println!("full pair {}", source.path.to_string_lossy());
         }
         HashedAssetFilePair {
@@ -121,7 +125,7 @@ fn process_pair(pair: &HashedAssetFilePair) {
             source: Some((source, Some(hash))),
         } => {
             println!(
-                "sourcefile with meta directory?? {}",
+                "source file with meta directory?? {}",
                 source.path.to_string_lossy()
             );
         }
@@ -129,6 +133,26 @@ fn process_pair(pair: &HashedAssetFilePair) {
             meta: None,
             source: Some((source, Some(hash))),
         } => {
+            let format = format_from_ext(source.path.extension().unwrap().to_str().unwrap());
+            match format {
+                Some(format) => {
+                    let mut f = fs::File::open(&source.path)?;
+                    let mut buffer = Vec::new();
+                    f.read_to_end(&mut buffer)?;
+                    println!("buf size {}", buffer.len());
+                    let imported = format.import_boxed(buffer, format.default_metadata());
+                    match imported {
+                        Ok(asset) => {
+                            let serialize = format.default_metadata();
+                            println!("Import success {}", source.path.to_string_lossy());
+                        }
+                        Err(err) => {
+                            println!("Import error {}", err);
+                        }
+                    }
+                }
+                None => {}
+            }
             println!("source file with no meta {}", source.path.to_string_lossy());
         }
         HashedAssetFilePair {
@@ -148,6 +172,7 @@ fn process_pair(pair: &HashedAssetFilePair) {
         }
         _ => println!("Unknown case for {:?}", pair),
     }
+    Ok(())
 }
 
 impl AssetHub {
@@ -247,9 +272,9 @@ impl AssetHub {
                     .filter(|f| f.is_err() == false)
                     .map(|e| e.unwrap()),
             );
-            hashed_files.par_iter().map(|p| {
+            let result = Vec::from_par_iter(hashed_files.par_iter().map(|p| {
                 process_pair(p);
-            });
+            }));
             // let successful_hashes = filter_and_unwrap_hashes(hashed_files);
             println!("Hashed {}", hashed_files.len());
         }
