@@ -1,17 +1,17 @@
+use asset_import::{format_from_ext, AnySerialize};
+use bincode;
 use crossbeam_channel::{self as channel, Receiver, Sender};
 use data_capnp::{self, file_hash_info};
 use file_error::FileError;
 use file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use rayon::prelude::*;
-use erased_serde::{Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use downcast::Any;
 use std::{
-     ffi::OsStr, fs, hash::Hasher, io::BufRead, io::Read, iter::FromIterator,
-    path::PathBuf, sync::Arc,
+    ffi::OsStr, fs, hash::Hasher, io::BufRead, io::Read, iter::FromIterator, path::PathBuf,
+    sync::Arc,
 };
 use watcher::file_metadata;
-use asset_import::format_from_ext;
 
 pub struct AssetHub {
     tracker: Arc<FileTracker>,
@@ -33,6 +33,55 @@ struct AssetFilePair {
     source: Option<FileState>,
     meta: Option<FileState>,
 }
+
+pub trait Importer {
+    type SourceAssetID: Serialize;
+    type Options: Serialize + Default;
+    fn version(&self) -> u32;
+    fn new_metadata(&self, source_hash: u64) -> SourceMetadata<Self> where Self : Sized {
+        SourceMetadata {
+            version: 1,
+            source_hash: source_hash,
+            importer_version: self.version(),
+            importer_options: Self::Options::default(),
+            assets: Vec::new(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct SearchTag {
+    key: String,
+    value: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AssetUUID {
+    a: u64,
+    b: u64,
+}
+
+#[derive(Serialize)]
+struct AssetMetadata<T: Serialize> {
+    id: AssetUUID,
+    source_id: T,
+    search_tags: Vec<SearchTag>,
+}
+
+#[derive(Serialize)]
+struct SourceMetadata<T: Importer> {
+    /// Metadata struct version
+    version: u32,
+    /// Hash of the source file this metadata was generated from
+    source_hash: u64,
+    importer_version: u32,
+    importer_options: <T as Importer>::Options,
+    assets: Vec<AssetMetadata<<T as Importer>::SourceAssetID>>,
+}
+
+impl<T: Importer> SourceMetadata<T> {
+}
+
 
 fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>), FileError> {
     let metadata = match fs::metadata(&state.path) {
@@ -96,7 +145,8 @@ where
         })
     }))
 }
-fn process_pair(pair: &HashedAssetFilePair) -> Result<(), FileError> {
+
+fn process_pair(pair: &HashedAssetFilePair, scratch_buf: &mut Vec<u8>) -> Result<(), FileError> {
     match pair {
         HashedAssetFilePair {
             meta: Some((meta, Some(meta_hash))),
@@ -137,14 +187,21 @@ fn process_pair(pair: &HashedAssetFilePair) -> Result<(), FileError> {
             match format {
                 Some(format) => {
                     let mut f = fs::File::open(&source.path)?;
-                    let mut buffer = Vec::new();
-                    f.read_to_end(&mut buffer)?;
-                    println!("buf size {}", buffer.len());
-                    let imported = format.import_boxed(buffer, format.default_metadata());
+                    scratch_buf.clear();
+                    f.read_to_end(scratch_buf)?;
+                    let buf_len = scratch_buf.len();
+                    let imported =
+                        format.import_boxed(scratch_buf.to_vec(), format.default_metadata());
+                    scratch_buf.clear();
                     match imported {
                         Ok(asset) => {
-                            let serialize = format.default_metadata();
-                            println!("Import success {}", source.path.to_string_lossy());
+                            let ser = bincode::serialize_into(scratch_buf, &asset).unwrap();
+                            println!(
+                                "Import success {} read {} serialized {}",
+                                source.path.to_string_lossy(),
+                                buf_len,
+                                0
+                            );
                         }
                         Err(err) => {
                             println!("Import error {}", err);
@@ -153,7 +210,7 @@ fn process_pair(pair: &HashedAssetFilePair) -> Result<(), FileError> {
                 }
                 None => {}
             }
-            println!("source file with no meta {}", source.path.to_string_lossy());
+            // println!("source file with no meta {}", source.path.to_string_lossy());
         }
         HashedAssetFilePair {
             meta: None,
@@ -272,8 +329,17 @@ impl AssetHub {
                     .filter(|f| f.is_err() == false)
                     .map(|e| e.unwrap()),
             );
+
+            use std::cell::RefCell;
+            thread_local!(static STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
             let result = Vec::from_par_iter(hashed_files.par_iter().map(|p| {
-                process_pair(p);
+                STORE.with(|cell| {
+                    let mut local_store = cell.borrow_mut();
+                    if local_store.is_none() {
+                        *local_store = Some(Vec::new());
+                    }
+                    process_pair(p, local_store.as_mut().unwrap())
+                })
             }));
             // let successful_hashes = filter_and_unwrap_hashes(hashed_files);
             println!("Hashed {}", hashed_files.len());

@@ -10,7 +10,10 @@ extern crate amethyst;
 #[macro_use]
 extern crate crossbeam_channel;
 extern crate serde;
+extern crate bincode;
+#[macro_use]
 extern crate serde_derive;
+#[macro_use]
 extern crate erased_serde;
 #[macro_use]
 extern crate downcast;

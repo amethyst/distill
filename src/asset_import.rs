@@ -7,6 +7,8 @@ use std::{fs, io::Read, sync::Arc};
 
 pub trait AnySerialize: Serialize + Any {}
 
+serialize_trait_object!(AnySerialize);
+
 impl<T: Serialize + 'static> AnySerialize for T {}
 downcast!(AnySerialize);
 
@@ -77,6 +79,27 @@ pub fn format_from_ext(ext: &str) -> Option<Box<BoxedFormat>> {
         )))),
         "png" => Some(Box::new(FormatBox::new(Box::new(
             ::amethyst::renderer::PngFormat {},
+        )))),
+        "tga" => Some(Box::new(FormatBox::new(Box::new(
+            ::amethyst::renderer::TgaFormat {},
+        )))),
+        "bmp" => Some(Box::new(FormatBox::new(Box::new(
+            ::amethyst::renderer::BmpFormat {},
+        )))),
+        "obj" => Some(Box::new(FormatBox::new(Box::new(
+            ::amethyst::renderer::ObjFormat {},
+        )))),
+        "wav" => Some(Box::new(FormatBox::new(Box::new(
+            ::amethyst::audio::WavFormat {},
+        )))),
+        "ogg" => Some(Box::new(FormatBox::new(Box::new(
+            ::amethyst::audio::OggFormat {},
+        )))),
+        "flac" => Some(Box::new(FormatBox::new(Box::new(
+            ::amethyst::audio::FlacFormat {},
+        )))),
+        "mp3" => Some(Box::new(FormatBox::new(Box::new(
+            ::amethyst::audio::Mp3Format {},
         )))),
         _ => None,
     }
