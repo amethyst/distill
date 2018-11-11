@@ -43,6 +43,18 @@ struct FileHashInfo {
   length @2 :UInt64;
 }
 
+struct SourcePairInfo {
+  source @0 :FileHashInfo;
+  meta @1 :FileHashInfo;
+  importError @2 :ImportError;
+  latestImportArtifactKey @3 :ImportArtifactKey;
+}
+
+# I
+struct ImportError {
+  text @0 :Text;
+}
+
 # The identifier for an import artifact is the hash of 
 # - Source asset contents
 # - Source metadata contents
@@ -63,11 +75,12 @@ struct AssetImportLocation {
 struct AssetMetadata {
   id @0 :AssetId;
   type @1 :AssetType;
-  runtimeDependencies @2 :List(AssetId);
-  buildDependencies @3 :List(AssetId);
-  tags @4 :List(Text);
-  indexingValues @5 :List(KeyValue);
+  runtimeDeps @2 :List(AssetId);
+  buildDeps @3 :List(AssetId);
+  instantiateDeps @4 :List(AssetId);
+  searchTags @5 :List(KeyValue);
 }
+
 
 # The import artifact contains the asset data and metadata 
 # for all assets extracted from the source file

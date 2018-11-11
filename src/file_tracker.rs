@@ -2,29 +2,33 @@ extern crate capnp;
 extern crate lmdb;
 extern crate rayon;
 
-use capnp_db::{self, CapnpCursor, DBTransaction, Environment, RoTransaction, RwTransaction};
+use capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction, RwTransaction};
 use crossbeam_channel::{self as channel, Receiver, Sender};
 use data_capnp::{self, dirty_file_info, source_file_info, FileType};
 use file_error::FileError;
 use lmdb::Cursor;
-use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::hash::Hasher;
-use std::io::BufRead;
-use std::iter::FromIterator;
-use std::ops::IndexMut;
-use std::path::{Path, PathBuf};
-use std::str;
-use std::thread;
-use std::time::Duration;
+use std::{
+    cmp::PartialEq,
+    collections::{HashMap, HashSet},
+    fs,
+    iter::FromIterator,
+    ops::IndexMut,
+    path::{Path, PathBuf},
+    str,
+    sync::atomic::{AtomicBool, Ordering},
+    thread,
+    time::Duration,
+};
 use watcher::{self, FileEvent, FileMetadata};
 
 #[derive(Clone)]
 pub struct FileTrackerTables {
+    /// Contains Path -> SourceFileInfo
     source_files: lmdb::Database,
+    /// Contains Path -> DirtyFileInfo
     dirty_files: lmdb::Database,
 }
+#[derive(Debug)]
 pub enum FileTrackerEvent {
     Updated,
 }
@@ -33,15 +37,16 @@ pub struct FileTracker {
     pub tables: FileTrackerTables,
     listener_rx: Receiver<Sender<FileTrackerEvent>>,
     listener_tx: Sender<Sender<FileTrackerEvent>>,
+    is_running: AtomicBool,
 }
 impl ::std::fmt::Debug for data_capnp::FileState {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             data_capnp::FileState::Exists => {
-        write!(f, "FileState::Exists");
-            },
+                write!(f, "FileState::Exists");
+            }
             data_capnp::FileState::Deleted => {
-        write!(f, "FileState::Deleted");
+                write!(f, "FileState::Deleted");
             }
         }
         Ok(())
@@ -54,6 +59,16 @@ pub struct FileState {
     pub last_modified: u64,
     pub length: u64,
 }
+
+impl PartialEq for FileState {
+    fn eq(&self, other: &FileState) -> bool {
+        self.path == other.path
+            && self.state == other.state
+            && self.last_modified == other.last_modified
+            && self.length == other.length
+    }
+}
+
 struct ScanContext {
     path: PathBuf,
     files: HashMap<PathBuf, FileMetadata>,
@@ -77,7 +92,7 @@ fn build_dirty_file_info(
     {
         let mut value = value_builder.init_root::<dirty_file_info::Builder>();
         value.set_state(state);
-        value.set_source_info(source_info);
+        value.set_source_info(source_info).expect("failed to set source info");
     }
     return value_builder;
 }
@@ -103,12 +118,9 @@ where
     K: AsRef<[u8]>,
 {
     let dirty_value = {
-        txn.get(tables.dirty_files, key)?.map(|v| {
-            let info = v.get_root::<dirty_file_info::Reader>().unwrap();
-            build_dirty_file_info(
-                data_capnp::FileState::Deleted,
-                info.get_source_info().unwrap(),
-            )
+        txn.get(tables.source_files, key)?.map(|v| {
+            let info = v.get_root::<source_file_info::Reader>().unwrap();
+            build_dirty_file_info(data_capnp::FileState::Deleted, info)
         })
     };
     if dirty_value.is_some() {
@@ -194,8 +206,8 @@ fn handle_file_event(
             let path_str = path.to_string_lossy();
             let key = path_str.as_bytes();
             println!("removed {}", path_str);
-            txn.delete(tables.source_files, &key)?;
             update_deleted_dirty_entry(txn, &tables, &key)?;
+            txn.delete(tables.source_files, &key)?;
         }
         FileEvent::FileError(err) => {
             println!("file event error: {}", err);
@@ -231,8 +243,8 @@ fn handle_file_event(
             for p in to_remove {
                 let p_str = p.to_string_lossy();
                 let p_key = p_str.as_bytes();
-                txn.delete(tables.source_files, &p_key)?;
                 update_deleted_dirty_entry(txn, &tables, &p_key)?;
+                txn.delete(tables.source_files, &p_key)?;
             }
             println!(
                 "Scanned and compared {} + {}, deleted {}",
@@ -311,12 +323,13 @@ impl FileTracker {
             db: asset_db,
             listener_rx: rx,
             listener_tx: tx,
+            is_running: AtomicBool::new(false),
         })
     }
-    
-    pub fn read_dirty_files<'a>(
+
+    pub fn read_dirty_files<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
-        iter_txn: &RoTransaction,
+        iter_txn: &'a V,
     ) -> Result<Vec<FileState>, FileError> {
         let mut file_states = Vec::new();
         {
@@ -359,22 +372,57 @@ impl FileTracker {
         Ok(file_states)
     }
 
-    pub fn get_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(&self, txn: &'a V, path: &PathBuf) -> Result<Option<FileState>, FileError> {
+    pub fn delete_dirty_file_state<'a>(
+        &self,
+        txn: &'a mut RwTransaction,
+        path: &PathBuf,
+    ) -> Result<bool, FileError> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        match txn.get(self.tables.source_files, &key)? {
+        Ok(txn.delete(self.tables.dirty_files, &key)?)
+    }
+
+    pub fn get_dirty_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        txn: &'a V,
+        path: &PathBuf,
+    ) -> Result<Option<FileState>, FileError> {
+        let key_str = path.to_string_lossy();
+        let key = key_str.as_bytes();
+        match txn.get(self.tables.dirty_files, &key)? {
             Some(value) => {
-                let info = value.get_root::<source_file_info::Reader>()?;
-                Ok(Some(FileState{
+                let info = value
+                    .get_root::<dirty_file_info::Reader>()?
+                    .get_source_info()?;
+                Ok(Some(FileState {
                     path: path.clone(),
                     state: data_capnp::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
                 }))
-            },
-            None => {
-                Ok(None)
             }
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        txn: &'a V,
+        path: &PathBuf,
+    ) -> Result<Option<FileState>, FileError> {
+        let key_str = path.to_string_lossy();
+        let key = key_str.as_bytes();
+        match txn.get(self.tables.source_files, &key)? {
+            Some(value) => {
+                let info = value.get_root::<source_file_info::Reader>()?;
+                Ok(Some(FileState {
+                    path: path.clone(),
+                    state: data_capnp::FileState::Exists,
+                    last_modified: info.get_last_modified(),
+                    length: info.get_length(),
+                }))
+            }
+            None => Ok(None),
         }
     }
 
@@ -389,17 +437,29 @@ impl FileTracker {
         self.listener_tx.send(sender)
     }
 
+    pub fn stop(&self) {
+        self.is_running.store(false, Ordering::Release);
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.is_running.load(Ordering::Acquire)
+    }
+
     pub fn run(&self, to_watch: Vec<&str>) -> Result<(), FileError> {
+        if self
+            .is_running
+            .compare_and_swap(false, true, Ordering::AcqRel)
+            == true
+        {
+            return Ok(());
+        }
         let (tx, rx) = channel::unbounded();
         let mut watcher = watcher::DirWatcher::new(to_watch, tx)?;
 
         let stop_handle = watcher.stop_handle();
-        let handle = thread::spawn(move || {
-            watcher.run();
-        });
-        let mut is_running = true;
+        let handle = thread::spawn(move || watcher.run());
         let mut listeners = vec![];
-        while is_running {
+        while self.is_running.load(Ordering::Acquire) {
             select! {
                 recv(self.listener_rx, listener) => {
                     if let Some(listener) = listener {
@@ -411,6 +471,7 @@ impl FileTracker {
             {
                 let mut txn = self.db.rw_txn()?;
                 let mut scan_stack = Vec::new();
+                let mut is_running = true;
                 read_file_events(
                     &mut is_running,
                     &mut txn,
@@ -429,10 +490,240 @@ impl FileTracker {
                         }
                     }
                 }
+                if is_running == false {
+                    self.is_running.store(false, Ordering::Release);
+                }
             }
         }
         stop_handle.stop();
-        handle.join();
+        handle.join().expect("thread panicked")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossbeam_channel::{self as channel, Receiver};
+    use file_tracker::{FileTracker, FileTrackerEvent};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        sync::Arc,
+        thread,
+        time::Duration,
+    };
+    use tempfile;
+
+    fn with_tracker<F>(f: F)
+    where
+        F: FnOnce(Arc<FileTracker>, Receiver<FileTrackerEvent>, &Path),
+    {
+        let db_dir = tempfile::tempdir().unwrap();
+        let asset_dir = tempfile::tempdir().unwrap();
+        {
+            let tracker = Arc::new(
+                FileTracker::new(Path::new(db_dir.path())).expect("failed to create tracker"),
+            );
+            let (tx, rx) = channel::unbounded();
+            tracker.register_listener(tx);
+
+            let asset_path = PathBuf::from(asset_dir.path());
+            let handle = {
+                let run_tracker = tracker.clone();
+                thread::spawn(move || {
+                    run_tracker
+                        .clone()
+                        .run(vec![asset_path.to_str().unwrap()])
+                        .expect("error running file tracker");
+                })
+            };
+            while tracker.is_running() == false {
+                thread::sleep(Duration::from_millis(1));
+            }
+
+            expect_no_event(&rx);
+
+            f(tracker.clone(), rx, asset_dir.path());
+
+            tracker.stop();
+
+            handle.join().unwrap();
+        }
+    }
+
+    fn expect_no_event(rx: &Receiver<FileTrackerEvent>) {
+        select! {
+            recv(rx, evt) => {
+                if let Some(evt) = evt {
+                    assert!(false, "Received unexpected event {:?}", evt);
+                } else {
+                    assert!(false, "Receive error when waiting for file event");
+                }
+            }
+            recv(channel::after(Duration::from_millis(1000))) => {
+                return;
+            }
+        };
+        unreachable!();
+    }
+
+    fn expect_event(rx: &Receiver<FileTrackerEvent>) -> FileTrackerEvent {
+        select! {
+            recv(rx, evt) => {
+                if let Some(evt) = evt {
+                    return evt;
+                } else {
+                    assert!(false, "Receive error when waiting for file event");
+                }
+            }
+            recv(channel::after(Duration::from_millis(1000))) => {
+                    assert!(false, "Timed out waiting for file event");
+            }
+        };
+        unreachable!();
+    }
+
+    fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
+        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let path = fs::canonicalize(&asset_dir).expect(&format!(
+            "failed to canonicalize {}",
+            asset_dir.to_string_lossy()
+        ));
+        let canonical_path = path.join(name);
+        let maybe_state = t
+            .get_file_state(&txn, &canonical_path)
+            .expect("error getting file state");
+        assert!(
+            maybe_state.is_none(),
+            "expected no file state for file {}",
+            name
+        );
+    }
+
+    fn expect_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
+        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let canonical_path =
+            fs::canonicalize(asset_dir.join(name)).expect("failed to canonicalize");
+        t.get_file_state(&txn, &canonical_path)
+            .expect("error getting file state")
+            .expect(&format!("expected file state for file {}", name));
+    }
+
+    fn add_test_dir(asset_dir: &Path, name: &str) -> PathBuf {
+        let path = PathBuf::from(asset_dir).join(name);
+        fs::create_dir(&path).expect("create dir");
+        path
+    }
+
+    fn add_test_file(asset_dir: &Path, name: &str) {
+        fs::copy(
+            PathBuf::from("tests/file_tracker/").join(name),
+            asset_dir.join(name),
+        )
+        .expect("copy test file");
+    }
+
+    fn delete_test_file(asset_dir: &Path, name: &str) {
+        fs::remove_file(asset_dir.join(name)).expect("delete test file");
+    }
+    fn truncate_test_file(asset_dir: &Path, name: &str) {
+        fs::File::create(asset_dir.join(name)).expect("truncate test file");
+    }
+
+    fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
+        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let path = fs::canonicalize(&asset_dir).expect(&format!(
+            "failed to canonicalize {}",
+            asset_dir.to_string_lossy()
+        ));
+        let canonical_path = path.join(name);
+        t.get_dirty_file_state(&txn, &canonical_path)
+            .expect("error getting dirty file state")
+            .expect(&format!("expected dirty file state for file {}", name));
+    }
+
+    fn clear_dirty_file_state(t: &FileTracker) {
+        let mut txn = t.get_rw_txn().expect("failed to open rw txn");
+        for f in t
+            .read_dirty_files(&txn)
+            .expect("failed to read dirty files")
+        {
+            t.delete_dirty_file_state(&mut txn, &f.path)
+                .expect("failed to delete dirty file state");
+        }
+    }
+
+    #[test]
+    fn test_create_file() {
+        with_tracker(|t, rx, asset_dir| {
+            add_test_file(asset_dir, "Amplifier.obj");
+            expect_event(&rx);
+            expect_no_event(&rx);
+            expect_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+        });
+    }
+
+    #[test]
+    fn test_modify_file() {
+        with_tracker(|t, rx, asset_dir| {
+            add_test_file(asset_dir, "Amplifier.obj");
+            expect_event(&rx);
+            expect_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+            clear_dirty_file_state(&t);
+            truncate_test_file(asset_dir, "Amplifier.obj");
+            expect_event(&rx);
+            expect_no_event(&rx);
+            expect_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+        })
+    }
+
+    #[test]
+    fn test_delete_file() {
+        with_tracker(|t, rx, asset_dir| {
+            add_test_file(asset_dir, "Amplifier.obj");
+            expect_event(&rx);
+            expect_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+            clear_dirty_file_state(&t);
+            delete_test_file(asset_dir, "Amplifier.obj");
+            expect_event(&rx);
+            expect_no_event(&rx);
+            expect_no_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+        })
+    }
+
+    #[test]
+    fn test_create_dir() {
+        with_tracker(|t, rx, asset_dir| {
+            add_test_dir(asset_dir, "testdir");
+            expect_event(&rx);
+            expect_no_event(&rx);
+            expect_file_state(&t, asset_dir, "testdir");
+            expect_dirty_file_state(&t, asset_dir, "testdir");
+        });
+    }
+
+    #[test]
+    fn test_create_file_in_dir() {
+        with_tracker(|t, rx, asset_dir| {
+            let dir = add_test_dir(asset_dir, "testdir");
+            {
+                expect_event(&rx);
+                expect_no_event(&rx);
+                expect_file_state(&t, asset_dir, "testdir");
+                expect_dirty_file_state(&t, asset_dir, "testdir");
+            }
+            {
+                add_test_file(&dir, "Amplifier.obj");
+                expect_event(&rx);
+                expect_no_event(&rx);
+                expect_file_state(&t, &dir, "Amplifier.obj");
+                expect_dirty_file_state(&t, &dir, "Amplifier.obj");
+            }
+        });
     }
 }
