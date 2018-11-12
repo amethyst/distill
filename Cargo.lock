@@ -23,20 +23,21 @@ dependencies = [
 [[package]]
 name = "amethyst"
 version = "0.9.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_animation 0.4.0",
- "amethyst_assets 0.5.0",
- "amethyst_audio 0.4.0",
- "amethyst_config 0.8.0",
- "amethyst_controls 0.3.0",
- "amethyst_core 0.4.0",
- "amethyst_derive 0.2.0",
- "amethyst_input 0.5.0",
- "amethyst_locale 0.3.0",
- "amethyst_network 0.2.0",
- "amethyst_renderer 0.9.0",
- "amethyst_ui 0.4.0",
- "amethyst_utils 0.4.0",
+ "amethyst_animation 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_audio 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_config 0.8.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_controls 0.3.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_derive 0.2.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_input 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_locale 0.3.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_network 0.2.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_renderer 0.9.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_ui 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_utils 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "derivative 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "fern 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -51,10 +52,13 @@ dependencies = [
 [[package]]
 name = "amethyst_animation"
 version = "0.4.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_assets 0.5.0",
- "amethyst_core 0.4.0",
- "amethyst_renderer 0.9.0",
+ "amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_derive 0.2.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_renderer 0.9.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "derivative 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "hibitset 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.7.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -66,8 +70,9 @@ dependencies = [
 [[package]]
 name = "amethyst_assets"
 version = "0.5.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_core 0.4.0",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "crossbeam 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "derivative 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "downcast 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -80,7 +85,7 @@ dependencies = [
  "rayon 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "ron 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_dyn 0.1.0",
+ "serde_dyn 0.1.0 (git+https://github.com/kabergstrom/serde_dyn.git)",
  "shred 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "shred-derive 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "uuid 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -89,20 +94,22 @@ dependencies = [
 [[package]]
 name = "amethyst_audio"
 version = "0.4.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_assets 0.5.0",
- "amethyst_core 0.4.0",
+ "amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "cpal 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rodio 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_dyn 0.1.0",
+ "serde_dyn 0.1.0 (git+https://github.com/kabergstrom/serde_dyn.git)",
  "smallvec 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "amethyst_config"
 version = "0.8.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "ron 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -112,11 +119,12 @@ dependencies = [
 [[package]]
 name = "amethyst_controls"
 version = "0.3.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_assets 0.5.0",
- "amethyst_core 0.4.0",
- "amethyst_input 0.5.0",
- "amethyst_renderer 0.9.0",
+ "amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_input 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_renderer 0.9.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
  "winit 0.17.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -124,6 +132,7 @@ dependencies = [
 [[package]]
 name = "amethyst_core"
 version = "0.4.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
  "cgmath 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "error-chain 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -141,8 +150,8 @@ dependencies = [
 [[package]]
 name = "amethyst_derive"
 version = "0.2.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_core 0.4.0",
  "proc-macro2 0.4.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 0.6.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "syn 0.15.20 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -151,9 +160,10 @@ dependencies = [
 [[package]]
 name = "amethyst_input"
 version = "0.5.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_config 0.8.0",
- "amethyst_core 0.4.0",
+ "amethyst_config 0.8.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "derivative 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -164,17 +174,19 @@ dependencies = [
 [[package]]
 name = "amethyst_locale"
 version = "0.3.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_assets 0.5.0",
- "amethyst_core 0.4.0",
+ "amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "fluent 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "amethyst_network"
 version = "0.2.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_core 0.4.0",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "bincode 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "fern 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -187,9 +199,11 @@ dependencies = [
 [[package]]
 name = "amethyst_renderer"
 version = "0.9.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_assets 0.5.0",
- "amethyst_core 0.4.0",
+ "amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_derive 0.2.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "derivative 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "error-chain 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -208,7 +222,7 @@ dependencies = [
  "rayon 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "ron 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_dyn 0.1.0",
+ "serde_dyn 0.1.0 (git+https://github.com/kabergstrom/serde_dyn.git)",
  "shred 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "shred-derive 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -219,12 +233,13 @@ dependencies = [
 [[package]]
 name = "amethyst_ui"
 version = "0.4.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_assets 0.5.0",
- "amethyst_audio 0.4.0",
- "amethyst_core 0.4.0",
- "amethyst_input 0.5.0",
- "amethyst_renderer 0.9.0",
+ "amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_audio 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_input 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_renderer 0.9.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "clipboard 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "derivative 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -246,11 +261,13 @@ dependencies = [
 [[package]]
 name = "amethyst_utils"
 version = "0.4.0"
+source = "git+http://github.com/kabergstrom/amethyst?branch=asset-format#bcaeb0cf96c4efb33bde3159179560ff9b9f1884"
 dependencies = [
- "amethyst_assets 0.5.0",
- "amethyst_controls 0.3.0",
- "amethyst_core 0.4.0",
- "amethyst_renderer 0.9.0",
+ "amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_controls 0.3.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_derive 0.2.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
+ "amethyst_renderer 0.9.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "cgmath 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -314,7 +331,7 @@ dependencies = [
 name = "atelier-assets"
 version = "0.1.0"
 dependencies = [
- "amethyst 0.9.0",
+ "amethyst 0.9.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)",
  "bincode 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "capnp 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "capnp-rpc 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2313,6 +2330,7 @@ dependencies = [
 [[package]]
 name = "serde_dyn"
 version = "0.1.0"
+source = "git+https://github.com/kabergstrom/serde_dyn.git#02c1b477ff8296be1ce2457472bee09b4e29a095"
 dependencies = [
  "serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -3036,6 +3054,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum adler32 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "7e522997b529f05601e05166c07ed17789691f562762c7f3b987263d2dedee5c"
 "checksum aho-corasick 0.6.9 (registry+https://github.com/rust-lang/crates.io-index)" = "1e9a933f4e58658d7b12defcf96dc5c720f20832deebe3e0a19efd3b6aaeeb9e"
 "checksum alsa-sys 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "b0edcbbf9ef68f15ae1b620f722180b82a98b6f0628d30baa6b8d2a5abc87d58"
+"checksum amethyst 0.9.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_animation 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_assets 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_audio 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_config 0.8.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_controls 0.3.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_core 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_derive 0.2.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_input 0.5.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_locale 0.3.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_network 0.2.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_renderer 0.9.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_ui 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
+"checksum amethyst_utils 0.4.0 (git+http://github.com/kabergstrom/amethyst?branch=asset-format)" = "<none>"
 "checksum android_glue 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "000444226fcff248f2bc4c7625be32c63caccfecc2723a2b9f78a7487a49c407"
 "checksum annotate-snippets 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "455e7e547c91cdb148034484ceee42779b0453d7fe166ce3f8c84ce97130ec86"
 "checksum ansi_term 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ee49baf6cb617b853aa8d93bf420db2383fab46d314482ca2803b40d5fde979b"
@@ -3267,6 +3299,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum semver-parser 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 "checksum serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)" = "15c141fc7027dd265a47c090bf864cf62b42c4d228bbcf4e51a0c9e2b0d3f7ef"
 "checksum serde_derive 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)" = "225de307c6302bec3898c51ca302fc94a7a1697ef0845fcee6448f33c032249c"
+"checksum serde_dyn 0.1.0 (git+https://github.com/kabergstrom/serde_dyn.git)" = "<none>"
 "checksum servo-fontconfig 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a088f8d775a5c5314aae09bd77340bc9c67d72b9a45258be34c83548b4814cd9"
 "checksum servo-fontconfig-sys 4.0.7 (registry+https://github.com/rust-lang/crates.io-index)" = "b46d201addcfbd25c1798ad1281d98c40743824e0b0f1e611bd3d5d0d31a7b8d"
 "checksum servo-freetype-sys 4.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "5d00ab791f66cd2ec58e72c91b6076cee20fac560463aa871404eb31dfc9c4ff"

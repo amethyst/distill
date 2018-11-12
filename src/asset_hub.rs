@@ -62,7 +62,7 @@ fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>), FileError> {
             if !m.is_file() {
                 return Ok((state.clone(), None));
             }
-            file_metadata(m)
+            file_metadata(&m)
         }
     };
     Ok(fs::OpenOptions::new()
@@ -92,7 +92,7 @@ fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>), FileError> {
                 Some(hasher.finish()),
             ))
         })
-        .map_err(|e| FileError::IO(e))?)
+        .map_err(FileError::IO)?)
 }
 
 fn hash_files<'a, T, I>(pairs: I) -> Vec<Result<HashedAssetFilePair, FileError>>
@@ -112,8 +112,8 @@ where
             None => source = None,
         }
         Ok(HashedAssetFilePair {
-            meta: meta,
-            source: source,
+            meta,
+            source,
         })
     }))
 }
@@ -177,15 +177,14 @@ fn import_pair(
                             instantiate_deps: asset.instantiate_deps,
                         });
                         println!(
-                            "Import success {} read {} serialized {}",
+                            "Import success {} read {}",
                             source.path.to_string_lossy(),
                             scratch_buf.len(),
-                            0
                         );
                     }
                     let source_metadata = SourceMetadata {
                         version: SOURCEMETADATA_VERSION,
-                        source_hash: source_hash,
+                        source_hash,
                         importer_version: format.version(),
                         importer_options: options,
                         importer_state: state,
@@ -199,7 +198,7 @@ fn import_pair(
                     let meta_path = to_meta_path(&source.path);
                     // println!("Meta file {}: {}", meta_path.to_string_lossy(), serialized_metadata);
                     let mut meta_file = fs::File::create(meta_path)?;
-                    meta_file.write(serialized_metadata.as_bytes())?;
+                    meta_file.write_all(serialized_metadata.as_bytes())?;
                     Ok(())
                 }
                 Err(err) => {
@@ -287,17 +286,24 @@ fn process_pair_cases(
 }
 
 impl AssetHub {
-    pub fn new(tracker: Arc<FileTracker>) -> Result<AssetHub, FileError> {
+    pub fn new(tracker: &Arc<FileTracker>) -> Result<AssetHub, FileError> {
         let (tx, rx) = channel::unbounded();
         tracker.register_listener(tx);
         Ok(AssetHub {
             tracker: tracker.clone(),
-            rx: rx,
+            rx,
             tables: AssetHubTables {
-                source_pairs: tracker.db.create_db(Some("source_pairs"), lmdb::DatabaseFlags::default())?,
-                import_artifacts: tracker.db.create_db(Some("import_artifacts"), lmdb::DatabaseFlags::default())?,
-                asset_to_import_artifact: tracker.db.create_db(Some("asset_to_import_artifact"), lmdb::DatabaseFlags::default())?,
-            }
+                source_pairs: tracker
+                    .db
+                    .create_db(Some("source_pairs"), lmdb::DatabaseFlags::default())?,
+                import_artifacts: tracker
+                    .db
+                    .create_db(Some("import_artifacts"), lmdb::DatabaseFlags::default())?,
+                asset_to_import_artifact: tracker.db.create_db(
+                    Some("asset_to_import_artifact"),
+                    lmdb::DatabaseFlags::default(),
+                )?,
+            },
         })
     }
 
@@ -311,33 +317,26 @@ impl AssetHub {
                 let mut source_meta_pairs: HashMap<PathBuf, AssetFilePair> = HashMap::new();
                 for state in dirty_files.into_iter() {
                     let mut is_meta = false;
-                    match state.path.extension() {
-                        Some(ext) => match ext.to_str().unwrap() {
-                            "meta" => {
+                    if let Some(ext) = state.path.extension() {
+                        if let Some("meta") = ext.to_str() {
                                 is_meta = true;
-                            }
-                            _ => {}
-                        },
-                        None => {}
+                        }
                     }
-                    let base_path;
-                    if is_meta {
-                        base_path = state.path.with_file_name(state.path.file_stem().unwrap());
+                    let base_path = if is_meta {
+                        state.path.with_file_name(state.path.file_stem().unwrap())
                     } else {
-                        base_path = state.path.clone();
-                    }
+                        state.path.clone()
+                    };
                     let mut pair = source_meta_pairs.entry(base_path).or_insert(AssetFilePair {
                         source: Option::None,
                         meta: Option::None,
                     });
                     if state.state == data_capnp::FileState::Deleted {
                         deleted.push(state);
+                    } else if is_meta {
+                        pair.meta = Some(state.clone());
                     } else {
-                        if is_meta {
-                            pair.meta = Some(state.clone());
-                        } else {
-                            pair.source = Some(state.clone());
-                        }
+                        pair.source = Some(state.clone());
                     }
                 }
                 for (path, pair) in source_meta_pairs.iter_mut() {
@@ -368,7 +367,7 @@ impl AssetHub {
                 let hashed_files = Vec::from_iter(
                     hashed_files
                         .into_iter()
-                        .filter(|f| f.is_err() == false)
+                        .filter(|f| !f.is_err())
                         .map(|e| e.unwrap()),
                 );
 
@@ -418,7 +417,7 @@ impl AssetHub {
                                 check_file_state(&pair.source.as_ref().map(|f| &f.0))?;
                             skip_ack_dirty |= check_file_state(&pair.meta.as_ref().map(|f| &f.0))?;
                         }
-                        if skip_ack_dirty == false {
+                        if !skip_ack_dirty {
                             if pair.source.is_some() {
                                 let source = pair.source.unwrap().0;
                                 self.tracker

@@ -43,10 +43,10 @@ impl ::std::fmt::Debug for data_capnp::FileState {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             data_capnp::FileState::Exists => {
-                write!(f, "FileState::Exists");
+                write!(f, "FileState::Exists")?;
             }
             data_capnp::FileState::Deleted => {
-                write!(f, "FileState::Deleted");
+                write!(f, "FileState::Deleted")?;
             }
         }
         Ok(())
@@ -92,12 +92,14 @@ fn build_dirty_file_info(
     {
         let mut value = value_builder.init_root::<dirty_file_info::Builder>();
         value.set_state(state);
-        value.set_source_info(source_info).expect("failed to set source info");
+        value
+            .set_source_info(source_info)
+            .expect("failed to set source info");
     }
-    return value_builder;
+    value_builder
 }
 fn build_source_info(
-    metadata: watcher::FileMetadata,
+    metadata: &watcher::FileMetadata,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
@@ -106,7 +108,7 @@ fn build_source_info(
         value.set_length(metadata.length);
         value.set_type(db_file_type(metadata.file_type));
     }
-    return value_builder;
+    value_builder
 }
 
 fn update_deleted_dirty_entry<K>(
@@ -142,19 +144,16 @@ fn handle_file_event(
             let mut changed = true;
             {
                 let maybe_msg = txn.get(tables.source_files, &key)?;
-                match maybe_msg {
-                    Some(msg) => {
-                        let info = msg.get_root::<source_file_info::Reader>()?;
-                        if info.get_length() == metadata.length
-                            && info.get_last_modified() == metadata.last_modified
-                            && info.get_type()? == db_file_type(metadata.file_type)
-                        {
-                            changed = false;
-                        } else {
-                            println!("CHANGED {} metadata {:?}", path_str, metadata);
-                        }
+                if let Some(msg) = maybe_msg {
+                    let info = msg.get_root::<source_file_info::Reader>()?;
+                    if info.get_length() == metadata.length
+                        && info.get_last_modified() == metadata.last_modified
+                        && info.get_type()? == db_file_type(metadata.file_type)
+                    {
+                        changed = false;
+                    } else {
+                        println!("CHANGED {} metadata {:?}", path_str, metadata);
                     }
-                    None => {}
                 }
             }
             if !scan_stack.is_empty() {
@@ -163,7 +162,7 @@ fn handle_file_event(
                 scan_ctx.files.insert(path.clone(), metadata.clone());
             }
             if changed {
-                let value = build_source_info(metadata);
+                let value = build_source_info(&metadata);
                 let dirty_value = build_dirty_file_info(
                     data_capnp::FileState::Exists,
                     value.get_root_as_reader::<source_file_info::Reader>()?,
@@ -184,7 +183,7 @@ fn handle_file_event(
             let dst_str = dst.to_string_lossy();
             let dst_key = dst_str.as_bytes();
             println!("rename {} to {} metadata {:?}", src_str, dst_str, metadata);
-            let value = build_source_info(metadata);
+            let value = build_source_info(&metadata);
             txn.delete(tables.source_files, &src_key)?;
             txn.put(tables.source_files, &dst_key, &value)?;
             let dirty_value = {
@@ -216,7 +215,7 @@ fn handle_file_event(
         FileEvent::ScanStart(path) => {
             println!("scan start: {}", path.to_string_lossy());
             scan_stack.push(ScanContext {
-                path: path,
+                path,
                 files: HashMap::new(),
             });
         }
@@ -238,7 +237,7 @@ fn handle_file_event(
                     db_file_set.insert(PathBuf::from(key));
                 }
             }
-            let scan_ctx_set = HashSet::from_iter(scan_ctx.files.keys().map(|p| p.clone()));
+            let scan_ctx_set = HashSet::from_iter(scan_ctx.files.keys().cloned());
             let to_remove = db_file_set.difference(&scan_ctx_set);
             for p in to_remove {
                 let p_str = p.to_string_lossy();
@@ -254,7 +253,7 @@ fn handle_file_event(
             );
             // If this is the top-level scan, we have a final set of watched directories,
             // so we can delete any files that are not in any watched directories from the DB.
-            if scan_stack.len() == 0 {
+            if scan_stack.is_empty() {
                 let mut to_delete = Vec::new();
                 {
                     let mut cursor = txn.open_ro_cursor(tables.source_files)?;
@@ -267,7 +266,7 @@ fn handle_file_event(
                         let key = str::from_utf8(key_bytes).expect("Encoded key was invalid utf8");
                         if !dirs_as_strings.iter().any(|dir| key.starts_with(dir)) {
                             println!("TRASH! {}", key);
-                            to_delete.push(key.clone());
+                            to_delete.push(key);
                         }
                     }
                 }
@@ -350,10 +349,7 @@ impl FileTracker {
         Ok(file_states)
     }
 
-    pub fn read_all_files<'a>(
-        &self,
-        iter_txn: &RoTransaction,
-    ) -> Result<Vec<FileState>, FileError> {
+    pub fn read_all_files(&self, iter_txn: &RoTransaction) -> Result<Vec<FileState>, FileError> {
         let mut file_states = Vec::new();
         {
             let mut cursor = iter_txn.open_ro_cursor(self.tables.source_files)?;
@@ -426,10 +422,10 @@ impl FileTracker {
         }
     }
 
-    pub fn get_ro_txn<'a>(&'a self) -> Result<RoTransaction<'a>, FileError> {
+    pub fn get_ro_txn(&self) -> Result<RoTransaction, FileError> {
         Ok(self.db.ro_txn()?)
     }
-    pub fn get_rw_txn<'a>(&'a self) -> Result<RwTransaction<'a>, FileError> {
+    pub fn get_rw_txn(&self) -> Result<RwTransaction, FileError> {
         Ok(self.db.rw_txn()?)
     }
 
@@ -449,7 +445,6 @@ impl FileTracker {
         if self
             .is_running
             .compare_and_swap(false, true, Ordering::AcqRel)
-            == true
         {
             return Ok(());
         }
@@ -479,7 +474,7 @@ impl FileTracker {
                     &rx,
                     &mut scan_stack,
                 )?;
-                assert!(scan_stack.len() == 0);
+                assert!(scan_stack.is_empty());
                 if txn.dirty {
                     txn.commit()?;
                     println!("Commit");
@@ -490,7 +485,7 @@ impl FileTracker {
                         }
                     }
                 }
-                if is_running == false {
+                if !is_running {
                     self.is_running.store(false, Ordering::Release);
                 }
             }

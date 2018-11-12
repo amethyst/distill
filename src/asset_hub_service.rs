@@ -76,7 +76,7 @@ impl asset_hub::Server for AssetHubImpl {
 
 impl FileService {
     pub fn new(tracker: Arc<AssetHub>) -> FileService {
-        FileService { tracker: tracker }
+        FileService { tracker }
     }
     pub fn run(&self) -> Result<(), Error> {
         use std::net::ToSocketAddrs;

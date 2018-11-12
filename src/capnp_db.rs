@@ -45,13 +45,13 @@ impl<'txn> Iterator for Iter<'txn> {
         Result<capnp::message::Reader<capnp::serialize::OwnedSegments>, capnp::Error>,
     );
     fn next(&mut self) -> Option<Self::Item> {
-        let (key_bytes, value_bytes) = self.iter.next()?;
+        let (key_bytes, mut value_bytes) = self.iter.next()?;
 
         let value_msg = capnp::serialize::read_message(
-            &mut value_bytes.clone(),
+            &mut value_bytes,
             capnp::message::ReaderOptions::default(),
         );
-        return Some((key_bytes, value_msg));
+        Some((key_bytes, value_msg))
     }
 }
 
@@ -72,7 +72,7 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
     {
         let get_result = self.txn().get(db, key);
         if get_result.is_err() {
-            return Ok(None);
+            Ok(None)
         } else {
             let slice;
             unsafe {
@@ -82,7 +82,7 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
                 slice,
                 capnp::message::ReaderOptions::default(),
             )?;
-            return Ok(Some(msg));
+            Ok(Some(msg))
         }
     }
     fn get_as_bytes<K>(
@@ -95,9 +95,9 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
     {
         let get_result = self.txn().get(db, key);
         if get_result.is_err() {
-            return Ok(None);
+            Ok(None)
         } else {
-            return Ok(Some(get_result.unwrap()));
+            Ok(Some(get_result.unwrap()))
         }
     }
     fn get_capnp<K: capnp::message::Allocator>(
@@ -108,7 +108,7 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
         let key_vec = capnp::serialize::write_message_to_words(key);
         let get_result = self.txn().get(db, &capnp::Word::words_to_bytes(&key_vec));
         if get_result.is_err() {
-            return Ok(None);
+            Ok(None)
         } else {
             let slice;
             unsafe {
@@ -118,7 +118,7 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
                 slice,
                 capnp::message::ReaderOptions::default(),
             )?;
-            return Ok(Some(msg));
+            Ok(Some(msg))
         }
     }
 }
@@ -197,7 +197,7 @@ impl<'a> RwTransaction<'a> {
         K: AsRef<[u8]>,
     {
         self.dirty = true;
-        return match self.txn.del(db, key, Option::None) {
+        match self.txn.del(db, key, Option::None) {
             Err(err) => match err {
                 lmdb::Error::NotFound => Ok(false),
                 _ => Err(FileError::LMDB(err)),
@@ -239,7 +239,7 @@ impl Environment {
             .set_max_dbs(64)
             .set_map_size(1 << 31)
             .open(path)?;
-        Ok(Environment { env: env })
+        Ok(Environment { env })
     }
 
     pub fn create_db(
@@ -253,7 +253,7 @@ impl Environment {
     pub fn rw_txn(&self) -> Result<RwTransaction, FileError> {
         let txn = self.env.begin_rw_txn()?;
         Ok(RwTransaction {
-            txn: txn,
+            txn,
             dirty: false,
         })
     }

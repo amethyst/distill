@@ -32,10 +32,12 @@ use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
+#[allow(clippy::all)]
 #[allow(dead_code)]
 pub mod data_capnp {
     include!(concat!(env!("OUT_DIR"), "/data_capnp.rs"));
 }
+#[allow(clippy::all)]
 #[allow(dead_code)]
 pub mod service_capnp {
     include!(concat!(env!("OUT_DIR"), "/service_capnp.rs"));
@@ -51,7 +53,7 @@ fn main() {
         })
     };
 
-    let hub = asset_hub::AssetHub::new(tracker).expect("failed to create asset hub");
+    let hub = asset_hub::AssetHub::new(&tracker).expect("failed to create asset hub");
     hub.run().expect("AssetHub.run() failed");
     // let service = asset_hub_service::AssetHubService::new(tracker.clone());
     // service.run();
