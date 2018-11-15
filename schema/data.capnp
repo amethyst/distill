@@ -64,27 +64,21 @@ struct ImportArtifactKey {
   hash @0 :Data;
 }
 
-# To find the imported asset data for an assetId,
-# we use assetId as key and AssetImportLocation as the value.
-# We then use the ImportArtifactKey to find the asset in the imported artifact
-struct AssetImportLocation {
-  artifact @0 :ImportArtifactKey;
-  index @1 :UInt64;
-}
-
 struct AssetMetadata {
   id @0 :AssetId;
-  type @1 :AssetType;
-  runtimeDeps @2 :List(AssetId);
-  buildDeps @3 :List(AssetId);
-  instantiateDeps @4 :List(AssetId);
-  searchTags @5 :List(KeyValue);
+  loadDeps @1 :List(AssetId);
+  buildDeps @2 :List(AssetId);
+  instantiateDeps @3 :List(AssetId);
+  searchTags @4 :List(KeyValue);
 }
 
-
-# The import artifact contains the asset data and metadata 
-# for all assets extracted from the source file
-struct ImportArtifact {
-  assetMetadata @0 :List(AssetMetadata);
-  assetData @1 :List(Data);
+struct ImportedMetadata {
+  metadata @0 :AssetMetadata;
+  # The most recently recorded hash of the input to the import function
+  latestArtifact :union {
+    id @1 :ImportArtifactKey;
+    none @2 :Void;
+  }
+  # The source of the imported asset
+  source @3 :UInt64;
 }

@@ -1,3 +1,5 @@
+#![allow(unknown_lints)]
+#![warn(clippy::all)]
 extern crate amethyst;
 extern crate capnp;
 extern crate capnp_rpc;
@@ -15,6 +17,9 @@ extern crate serde;
 extern crate serde_derive;
 extern crate erased_serde;
 extern crate ron;
+extern crate scoped_threadpool;
+extern crate num_cpus;
+
 
 #[cfg(test)]
 extern crate tempfile;
@@ -23,14 +28,15 @@ mod asset_hub;
 mod asset_hub_service;
 mod asset_import;
 pub mod capnp_db;
-pub mod file_error;
+pub mod error;
+mod file_asset_source;
 pub mod file_tracker;
 pub mod watcher;
 
+use capnp_db::Environment;
 use file_tracker::FileTracker;
-use std::path::Path;
-use std::sync::Arc;
-use std::thread;
+use std::{fs, path::Path, sync::Arc, thread};
+use tokio_core::reactor;
 
 #[allow(clippy::all)]
 #[allow(dead_code)]
@@ -44,22 +50,31 @@ pub mod service_capnp {
 }
 
 fn main() {
-    let tracker =
-        Arc::new(FileTracker::new(Path::new(".amethyst")).expect("failed to create tracker"));
+    let db_dir = Path::new(".amethyst");
+    let _ = fs::create_dir(db_dir);
+    let asset_db = Arc::new(Environment::new(db_dir).expect("failed to create asset db"));
+    let tracker = Arc::new(FileTracker::new(asset_db.clone()).expect("failed to create tracker"));
     let handle = {
         let run_tracker = tracker.clone();
-        thread::spawn(move || {
-            run_tracker.clone().run(vec!["assets"])
-        })
+        thread::spawn(move || run_tracker.clone().run(vec!["assets"]))
     };
 
-    let hub = asset_hub::AssetHub::new(&tracker).expect("failed to create asset hub");
-    hub.run().expect("AssetHub.run() failed");
+    let hub = Arc::new(
+        asset_hub::AssetHub::new(asset_db.clone())
+            .expect("failed to create asset hub"),
+    );
+    let asset_source =
+        file_asset_source::FileAssetSource::new(tracker.clone(), hub.clone(), asset_db.clone())
+            .expect("failed to create asset hub");
+    asset_source.run().expect("AssetHub.run() failed");
     // let service = asset_hub_service::AssetHubService::new(tracker.clone());
     // service.run();
     // loop {
-        // tracker.clone().read_all_files().expect("failed to read all files");
+    // tracker.clone().read_all_files().expect("failed to read all files");
     //     thread::sleep(Duration::from_millis(100));
     // }
-    handle.join().expect("file tracker thread panicked").expect("file tracker returned error");
+    handle
+        .join()
+        .expect("file tracker thread panicked")
+        .expect("file tracker returned error");
 }

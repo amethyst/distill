@@ -4,8 +4,8 @@ version = "0.1.0"
 build = "build.rs"
 
 [dependencies]
-# amethyst = { path = "../amethyst"}
-amethyst = { git = "http://github.com/kabergstrom/amethyst", branch = "asset-format"}
+amethyst = { path = "../amethyst"}
+# amethyst = { git = "http://github.com/kabergstrom/amethyst", branch = "asset-format"}
 capnp = "0.9.0"
 notify = "4.0.0"
 lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
@@ -22,6 +22,11 @@ serde_derive = "1.0"
 erased-serde = "0.3"
 bincode = "1.0.1"
 ron = "0.4"
+digest = "0.8.0"
+meowhash = "0.1.2"
+scoped_threadpool = "0.1.9"
+num_cpus = "1.0"
+
 
 [build-dependencies]
 capnpc = "0.9"

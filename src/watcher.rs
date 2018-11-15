@@ -2,7 +2,7 @@ extern crate notify;
 
 use self::notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use crossbeam_channel::Sender as cbSender;
-use file_error::FileError;
+use error::{Result, Error};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -38,7 +38,7 @@ pub enum FileEvent {
     Updated(PathBuf, FileMetadata),
     Renamed(PathBuf, PathBuf, FileMetadata),
     Removed(PathBuf),
-    FileError(FileError),
+    FileError(Error),
     // ScanStart is called when a directory is about to be scanned.
     // Scanning can be recursive
     ScanStart(PathBuf),
@@ -62,7 +62,7 @@ impl DirWatcher {
     pub fn from_path_iter<'a, T>(
         paths: T,
         chan: cbSender<FileEvent>,
-    ) -> Result<DirWatcher, FileError>
+    ) -> Result<DirWatcher>
     where
         T: Iterator<Item = &'a str>,
     {
@@ -82,7 +82,7 @@ impl DirWatcher {
         }
         Ok(asset_watcher)
     }
-    pub fn new<'a, I, T>(paths: I, chan: cbSender<FileEvent>) -> Result<DirWatcher, FileError>
+    pub fn new<'a, I, T>(paths: I, chan: cbSender<FileEvent>) -> Result<DirWatcher>
     where
         I: IntoIterator<Item = &'a str, IntoIter = T>,
         T: Iterator<Item = &'a str>,
@@ -95,14 +95,14 @@ impl DirWatcher {
             tx: self.tx.clone(),
         }
     }
-    fn scan_directory<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<(), FileError>
+    fn scan_directory<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
     {
         match fs::canonicalize(dir) {
             Err(err) => match err.kind() {
                 io::ErrorKind::NotFound => Ok(()),
-                _ => Err(FileError::IO(err)),
+                _ => Err(Error::IO(err)),
             },
             Ok(canonical_dir) => {
                 self.asset_tx
@@ -114,18 +114,18 @@ impl DirWatcher {
             }
         }
     }
-    fn scan_directory_recurse<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<(), FileError>
+    fn scan_directory_recurse<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
     {
         match fs::read_dir(dir) {
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => return Err(FileError::IO(e)),
+            Err(e) => return Err(Error::IO(e)),
             Ok(dir_entry) => {
                 for entry in dir_entry {
                     match entry {
                         Err(ref e) if e.kind() == io::ErrorKind::NotFound => continue,
-                        Err(e) => return Err(FileError::IO(e)),
+                        Err(e) => return Err(Error::IO(e)),
                         Ok(entry) => {
                             let evt = self.handle_notify_event(evt_create(entry.path()), true)?;
                             if evt.is_some() {
@@ -134,7 +134,7 @@ impl DirWatcher {
                             let metadata;
                             match entry.metadata() {
                                 Err(ref e) if e.kind() == io::ErrorKind::NotFound => continue,
-                                Err(e) => return Err(FileError::IO(e)),
+                                Err(e) => return Err(Error::IO(e)),
                                 Ok(m) => metadata = m,
                             }
                             let is_dir = metadata.is_dir();
@@ -149,7 +149,7 @@ impl DirWatcher {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), FileError> {
+    pub fn run(&mut self) -> Result<()> {
         for dir in &self.dirs.clone() {
             let err = self.scan_directory(&dir, &|path| DebouncedEvent::Create(path));
             if err.is_err() {
@@ -165,7 +165,7 @@ impl DirWatcher {
                         }
                     }
                     Err(err) => match err {
-                        FileError::RescanRequired => {
+                        Error::RescanRequired => {
                             for dir in &self.dirs.clone() {
                                 let err =
                                     self.scan_directory(&dir, &|path| DebouncedEvent::Create(path));
@@ -174,7 +174,7 @@ impl DirWatcher {
                                 }
                             }
                         }
-                        FileError::Exit => {
+                        Error::Exit => {
                             break;
                         }
                         _ => {
@@ -184,7 +184,7 @@ impl DirWatcher {
                 },
                 Err(_) => {
                     self.asset_tx
-                        .send(FileEvent::FileError(FileError::RecvError));
+                        .send(FileEvent::FileError(Error::RecvError));
                     return Ok(());
                 }
             }
@@ -192,7 +192,7 @@ impl DirWatcher {
         Ok(())
     }
 
-    fn watch(&mut self, path: &PathBuf) -> Result<bool, FileError> {
+    fn watch(&mut self, path: &PathBuf) -> Result<bool> {
         let refs = *self.watch_refs.get(path).unwrap_or(&0);
         if refs == 0 {
             self.watcher.watch(path, RecursiveMode::Recursive)?;
@@ -205,7 +205,7 @@ impl DirWatcher {
         Ok(false)
     }
 
-    fn unwatch(&mut self, path: &PathBuf) -> Result<bool, FileError> {
+    fn unwatch(&mut self, path: &PathBuf) -> Result<bool> {
         let refs = *self.watch_refs.get(path).unwrap_or(&0);
         if refs == 1 {
             self.watcher.unwatch(path)?;
@@ -227,7 +227,7 @@ impl DirWatcher {
         &mut self,
         src: Option<&PathBuf>,
         dst: Option<&PathBuf>,
-    ) -> Result<(), FileError> {
+    ) -> Result<()> {
         if let Some(src) = src {
             if self.symlink_map.contains_key(src) {
                 let to_unwatch = self.symlink_map[src].clone();
@@ -244,7 +244,7 @@ impl DirWatcher {
                 match fs::canonicalize(dst.join(link_path)) {
                     Err(err) => match err.kind() {
                         io::ErrorKind::NotFound => {}
-                        _ => return Err(FileError::IO(err)),
+                        _ => return Err(Error::IO(err)),
                     },
                     Ok(link_path) => {
                         if self.watch(&link_path)? {
@@ -262,13 +262,13 @@ impl DirWatcher {
         &mut self,
         event: DebouncedEvent,
         is_scanning: bool,
-    ) -> Result<Option<FileEvent>, FileError> {
+    ) -> Result<Option<FileEvent>> {
         match event {
             DebouncedEvent::Create(path) | DebouncedEvent::Write(path) => {
                 self.handle_updated_symlink(Option::None, Some(&path))?;
                 match fs::metadata(&path) {
                     Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-                    Err(e) => Err(FileError::IO(e)),
+                    Err(e) => Err(Error::IO(e)),
                     Ok(metadata) => Ok(Some(FileEvent::Updated(path, file_metadata(&metadata)))),
                 }
             }
@@ -276,7 +276,7 @@ impl DirWatcher {
                 self.handle_updated_symlink(Some(&src), Some(&dest))?;
                 match fs::metadata(&dest) {
                     Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-                    Err(e) => Err(FileError::IO(e)),
+                    Err(e) => Err(Error::IO(e)),
                     Ok(metadata) => {
                         if metadata.is_dir() && !is_scanning {
                             self.scan_directory(&dest, &|p| {
@@ -294,8 +294,8 @@ impl DirWatcher {
                 self.handle_updated_symlink(Some(&path), Option::None)?;
                 Ok(Some(FileEvent::Removed(path)))
             }
-            DebouncedEvent::Rescan => Err(FileError::RescanRequired),
-            DebouncedEvent::Error(_, _) => Err(FileError::Exit),
+            DebouncedEvent::Rescan => Err(Error::RescanRequired),
+            DebouncedEvent::Error(_, _) => Err(Error::Exit),
             _ => Ok(None),
         }
     }

@@ -5,7 +5,7 @@ extern crate rayon;
 use capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction, RwTransaction};
 use crossbeam_channel::{self as channel, Receiver, Sender};
 use data_capnp::{self, dirty_file_info, source_file_info, FileType};
-use file_error::FileError;
+use error::Result;
 use lmdb::Cursor;
 use std::{
     cmp::PartialEq,
@@ -13,16 +13,17 @@ use std::{
     fs,
     iter::FromIterator,
     ops::IndexMut,
-    path::{Path, PathBuf},
+    path::{PathBuf},
     str,
     sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
     thread,
     time::Duration,
 };
 use watcher::{self, FileEvent, FileMetadata};
 
 #[derive(Clone)]
-pub struct FileTrackerTables {
+struct FileTrackerTables {
     /// Contains Path -> SourceFileInfo
     source_files: lmdb::Database,
     /// Contains Path -> DirtyFileInfo
@@ -33,8 +34,8 @@ pub enum FileTrackerEvent {
     Updated,
 }
 pub struct FileTracker {
-    pub db: Environment,
-    pub tables: FileTrackerTables,
+    db: Arc<Environment>,
+    tables: FileTrackerTables,
     listener_rx: Receiver<Sender<FileTrackerEvent>>,
     listener_tx: Sender<Sender<FileTrackerEvent>>,
     is_running: AtomicBool,
@@ -115,7 +116,7 @@ fn update_deleted_dirty_entry<K>(
     txn: &mut RwTransaction,
     tables: &FileTrackerTables,
     key: &K,
-) -> Result<(), FileError>
+) -> Result<()>
 where
     K: AsRef<[u8]>,
 {
@@ -136,7 +137,7 @@ fn handle_file_event(
     tables: &FileTrackerTables,
     evt: watcher::FileEvent,
     scan_stack: &mut Vec<ScanContext>,
-) -> Result<(), FileError> {
+) -> Result<()> {
     match evt {
         FileEvent::Updated(path, metadata) => {
             let path_str = path.to_string_lossy();
@@ -286,7 +287,7 @@ fn read_file_events(
     tables: &FileTrackerTables,
     rx: &Receiver<FileEvent>,
     scan_stack: &mut Vec<ScanContext>,
-) -> Result<(), FileError> {
+) -> Result<()> {
     while *is_running {
         let timeout = Duration::from_millis(100);
         select! {
@@ -308,18 +309,14 @@ fn read_file_events(
 }
 
 impl FileTracker {
-    pub fn new(db_dir: &Path) -> Result<FileTracker, FileError> {
-        let _ = fs::create_dir(db_dir);
-        let asset_db = Environment::new(db_dir)?;
+    pub fn new(db: Arc<Environment>) -> Result<FileTracker> {
         let (tx, rx) = channel::unbounded();
         Ok(FileTracker {
             tables: FileTrackerTables {
-                source_files: asset_db
-                    .create_db(Some("source_files"), lmdb::DatabaseFlags::default())?,
-                dirty_files: asset_db
-                    .create_db(Some("dirty_files"), lmdb::DatabaseFlags::default())?,
+                source_files: db.create_db(Some("source_files"), lmdb::DatabaseFlags::default())?,
+                dirty_files: db.create_db(Some("dirty_files"), lmdb::DatabaseFlags::default())?,
             },
-            db: asset_db,
+            db: db,
             listener_rx: rx,
             listener_tx: tx,
             is_running: AtomicBool::new(false),
@@ -329,7 +326,7 @@ impl FileTracker {
     pub fn read_dirty_files<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         iter_txn: &'a V,
-    ) -> Result<Vec<FileState>, FileError> {
+    ) -> Result<Vec<FileState>> {
         let mut file_states = Vec::new();
         {
             let mut cursor = iter_txn.open_ro_cursor(self.tables.dirty_files)?;
@@ -349,7 +346,7 @@ impl FileTracker {
         Ok(file_states)
     }
 
-    pub fn read_all_files(&self, iter_txn: &RoTransaction) -> Result<Vec<FileState>, FileError> {
+    pub fn read_all_files(&self, iter_txn: &RoTransaction) -> Result<Vec<FileState>> {
         let mut file_states = Vec::new();
         {
             let mut cursor = iter_txn.open_ro_cursor(self.tables.source_files)?;
@@ -372,7 +369,7 @@ impl FileTracker {
         &self,
         txn: &'a mut RwTransaction,
         path: &PathBuf,
-    ) -> Result<bool, FileError> {
+    ) -> Result<bool> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         Ok(txn.delete(self.tables.dirty_files, &key)?)
@@ -382,7 +379,7 @@ impl FileTracker {
         &self,
         txn: &'a V,
         path: &PathBuf,
-    ) -> Result<Option<FileState>, FileError> {
+    ) -> Result<Option<FileState>> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         match txn.get(self.tables.dirty_files, &key)? {
@@ -405,7 +402,7 @@ impl FileTracker {
         &self,
         txn: &'a V,
         path: &PathBuf,
-    ) -> Result<Option<FileState>, FileError> {
+    ) -> Result<Option<FileState>> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         match txn.get(self.tables.source_files, &key)? {
@@ -422,10 +419,10 @@ impl FileTracker {
         }
     }
 
-    pub fn get_ro_txn(&self) -> Result<RoTransaction, FileError> {
+    pub fn get_ro_txn(&self) -> Result<RoTransaction> {
         Ok(self.db.ro_txn()?)
     }
-    pub fn get_rw_txn(&self) -> Result<RwTransaction, FileError> {
+    pub fn get_rw_txn(&self) -> Result<RwTransaction> {
         Ok(self.db.rw_txn()?)
     }
 
@@ -441,7 +438,7 @@ impl FileTracker {
         self.is_running.load(Ordering::Acquire)
     }
 
-    pub fn run(&self, to_watch: Vec<&str>) -> Result<(), FileError> {
+    pub fn run(&self, to_watch: Vec<&str>) -> Result<()> {
         if self
             .is_running
             .compare_and_swap(false, true, Ordering::AcqRel)
@@ -498,6 +495,7 @@ impl FileTracker {
 
 #[cfg(test)]
 mod tests {
+    use capnp_db::Environment;
     use crossbeam_channel::{self as channel, Receiver};
     use file_tracker::{FileTracker, FileTrackerEvent};
     use std::{
@@ -516,9 +514,9 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let asset_dir = tempfile::tempdir().unwrap();
         {
-            let tracker = Arc::new(
-                FileTracker::new(Path::new(db_dir.path())).expect("failed to create tracker"),
-            );
+            let _ = fs::create_dir(db_dir.path());
+            let db = Arc::new(Environment::new(db_dir.path()).expect("failed to create db environment"));
+            let tracker = Arc::new(FileTracker::new(db).expect("failed to create tracker"));
             let (tx, rx) = channel::unbounded();
             tracker.register_listener(tx);
 
@@ -532,7 +530,7 @@ mod tests {
                         .expect("error running file tracker");
                 })
             };
-            while tracker.is_running() == false {
+            while !tracker.is_running() {
                 thread::sleep(Duration::from_millis(1));
             }
 
