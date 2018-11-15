@@ -64,7 +64,7 @@ fn main() {
             .expect("failed to create asset hub"),
     );
     let asset_source =
-        file_asset_source::FileAssetSource::new(tracker.clone(), hub.clone(), asset_db.clone())
+        file_asset_source::FileAssetSource::new(&tracker, &hub, &asset_db)
             .expect("failed to create asset hub");
     asset_source.run().expect("AssetHub.run() failed");
     // let service = asset_hub_service::AssetHubService::new(tracker.clone());
