@@ -54,10 +54,6 @@ fn main() {
     let _ = fs::create_dir(db_dir);
     let asset_db = Arc::new(Environment::new(db_dir).expect("failed to create asset db"));
     let tracker = Arc::new(FileTracker::new(asset_db.clone()).expect("failed to create tracker"));
-    let handle = {
-        let run_tracker = tracker.clone();
-        thread::spawn(move || run_tracker.clone().run(vec!["assets"]))
-    };
 
     let hub = Arc::new(
         asset_hub::AssetHub::new(asset_db.clone())
@@ -66,6 +62,10 @@ fn main() {
     let asset_source =
         file_asset_source::FileAssetSource::new(&tracker, &hub, &asset_db)
             .expect("failed to create asset hub");
+    let handle = {
+        let run_tracker = tracker.clone();
+        thread::spawn(move || run_tracker.clone().run(vec!["assets"]))
+    };
     asset_source.run().expect("AssetHub.run() failed");
     // let service = asset_hub_service::AssetHubService::new(tracker.clone());
     // service.run();

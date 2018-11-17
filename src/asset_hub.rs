@@ -1,6 +1,6 @@
 use amethyst::assets::AssetUUID;
 use asset_import::AssetMetadata;
-use capnp_db::{DBTransaction, Environment, RwTransaction, MessageReader};
+use capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction};
 use crossbeam_channel::{self as channel, Receiver};
 use data_capnp::{
     self, asset_metadata, import_artifact_key,
@@ -104,6 +104,17 @@ impl AssetHub {
         })
     }
 
+    pub fn get_metadata<'a, K, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        txn: &'a V,
+        id: &K,
+    ) -> Result<Option<MessageReader<'a, imported_metadata::Owned>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        Ok(txn.get::<imported_metadata::Owned, K>(self.tables.asset_metadata, id)?)
+    }
+
     pub fn update_asset<A>(
         &self,
         txn: &mut RwTransaction,
@@ -119,7 +130,9 @@ impl AssetHub {
         let mut maybe_id = None;
         {
             {
-                let existing_metadata: Option<MessageReader<imported_metadata::Owned>> = txn.get(self.tables.asset_metadata, &metadata.id)?;
+                let existing_metadata: Option<
+                    MessageReader<imported_metadata::Owned>,
+                > = txn.get(self.tables.asset_metadata, &metadata.id)?;
                 if let Some(existing_metadata) = existing_metadata {
                     let latest_artifact = existing_metadata.get()?.get_latest_artifact();
                     if let latest_artifact::Id(Ok(id)) = latest_artifact.which()? {
@@ -140,19 +153,37 @@ impl AssetHub {
                 asset
                     .as_ref()
                     .map(|_| sliced_hash)
-                    .or(maybe_id.as_ref().map(|a| a.as_slice())),
+                    .or_else(|| maybe_id.as_ref().map(|a| a.as_slice())),
             );
             println!("hash {:?}", hash_bytes);
             txn.put(self.tables.asset_metadata, &metadata.id, &imported_metadata)?;
         }
         // if let Some(asset) = asset {
-            // txn.put_bytes(self.tables.import_artifacts, &hash_bytes, &asset)?;
+        // txn.put_bytes(self.tables.import_artifacts, &hash_bytes, &asset)?;
         //     println!("put artifact {:?}", hash_bytes);
         // }
         Ok(())
     }
 
-    pub fn remove_asset(&self, txn: &mut RwTransaction, id: AssetUUID) -> Result<()> {
+    pub fn remove_asset<K>(&self, txn: &mut RwTransaction, id: &K) -> Result<()>
+    where
+        K: AsRef<[u8]>,
+    {
+        let mut artifact_hash = None;
+        {
+            let metadata = self.get_metadata(txn, id)?;
+            if let Some(metadata) = metadata {
+                if let latest_artifact::Id(Ok(id)) =
+                    metadata.get()?.get_latest_artifact().which()?
+                {
+                    artifact_hash = Some(Vec::from(id.get_hash()?))
+                }
+            }
+        };
+        if let Some(artifact_hash) = artifact_hash {
+            txn.delete(self.tables.import_artifacts, &artifact_hash)?;
+        }
+        txn.delete(self.tables.asset_metadata, id)?;
         Ok(())
     }
 }

@@ -421,13 +421,6 @@ impl FileTracker {
         }
     }
 
-    pub fn get_ro_txn(&self) -> Result<RoTransaction> {
-        Ok(self.db.ro_txn()?)
-    }
-    pub fn get_rw_txn(&self) -> Result<RwTransaction> {
-        Ok(self.db.rw_txn()?)
-    }
-
     pub fn register_listener(&self, sender: Sender<FileTrackerEvent>) {
         self.listener_tx.send(sender)
     }
@@ -478,6 +471,7 @@ impl FileTracker {
                     txn.commit()?;
                     println!("Commit");
                     for listener in &listeners {
+                    println!("Sent to listener");
                         select! {
                             send(listener, FileTrackerEvent::Updated) => {}
                             default => {}

@@ -344,7 +344,8 @@ impl FileAssetSource {
         }
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        Ok(txn.put(self.tables.path_to_metadata, &key, &value_builder)?)
+        txn.put(self.tables.path_to_metadata, &key, &value_builder)?;
+        Ok(())
     }
 
     fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -547,7 +548,20 @@ impl FileAssetSource {
                             ..
                         } = pair
                         {
-                            println!("deleting metadata");
+                            println!("deleting metadata for {}", path.to_string_lossy());
+                            let mut to_remove = Vec::new();
+                            {
+                                let metadata = self.get_metadata(txn, path)?;
+                                if let Some(ref metadata) = metadata {
+                                    for asset in metadata.get()?.get_assets()? {
+                                        to_remove.push(Vec::from(asset.get_id()?));
+                                    }
+                                }
+                            }
+                            for asset in to_remove {
+                                println!("remove asset {:?}", asset);
+                                self.hub.remove_asset(txn, &asset)?;
+                            }
                             self.delete_metadata(txn, path)?;
                         }
                     }
@@ -590,7 +604,7 @@ impl FileAssetSource {
     fn handle_update(&self, thread_pool: &mut Pool) -> Result<()> {
         let source_meta_pairs = {
             let mut source_meta_pairs: HashMap<PathBuf, AssetFilePair> = HashMap::new();
-            let txn = self.tracker.get_ro_txn()?;
+            let txn = self.db.ro_txn()?;
             let dirty_files = self.tracker.read_dirty_files(&txn)?;
             if !dirty_files.is_empty() {
                 for state in dirty_files.into_iter() {
@@ -648,63 +662,56 @@ impl FileAssetSource {
         );
         println!("Hashed {}", hashed_files.len());
 
-        {
-            let mut txn = self.tracker.get_rw_txn()?;
-            use std::cell::RefCell;
-            thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
+        let mut txn = self.db.rw_txn()?;
+        use std::cell::RefCell;
+        thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
 
-            thread_pool.scoped(|scope| -> Result<()> {
-                let (tx, rx) = channel::unbounded();
-                let to_process = hashed_files.len();
-                let mut import_iter = hashed_files.iter().map(|p| {
-                    let mut processed_pair = p.clone();
-                    let sender = tx.clone();
-                    scope.execute(move || {
-                        SCRATCH_STORE.with(|cell| {
-                            let mut local_store = cell.borrow_mut();
-                            if local_store.is_none() {
-                                *local_store = Some(Vec::new());
+        thread_pool.scoped(|scope| -> Result<()> {
+            let (tx, rx) = channel::unbounded();
+            let to_process = hashed_files.len();
+            let mut import_iter = hashed_files.iter().map(|p| {
+                let mut processed_pair = p.clone();
+                let sender = tx.clone();
+                scope.execute(move || {
+                    SCRATCH_STORE.with(|cell| {
+                        let mut local_store = cell.borrow_mut();
+                        if local_store.is_none() {
+                            *local_store = Some(Vec::new());
+                        }
+                        match self.db.ro_txn() {
+                            Err(e) => sender.send((processed_pair, Err(e))),
+                            Ok(read_txn) => {
+                                let result = self.process_pair_cases(
+                                    &read_txn,
+                                    &processed_pair,
+                                    local_store.as_mut().unwrap(),
+                                );
+                                sender.send((processed_pair, result));
                             }
-                            match self.db.ro_txn() {
-                                Err(e) => sender.send((processed_pair, Err(e))),
-                                Ok(read_txn) => {
-                                    let result = self.process_pair_cases(
-                                        &read_txn,
-                                        &mut processed_pair,
-                                        local_store.as_mut().unwrap(),
-                                    );
-                                    sender.send((processed_pair, result));
-                                }
-                            }
-                        });
+                        }
                     });
                 });
+            });
 
-                for _ in 0..20 {
-                    import_iter.next();
-                }
-                let mut num_processed = 0;
-                while num_processed < to_process {
-                    match rx.recv() {
-                        Some(import) => {
-                            self.process_import(&mut txn, &import.0, import.1)?;
-                            num_processed += 1;
-                            import_iter.next();
-                        }
-                        _ => {
-                            break;
-                        }
+            for _ in 0..20 {
+                import_iter.next();
+            }
+            let mut num_processed = 0;
+            while num_processed < to_process {
+                match rx.recv() {
+                    Some(import) => {
+                        self.process_import(&mut txn, &import.0, import.1)?;
+                        num_processed += 1;
+                        import_iter.next();
+                    }
+                    _ => {
+                        break;
                     }
                 }
-                Ok(())
-            })?;
-            // let successful_hashes = filter_and_unwrap_hashes(hashed_files);
-            // for file in deleted.iter() {
-            //     println!("deleted: {}", file.path.to_string_lossy());
-            //     self.tracker.delete_dirty_file_state(&mut txn, &file.path)?;
-            // }
-            txn.commit()?;
-        }
+            }
+            Ok(())
+        })?;
+        txn.commit()?;
         Ok(())
     }
 
