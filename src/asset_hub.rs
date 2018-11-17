@@ -1,6 +1,6 @@
 use amethyst::assets::AssetUUID;
 use asset_import::AssetMetadata;
-use capnp_db::{DBTransaction, Environment, RwTransaction};
+use capnp_db::{DBTransaction, Environment, RwTransaction, MessageReader};
 use crossbeam_channel::{self as channel, Receiver};
 use data_capnp::{
     self, asset_metadata, import_artifact_key,
@@ -119,11 +119,9 @@ impl AssetHub {
         let mut maybe_id = None;
         {
             {
-                let existing_metadata = txn.get(self.tables.asset_metadata, &metadata.id)?;
+                let existing_metadata: Option<MessageReader<imported_metadata::Owned>> = txn.get(self.tables.asset_metadata, &metadata.id)?;
                 if let Some(existing_metadata) = existing_metadata {
-                    let existing_metadata =
-                        existing_metadata.get_root::<imported_metadata::Reader>()?;
-                    let latest_artifact = existing_metadata.get_latest_artifact();
+                    let latest_artifact = existing_metadata.get()?.get_latest_artifact();
                     if let latest_artifact::Id(Ok(id)) = latest_artifact.which()? {
                         maybe_id = Some(Vec::from(id.get_hash()?));
                     }

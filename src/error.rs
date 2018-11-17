@@ -5,6 +5,8 @@ use std::io;
 use lmdb;
 use capnp;
 use std::error::{Error as StdError};
+use amethyst::assets;
+use bincode;
 
 #[derive(Debug)]
 pub enum Error {
@@ -14,6 +16,8 @@ pub enum Error {
     LMDB(lmdb::Error),
     Capnp(capnp::Error),
     NotInSchema(capnp::NotInSchema),
+    AssetError(assets::Error),
+    BincodeError(bincode::ErrorKind),
     RecvError,
     Exit,
 }
@@ -29,6 +33,8 @@ impl std::error::Error for Error {
             Error::LMDB(ref e) => e.description(),
             Error::Capnp(ref e) => e.description(),
             Error::NotInSchema(ref e) => e.description(),
+            Error::AssetError(ref e) => e.description(),
+            Error::BincodeError(ref e) => e.description(),
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
         }
@@ -42,6 +48,8 @@ impl std::error::Error for Error {
             Error::LMDB(ref e) => Some(e),
             Error::Capnp(ref e) => Some(e),
             Error::NotInSchema(ref e) => Some(e),
+            Error::AssetError(ref e) => Some(e),
+            Error::BincodeError(ref e) => Some(e),
             Error::RecvError => None,
             Error::Exit => None,
         }
@@ -56,6 +64,8 @@ impl fmt::Display for Error {
             Error::LMDB(ref e) => e.fmt(f),
             Error::Capnp(ref e) => e.fmt(f),
             Error::NotInSchema(ref e) => e.fmt(f),
+            Error::AssetError(ref e) => e.fmt(f),
+            Error::BincodeError(ref e) => e.fmt(f),
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
         }
@@ -84,5 +94,15 @@ impl From<capnp::Error> for Error {
 impl From<capnp::NotInSchema> for Error {
     fn from(err: capnp::NotInSchema) -> Error {
         Error::NotInSchema(err)
+    }
+}
+impl From<assets::Error> for Error {
+    fn from(err: assets::Error) -> Error {
+        Error::AssetError(err)
+    }
+}
+impl From<Box<bincode::ErrorKind>> for Error {
+    fn from(err: Box<bincode::ErrorKind>) -> Error {
+        Error::BincodeError(*err)
     }
 }

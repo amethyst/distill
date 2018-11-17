@@ -1,9 +1,12 @@
 #![allow(dead_code)]
-use error::{Result, Error};
-use std::result::Result as StdResult;
 use capnp;
+use error::{Error, Result};
 use lmdb::{self, Cursor, Transaction};
 use std::path::Path;
+use std::result::Result as StdResult;
+
+pub type MessageReader<'a, T> =
+    capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
 pub struct Environment {
     env: lmdb::Environment,
@@ -56,18 +59,18 @@ impl<'txn> Iterator for Iter<'txn> {
     }
 }
 
-pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
+pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
     fn txn(&'a self) -> &'a T;
 
     fn open_ro_cursor(&'a self, db: lmdb::Database) -> Result<lmdb::RoCursor<'a>> {
         Ok(self.txn().open_ro_cursor(db)?)
     }
 
-    fn get<K>(
+    fn get<V: for<'b> capnp::traits::Owned<'b>, K>(
         &'a self,
         db: lmdb::Database,
         key: &K,
-    ) -> Result<Option<capnp::message::Reader<capnp::serialize::SliceSegments>>>
+    ) -> Result<Option<MessageReader<'a, V>>>
     where
         K: AsRef<[u8]>,
     {
@@ -82,15 +85,11 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
             let msg = capnp::serialize::read_message_from_words(
                 slice,
                 capnp::message::ReaderOptions::default(),
-            )?;
+            )?.into_typed::<V>();
             Ok(Some(msg))
         }
     }
-    fn get_as_bytes<K>(
-        &'a self,
-        db: lmdb::Database,
-        key: &K,
-    ) -> Result<Option<&[u8]>>
+    fn get_as_bytes<K>(&'a self, db: lmdb::Database, key: &K) -> Result<Option<&[u8]>>
     where
         K: AsRef<[u8]>,
     {
@@ -101,11 +100,11 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
             Ok(Some(get_result.unwrap()))
         }
     }
-    fn get_capnp<K: capnp::message::Allocator>(
+    fn get_capnp<K: capnp::message::Allocator, V: for<'b> capnp::traits::Owned<'b>>(
         &'a self,
         db: lmdb::Database,
         key: &capnp::message::Builder<K>,
-    ) -> Result<Option<capnp::message::Reader<capnp::serialize::SliceSegments>>> {
+    ) -> Result<Option<MessageReader<'a, V>>> {
         let key_vec = capnp::serialize::write_message_to_words(key);
         let get_result = self.txn().get(db, &capnp::Word::words_to_bytes(&key_vec));
         if get_result.is_err() {
@@ -118,7 +117,7 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a> : Sized {
             let msg = capnp::serialize::read_message_from_words(
                 slice,
                 capnp::message::ReaderOptions::default(),
-            )?;
+            )?.into_typed::<V>();
             Ok(Some(msg))
         }
     }
@@ -174,22 +173,12 @@ impl<'a> RwTransaction<'a> {
         self.dirty = true;
         Ok(())
     }
-    pub fn put_bytes<K, V>(
-        &mut self,
-        db: lmdb::Database,
-        key: &K,
-        value: &V,
-    ) -> Result<()>
+    pub fn put_bytes<K, V>(&mut self, db: lmdb::Database, key: &K, value: &V) -> Result<()>
     where
         K: AsRef<[u8]>,
         V: AsRef<[u8]>,
-     {
-        self.txn.put(
-            db,
-            key,
-            value,
-            lmdb::WriteFlags::default(),
-        )?;
+    {
+        self.txn.put(db, key, value, lmdb::WriteFlags::default())?;
         self.dirty = true;
         Ok(())
     }
@@ -202,8 +191,8 @@ impl<'a> RwTransaction<'a> {
             Err(err) => match err {
                 lmdb::Error::NotFound => Ok(false),
                 _ => Err(Error::LMDB(err)),
-            }
-            Ok(_) => Ok(true)
+            },
+            Ok(_) => Ok(true),
         }
     }
 
@@ -236,9 +225,9 @@ impl<'a> RwTransaction<'a> {
 
 impl Environment {
     pub fn new(path: &Path) -> Result<Environment> {
-            #[cfg(target_pointer_width = "32")]
+        #[cfg(target_pointer_width = "32")]
         let map_size = 1 << 31;
-            #[cfg(target_pointer_width = "64")]
+        #[cfg(target_pointer_width = "64")]
         let map_size = 1 << 42;
         let env = lmdb::Environment::new()
             .set_max_dbs(64)
@@ -257,10 +246,7 @@ impl Environment {
 
     pub fn rw_txn(&self) -> Result<RwTransaction> {
         let txn = self.env.begin_rw_txn()?;
-        Ok(RwTransaction {
-            txn,
-            dirty: false,
-        })
+        Ok(RwTransaction { txn, dirty: false })
     }
     pub fn ro_txn(&self) -> Result<RoTransaction> {
         Ok(self.env.begin_ro_txn()?)

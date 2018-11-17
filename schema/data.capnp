@@ -35,22 +35,13 @@ struct SourceFileInfo {
   length @2 :UInt64;
 }
 
-# Based on the set of candidate files and updates provided by FileTracker,
-# the hash is determined for all changed files.
-struct FileHashInfo {
-  hash @0 :Data;
-  lastModified @1 :UInt64;
-  length @2 :UInt64;
+struct SourceMetadata {
+  assets @0 :List(AssetId);
+  importerVersion @1 :UInt32;
+  importerOptions @2 :Data;
+  importerState @3 :Data;
 }
 
-struct SourcePairInfo {
-  source @0 :FileHashInfo;
-  meta @1 :FileHashInfo;
-  importError @2 :ImportError;
-  latestImportArtifactKey @3 :ImportArtifactKey;
-}
-
-# I
 struct ImportError {
   text @0 :Text;
 }

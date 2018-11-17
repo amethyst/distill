@@ -2,7 +2,7 @@ extern crate capnp;
 extern crate lmdb;
 extern crate rayon;
 
-use capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction, RwTransaction};
+use capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction, RwTransaction, MessageReader};
 use crossbeam_channel::{self as channel, Receiver, Sender};
 use data_capnp::{self, dirty_file_info, source_file_info, FileType};
 use error::Result;
@@ -13,7 +13,7 @@ use std::{
     fs,
     iter::FromIterator,
     ops::IndexMut,
-    path::{PathBuf},
+    path::PathBuf,
     str,
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
@@ -121,10 +121,11 @@ where
     K: AsRef<[u8]>,
 {
     let dirty_value = {
-        txn.get(tables.source_files, key)?.map(|v| {
-            let info = v.get_root::<source_file_info::Reader>().unwrap();
-            build_dirty_file_info(data_capnp::FileState::Deleted, info)
-        })
+        txn.get::<source_file_info::Owned, K>(tables.source_files, key)?
+            .map(|v| {
+                let info = v.get().expect("failed to get source_file_info");
+                build_dirty_file_info(data_capnp::FileState::Deleted, info)
+            })
     };
     if dirty_value.is_some() {
         txn.put(tables.dirty_files, key, &dirty_value.unwrap())?;
@@ -144,9 +145,10 @@ fn handle_file_event(
             let key = path_str.as_bytes();
             let mut changed = true;
             {
-                let maybe_msg = txn.get(tables.source_files, &key)?;
+                let maybe_msg: Option<MessageReader<source_file_info::Owned>> =
+                    txn.get(tables.source_files, &key)?;
                 if let Some(msg) = maybe_msg {
-                    let info = msg.get_root::<source_file_info::Reader>()?;
+                    let info = msg.get()?;
                     if info.get_length() == metadata.length
                         && info.get_last_modified() == metadata.last_modified
                         && info.get_type()? == db_file_type(metadata.file_type)
@@ -382,10 +384,10 @@ impl FileTracker {
     ) -> Result<Option<FileState>> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        match txn.get(self.tables.dirty_files, &key)? {
+        match txn.get::<dirty_file_info::Owned, &[u8]>(self.tables.dirty_files, &key)? {
             Some(value) => {
                 let info = value
-                    .get_root::<dirty_file_info::Reader>()?
+                    .get()?
                     .get_source_info()?;
                 Ok(Some(FileState {
                     path: path.clone(),
@@ -405,9 +407,9 @@ impl FileTracker {
     ) -> Result<Option<FileState>> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        match txn.get(self.tables.source_files, &key)? {
+        match txn.get::<source_file_info::Owned, &[u8]>(self.tables.source_files, &key)? {
             Some(value) => {
-                let info = value.get_root::<source_file_info::Reader>()?;
+                let info = value.get()?;
                 Ok(Some(FileState {
                     path: path.clone(),
                     state: data_capnp::FileState::Exists,
@@ -515,7 +517,8 @@ mod tests {
         let asset_dir = tempfile::tempdir().unwrap();
         {
             let _ = fs::create_dir(db_dir.path());
-            let db = Arc::new(Environment::new(db_dir.path()).expect("failed to create db environment"));
+            let db =
+                Arc::new(Environment::new(db_dir.path()).expect("failed to create db environment"));
             let tracker = Arc::new(FileTracker::new(db).expect("failed to create tracker"));
             let (tx, rx) = channel::unbounded();
             tracker.register_listener(tx);
