@@ -1,3 +1,4 @@
+#![feature(int_to_from_bytes)]
 #![allow(unknown_lints)]
 #![warn(clippy::all)]
 extern crate amethyst;
@@ -66,7 +67,7 @@ fn main() {
         let run_tracker = tracker.clone();
         thread::spawn(move || run_tracker.clone().run(vec!["assets"]))
     };
-    asset_source.run().expect("AssetHub.run() failed");
+    asset_source.run().expect("FileAssetSource.run() failed");
     // let service = asset_hub_service::AssetHubService::new(tracker.clone());
     // service.run();
     // loop {

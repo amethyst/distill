@@ -176,7 +176,10 @@ impl AssetHub {
                 if let latest_artifact::Id(Ok(id)) =
                     metadata.get()?.get_latest_artifact().which()?
                 {
-                    artifact_hash = Some(Vec::from(id.get_hash()?))
+                    let hash = id.get_hash()?;
+                    if !hash.is_empty() {
+                        artifact_hash = Some(Vec::from(hash));
+                    }
                 }
             }
         };

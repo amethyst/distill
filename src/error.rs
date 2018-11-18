@@ -7,6 +7,7 @@ use capnp;
 use std::error::{Error as StdError};
 use amethyst::assets;
 use bincode;
+use ron;
 
 #[derive(Debug)]
 pub enum Error {
@@ -18,6 +19,7 @@ pub enum Error {
     NotInSchema(capnp::NotInSchema),
     AssetError(assets::Error),
     BincodeError(bincode::ErrorKind),
+    RonError(ron::ser::Error),
     RecvError,
     Exit,
 }
@@ -35,6 +37,7 @@ impl std::error::Error for Error {
             Error::NotInSchema(ref e) => e.description(),
             Error::AssetError(ref e) => e.description(),
             Error::BincodeError(ref e) => e.description(),
+            Error::RonError(ref e) => e.description(),
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
         }
@@ -50,6 +53,7 @@ impl std::error::Error for Error {
             Error::NotInSchema(ref e) => Some(e),
             Error::AssetError(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
+            Error::RonError(ref e) => Some(e),
             Error::RecvError => None,
             Error::Exit => None,
         }
@@ -66,6 +70,7 @@ impl fmt::Display for Error {
             Error::NotInSchema(ref e) => e.fmt(f),
             Error::AssetError(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
+            Error::RonError(ref e) => e.fmt(f),
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
         }
@@ -104,5 +109,10 @@ impl From<assets::Error> for Error {
 impl From<Box<bincode::ErrorKind>> for Error {
     fn from(err: Box<bincode::ErrorKind>) -> Error {
         Error::BincodeError(*err)
+    }
+}
+impl From<ron::ser::Error> for Error {
+    fn from(err: ron::ser::Error) -> Error {
+        Error::RonError(err)
     }
 }

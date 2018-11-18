@@ -1,7 +1,8 @@
-use amethyst::assets::{Importer, ImporterValue, SimpleImporter, AssetUUID};
-use serde::Deserialize;
-use std::{io::Read};
+use amethyst::assets::{AssetUUID, Importer, ImporterValue, SimpleImporter};
 use ron;
+use bincode;
+use serde::Deserialize;
+use std::io::Read;
 
 pub use amethyst::assets::SerdeObj;
 
@@ -26,7 +27,6 @@ pub struct SourceMetadata<Options, State> {
     pub assets: Vec<AssetMetadata>,
 }
 
-
 pub trait BoxedImporter {
     fn import_boxed(
         &self,
@@ -37,7 +37,12 @@ pub trait BoxedImporter {
     fn default_options(&self) -> Box<SerdeObj>;
     fn default_state(&self) -> Box<SerdeObj>;
     fn version(&self) -> u32;
-    fn deserialize_metadata<'a>(&self, bytes: &'a [u8]) -> SourceMetadata<Box<SerdeObj>, Box<SerdeObj>>;
+    fn deserialize_metadata<'a>(
+        &self,
+        bytes: &'a [u8],
+    ) -> SourceMetadata<Box<SerdeObj>, Box<SerdeObj>>;
+    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Box<SerdeObj>;
+    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Box<SerdeObj>;
 }
 pub struct BoxedImporterValue {
     pub value: ImporterValue,
@@ -46,11 +51,11 @@ pub struct BoxedImporterValue {
 }
 
 impl<S, O, T> BoxedImporter for T
-where O: SerdeObj + Default + Send + Sync + Clone + for<'a> Deserialize<'a>,
-S: SerdeObj + Default + Send + Sync + for<'a> Deserialize<'a>,
-T: Importer<State = S, Options = O>
-
- {
+where
+    O: SerdeObj + Default + Send + Sync + Clone + for<'a> Deserialize<'a>,
+    S: SerdeObj + Default + Send + Sync + for<'a> Deserialize<'a>,
+    T: Importer<State = S, Options = O>,
+{
     fn import_boxed(
         &self,
         source: &mut Read,
@@ -75,8 +80,10 @@ T: Importer<State = S, Options = O>
     fn version(&self) -> u32 {
         self.version()
     }
-    fn deserialize_metadata<'a>(&self, bytes: &'a [u8]) -> SourceMetadata<Box<SerdeObj>, Box<SerdeObj>>
-     {
+    fn deserialize_metadata<'a>(
+        &self,
+        bytes: &'a [u8],
+    ) -> SourceMetadata<Box<SerdeObj>, Box<SerdeObj>> {
         let metadata: SourceMetadata<O, S> = ron::de::from_bytes(&bytes).unwrap();
         SourceMetadata {
             version: metadata.version,
@@ -87,37 +94,43 @@ T: Importer<State = S, Options = O>
             assets: metadata.assets.clone(),
         }
     }
+    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Box<SerdeObj> {
+        Box::new(bincode::deserialize::<O>(&bytes).unwrap())
+    }
+    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Box<SerdeObj> {
+        Box::new(bincode::deserialize::<S>(&bytes).unwrap())
+    }
 }
 
 pub fn format_from_ext(ext: &str) -> Option<Box<BoxedImporter>> {
     match ext {
-        "jpg" => Some(Box::new(
-            SimpleImporter::from(::amethyst::renderer::JpgFormat {}),
-        )),
-        "png" => Some(Box::new(
-            SimpleImporter::from(::amethyst::renderer::PngFormat {}),
-        )),
-        "tga" => Some(Box::new(
-            SimpleImporter::from(::amethyst::renderer::TgaFormat {}),
-        )),
-        "bmp" => Some(Box::new(
-            SimpleImporter::from(::amethyst::renderer::BmpFormat {}),
-        )),
-        "obj" => Some(Box::new(
-            SimpleImporter::from(::amethyst::renderer::ObjFormat {}),
-        )),
-        "wav" => Some(Box::new(
-            SimpleImporter::from(::amethyst::audio::WavFormat {}),
-        )),
-        "ogg" => Some(Box::new(
-            SimpleImporter::from(::amethyst::audio::OggFormat {}),
-        )),
-        "flac" => Some(Box::new(
-            SimpleImporter::from(::amethyst::audio::FlacFormat {}),
-        )),
-        "mp3" => Some(Box::new(
-            SimpleImporter::from(::amethyst::audio::Mp3Format {}),
-        )),
+        "jpg" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::renderer::JpgFormat {},
+        ))),
+        "png" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::renderer::PngFormat {},
+        ))),
+        "tga" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::renderer::TgaFormat {},
+        ))),
+        "bmp" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::renderer::BmpFormat {},
+        ))),
+        "obj" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::renderer::ObjFormat {},
+        ))),
+        "wav" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::audio::WavFormat {},
+        ))),
+        "ogg" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::audio::OggFormat {},
+        ))),
+        "flac" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::audio::FlacFormat {},
+        ))),
+        "mp3" => Some(Box::new(SimpleImporter::from(
+            ::amethyst::audio::Mp3Format {},
+        ))),
         _ => None,
     }
 }

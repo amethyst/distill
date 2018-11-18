@@ -65,6 +65,25 @@ struct ImportResult {
     assets: Vec<ImportedAsset>,
 }
 
+#[derive(Debug)]
+struct SavedImportMetadata<'a> {
+    importer_version: u32,
+    options_type: u128,
+    options: &'a [u8],
+    state_type: u128,
+    state: &'a [u8],
+}
+
+fn make_array<A, T>(slice: &[T]) -> A
+where
+    A: Sized + Default + AsMut<[T]>,
+    T: Copy,
+{
+    let mut a = Default::default();
+    <A as AsMut<[T]>>::as_mut(&mut a).copy_from_slice(slice);
+    a
+}
+
 fn to_meta_path(p: &PathBuf) -> PathBuf {
     p.with_file_name(OsStr::new(
         &(p.file_name().unwrap().to_str().unwrap().to_owned() + ".meta"),
@@ -174,10 +193,10 @@ fn import_source(
     scratch_buf: &mut Vec<u8>,
 ) -> Result<ImportResult> {
     let mut f = fs::File::open(&path)?;
-    let mut imported = importer.import_boxed(&mut f, options, state)?;
+    let imported = importer.import_boxed(&mut f, options, state)?;
     let options = imported.options;
     let state = imported.state;
-    let mut imported = imported.value;
+    let imported = imported.value;
     let mut imported_assets = Vec::new();
     for mut asset in imported.assets {
         asset.search_tags.push((
@@ -243,12 +262,13 @@ fn import_pair(
     meta: Option<&FileState>,
     meta_hash: Option<u64>,
     scratch_buf: &mut Vec<u8>,
+    saved_metadata: Option<SavedImportMetadata>,
 ) -> Result<Option<ImportResult>> {
     let format = format_from_ext(source.path.extension().unwrap().to_str().unwrap());
     match format {
         Some(format) => {
-            let options;
-            let state;
+            let mut options;
+            let mut state;
             if let Some(_meta) = meta {
                 let meta_path = to_meta_path(&source.path);
                 let mut f = fs::File::open(&meta_path)?;
@@ -283,6 +303,14 @@ fn import_pair(
             } else {
                 options = format.default_options();
                 state = format.default_state();
+                if let Some(saved_metadata) = saved_metadata {
+                    if saved_metadata.options_type == options.uuid() {
+                        options = format.deserialize_options(saved_metadata.options);
+                    }
+                    if saved_metadata.state_type == state.uuid() {
+                        state = format.deserialize_state(saved_metadata.state);
+                    }
+                }
             }
             Ok(Some(import_source(
                 &source.path,
@@ -330,12 +358,15 @@ impl FileAssetSource {
             let mut value = value_builder.init_root::<source_metadata::Builder>();
             {
                 value.set_importer_version(metadata.importer_version);
+                value.set_importer_state_type(&metadata.importer_state.uuid().to_le_bytes());
                 let mut state_buf = Vec::new();
                 bincode::serialize_into(&mut state_buf, &metadata.importer_state)?;
                 value.set_importer_state(&state_buf);
+                value.set_importer_options_type(&metadata.importer_options.uuid().to_le_bytes());
                 let mut options_buf = Vec::new();
                 bincode::serialize_into(&mut options_buf, &metadata.importer_options)?;
                 value.set_importer_options(&options_buf);
+                println!("set options {:?}", options_buf);
             }
             let mut assets = value.reborrow().init_assets(metadata.assets.len() as u32);
             for (idx, asset) in metadata.assets.iter().enumerate() {
@@ -372,8 +403,8 @@ impl FileAssetSource {
     ) -> Result<Option<ImportResult>> {
         let original_pair = pair.clone();
         let mut pair = pair.clone();
-        // When source or meta gets deleted, the FileState is set with a `state` of `Deleted`.
-        // For the following match, we don't want to care about the distinction between this and simply missing.
+        // When source or meta gets deleted, the FileState has a `state` of `Deleted`.
+        // For the following pattern matching, we don't want to care about the distinction between this and absence of a file.
         if let HashedAssetFilePair {
             source:
                 Some(FileState {
@@ -396,6 +427,7 @@ impl FileAssetSource {
         {
             pair.meta = None;
         }
+
         match pair {
             // Source file has been deleted
             HashedAssetFilePair {
@@ -431,6 +463,7 @@ impl FileAssetSource {
                     Some(&meta),
                     Some(meta_hash),
                     scratch_buf,
+                    None,
                 )
             }
             // Source file with no metadata
@@ -445,13 +478,26 @@ impl FileAssetSource {
                 let metadata = self.get_metadata(txn, &source.path)?;
                 match metadata {
                     Some(metadata) => {
-                        println!("got metadata {}", metadata.get()?.get_importer_version());
+                        let metadata = metadata.get()?;
+                        let saved_metadata = Some(SavedImportMetadata {
+                            importer_version: metadata.get_importer_version(),
+                            options_type: u128::from_le_bytes(make_array(
+                                metadata.get_importer_options_type()?,
+                            )),
+                            options: metadata.get_importer_options()?,
+                            state_type: u128::from_le_bytes(make_array(
+                                metadata.get_importer_state_type()?,
+                            )),
+                            state: metadata.get_importer_state()?,
+                        });
+                        println!("got metadata {:?}", saved_metadata);
+                        import_pair(&source, hash, None, None, scratch_buf, saved_metadata)
                     }
                     None => {
                         println!("no metadata for {}", source.path.to_string_lossy());
+                        import_pair(&source, hash, None, None, scratch_buf, None)
                     }
                 }
-                import_pair(&source, hash, None, None, scratch_buf)
             }
             HashedAssetFilePair {
                 meta: Some(_meta),
@@ -515,7 +561,59 @@ impl FileAssetSource {
         }
     }
 
-    fn process_import(
+    fn process_import_result(
+        &self,
+        txn: &mut RwTransaction,
+        path: &PathBuf,
+        result: Option<ImportResult>,
+    ) -> Result<()> {
+        if let Some(imported) = result {
+            println!("imported {}", path.to_string_lossy());
+            let mut to_remove = Vec::new();;
+            if let Some(metadata) = self.get_metadata(txn, path)? {
+                for asset in metadata.get()?.get_assets()? {
+                    let id = asset.get_id()?;
+                    println!("asset {:?}", asset.get_id()?);
+                    if imported.assets.iter().all(|a| a.metadata.id != id) {
+                        to_remove.push(Vec::from(id));
+                    }
+                }
+            }
+            for asset in to_remove {
+                println!("removing deleted asset {:?}", asset);
+                self.hub.remove_asset(txn, &asset)?;
+            }
+            self.put_metadata(txn, path, &imported.metadata)?;
+            for asset in imported.assets {
+                println!("updating asset {:?}", asset.metadata.id);
+                self.hub.update_asset::<&Vec<u8>>(
+                    txn,
+                    asset.import_hash,
+                    &asset.metadata,
+                    asset.asset.as_ref(),
+                )?;
+            }
+        } else {
+            println!("deleting metadata for {}", path.to_string_lossy());
+            let mut to_remove = Vec::new();
+            {
+                let metadata = self.get_metadata(txn, path)?;
+                if let Some(ref metadata) = metadata {
+                    for asset in metadata.get()?.get_assets()? {
+                        to_remove.push(Vec::from(asset.get_id()?));
+                    }
+                }
+            }
+            for asset in to_remove {
+                println!("remove asset {:?}", asset);
+                self.hub.remove_asset(txn, &asset)?;
+            }
+            self.delete_metadata(txn, path)?;
+        }
+        Ok(())
+    }
+
+    fn process_imported_pair(
         &self,
         txn: &mut RwTransaction,
         pair: &HashedAssetFilePair,
@@ -523,49 +621,13 @@ impl FileAssetSource {
     ) -> Result<()> {
         match imports {
             Ok(import_result) => {
-                match import_result {
-                    Some(imported) => {
-                        if let HashedAssetFilePair {
-                            source: Some(FileState { ref path, .. }),
-                            ..
-                        } = pair
-                        {
-                            println!("imported {}", path.to_string_lossy());
-                            self.put_metadata(txn, path, &imported.metadata)?;
-                        }
-                        for asset in imported.assets {
-                            self.hub.update_asset::<&Vec<u8>>(
-                                txn,
-                                asset.import_hash,
-                                &asset.metadata,
-                                asset.asset.as_ref(),
-                            )?;
-                        }
-                    }
-                    None => {
-                        if let HashedAssetFilePair {
-                            source: Some(FileState { ref path, .. }),
-                            ..
-                        } = pair
-                        {
-                            println!("deleting metadata for {}", path.to_string_lossy());
-                            let mut to_remove = Vec::new();
-                            {
-                                let metadata = self.get_metadata(txn, path)?;
-                                if let Some(ref metadata) = metadata {
-                                    for asset in metadata.get()?.get_assets()? {
-                                        to_remove.push(Vec::from(asset.get_id()?));
-                                    }
-                                }
-                            }
-                            for asset in to_remove {
-                                println!("remove asset {:?}", asset);
-                                self.hub.remove_asset(txn, &asset)?;
-                            }
-                            self.delete_metadata(txn, path)?;
-                        }
-                    }
-                }
+                let path = &pair
+                    .source
+                    .as_ref()
+                    .or_else(|| pair.meta.as_ref())
+                    .expect("a successful import must have a source or meta FileState")
+                    .path;
+                self.process_import_result(txn, path, import_result)?;
                 let mut skip_ack_dirty = false;
                 {
                     let check_file_state = |s: &Option<&FileState>| -> Result<bool> {
@@ -670,7 +732,7 @@ impl FileAssetSource {
             let (tx, rx) = channel::unbounded();
             let to_process = hashed_files.len();
             let mut import_iter = hashed_files.iter().map(|p| {
-                let mut processed_pair = p.clone();
+                let processed_pair = p.clone();
                 let sender = tx.clone();
                 scope.execute(move || {
                     SCRATCH_STORE.with(|cell| {
@@ -700,7 +762,7 @@ impl FileAssetSource {
             while num_processed < to_process {
                 match rx.recv() {
                     Some(import) => {
-                        self.process_import(&mut txn, &import.0, import.1)?;
+                        self.process_imported_pair(&mut txn, &import.0, import.1)?;
                         num_processed += 1;
                         import_iter.next();
                     }
