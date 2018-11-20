@@ -752,9 +752,11 @@ impl FileAssetSource {
                 });
             });
 
-            for _ in 0..20 {
+            let num_queued_imports = num_cpus::get()*2;
+            for _ in 0..num_queued_imports {
                 import_iter.next();
             }
+
             let mut num_processed = 0;
             while num_processed < to_process {
                 match rx.recv() {
