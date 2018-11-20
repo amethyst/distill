@@ -1,8 +1,8 @@
-use capnp::{self, capability::Promise};
-use capnp_db::{DBTransaction, RoTransaction};
-use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
-use data_capnp::dirty_file_info;
 use asset_hub::AssetHub;
+use capnp::{self, capability::Promise};
+use capnp_db::{DBTransaction, Environment, RoTransaction };
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
+use data_capnp::{imported_metadata, dirty_file_info};
 use futures::{Future, Stream};
 use owning_ref::OwningHandle;
 use service_capnp::{asset_hub, asset_hub::snapshot};
@@ -12,16 +12,21 @@ use std::sync::Arc;
 use tokio_core::reactor;
 use tokio_io::AsyncRead;
 
-pub struct FileService {
-    tracker: Arc<AssetHub>,
+struct ServiceContext {
+    hub: Arc<AssetHub>,
+    db: Arc<Environment>,
+}
+
+pub struct AssetHubService {
+    ctx: Arc<ServiceContext>,
 }
 
 struct AssetHubSnapshotImpl<'a> {
-    txn: OwningHandle<Arc<AssetHub>, Box<RoTransaction<'a>>>,
+    txn: OwningHandle<Arc<ServiceContext>, Box<RoTransaction<'a>>>,
 }
 
 struct AssetHubImpl {
-    tracker: Arc<AssetHub>,
+    ctx: Arc<ServiceContext>,
 }
 
 impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
@@ -30,6 +35,17 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         _params: asset_hub::snapshot::GetAllAssetsParams,
         mut results: asset_hub::snapshot::GetAllAssetsResults,
     ) -> Promise<(), capnp::Error> {
+        let ctx = self.txn.as_owner();
+        let txn = &*self.txn;
+        let mut metadatas = Vec::new();
+        for (_, value) in ctx.hub.get_metadata_iter(txn).unwrap() {
+            let value = value.unwrap();
+            let metadata = value.into_typed::<imported_metadata::Owned>();
+            metadatas.push(metadata);
+        }
+        for metadata in metadatas {
+            println!("id {:?}", metadata.get().unwrap().get_metadata().unwrap().get_id().unwrap().get_id().unwrap());
+        }
         // let all_files_vec = self
         //     .txn
         //     .as_owner()
@@ -61,22 +77,24 @@ impl asset_hub::Server for AssetHubImpl {
         _params: asset_hub::GetSnapshotParams,
         mut results: asset_hub::GetSnapshotResults,
     ) -> Promise<(), capnp::Error> {
-        // let arc_ref = Arc::clone(&self.tracker);
-        // let snapshot = AssetHubSnapshotImpl {
-        //     txn: OwningHandle::new_with_fn(arc_ref, |t| unsafe {
-        //         Box::new((*t).get_txn().unwrap())
-        //     }),
-        // };
-        // results.get().set_snapshot(
-        //     asset_hub::snapshot::ToClient::new(snapshot).from_server::<::capnp_rpc::Server>(),
-        // );
+        let ctx = Arc::clone(&self.ctx);
+        let snapshot = AssetHubSnapshotImpl {
+            txn: OwningHandle::new_with_fn(ctx, |t| unsafe {
+                Box::new((*t).db.ro_txn().unwrap())
+            }),
+        };
+        results.get().set_snapshot(
+            asset_hub::snapshot::ToClient::new(snapshot).from_server::<::capnp_rpc::Server>(),
+        );
         Promise::ok(())
     }
 }
 
-impl FileService {
-    pub fn new(tracker: Arc<AssetHub>) -> FileService {
-        FileService { tracker }
+impl AssetHubService {
+    pub fn new(db: Arc<Environment>, hub: Arc<AssetHub>) -> AssetHubService {
+        AssetHubService {
+            ctx: Arc::new(ServiceContext { hub, db }),
+        }
     }
     pub fn run(&self) -> Result<(), Error> {
         use std::net::ToSocketAddrs;
@@ -87,15 +105,14 @@ impl FileService {
         let addr = "localhost:9999"
             .to_socket_addrs()?
             .next()
-            .map_or(Err(Error::InvalidAddress), |a| Ok(a))?;
+            .map_or(Err(Error::InvalidAddress), Ok)?;
         let socket = ::tokio_core::net::TcpListener::bind(&addr, &handle)?;
 
         let service_impl = AssetHubImpl {
-            tracker: self.tracker.clone(),
+            ctx: self.ctx.clone(),
         };
 
-        let publisher =
-            asset_hub::ToClient::new(service_impl).from_server::<::capnp_rpc::Server>();
+        let publisher = asset_hub::ToClient::new(service_impl).from_server::<::capnp_rpc::Server>();
 
         let handle1 = handle.clone();
         let done = socket.incoming().for_each(move |(socket, _addr)| {

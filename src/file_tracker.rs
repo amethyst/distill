@@ -325,6 +325,14 @@ impl FileTracker {
         })
     }
 
+    pub fn get_rw_txn<'a>(&'a self) -> Result<RwTransaction<'a>> {
+        Ok(self.db.rw_txn()?)
+    }
+
+    pub fn get_ro_txn<'a>(&'a self) -> Result<RoTransaction<'a>> {
+        Ok(self.db.ro_txn()?)
+    }
+
     pub fn read_dirty_files<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         iter_txn: &'a V,
@@ -646,43 +654,43 @@ mod tests {
     #[test]
     fn test_create_file() {
         with_tracker(|t, rx, asset_dir| {
-            add_test_file(asset_dir, "Amplifier.obj");
+            add_test_file(asset_dir, "test.txt");
             expect_event(&rx);
             expect_no_event(&rx);
-            expect_file_state(&t, asset_dir, "Amplifier.obj");
-            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_file_state(&t, asset_dir, "test.txt");
+            expect_dirty_file_state(&t, asset_dir, "test.txt");
         });
     }
 
     #[test]
     fn test_modify_file() {
         with_tracker(|t, rx, asset_dir| {
-            add_test_file(asset_dir, "Amplifier.obj");
+            add_test_file(asset_dir, "test.txt");
             expect_event(&rx);
-            expect_file_state(&t, asset_dir, "Amplifier.obj");
-            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_file_state(&t, asset_dir, "test.txt");
+            expect_dirty_file_state(&t, asset_dir, "test.txt");
             clear_dirty_file_state(&t);
-            truncate_test_file(asset_dir, "Amplifier.obj");
+            truncate_test_file(asset_dir, "test.txt");
             expect_event(&rx);
             expect_no_event(&rx);
-            expect_file_state(&t, asset_dir, "Amplifier.obj");
-            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_file_state(&t, asset_dir, "test.txt");
+            expect_dirty_file_state(&t, asset_dir, "test.txt");
         })
     }
 
     #[test]
     fn test_delete_file() {
         with_tracker(|t, rx, asset_dir| {
-            add_test_file(asset_dir, "Amplifier.obj");
+            add_test_file(asset_dir, "test.txt");
             expect_event(&rx);
-            expect_file_state(&t, asset_dir, "Amplifier.obj");
-            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_file_state(&t, asset_dir, "test.txt");
+            expect_dirty_file_state(&t, asset_dir, "test.txt");
             clear_dirty_file_state(&t);
-            delete_test_file(asset_dir, "Amplifier.obj");
+            delete_test_file(asset_dir, "test.txt");
             expect_event(&rx);
             expect_no_event(&rx);
-            expect_no_file_state(&t, asset_dir, "Amplifier.obj");
-            expect_dirty_file_state(&t, asset_dir, "Amplifier.obj");
+            expect_no_file_state(&t, asset_dir, "test.txt");
+            expect_dirty_file_state(&t, asset_dir, "test.txt");
         })
     }
 
@@ -708,11 +716,11 @@ mod tests {
                 expect_dirty_file_state(&t, asset_dir, "testdir");
             }
             {
-                add_test_file(&dir, "Amplifier.obj");
+                add_test_file(&dir, "test.txt");
                 expect_event(&rx);
                 expect_no_event(&rx);
-                expect_file_state(&t, &dir, "Amplifier.obj");
-                expect_dirty_file_state(&t, &dir, "Amplifier.obj");
+                expect_file_state(&t, &dir, "test.txt");
+                expect_dirty_file_state(&t, &dir, "test.txt");
             }
         });
     }

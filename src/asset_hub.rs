@@ -1,6 +1,6 @@
 use amethyst::assets::AssetUUID;
 use asset_import::AssetMetadata;
-use capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction};
+use capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction, Iter, CapnpCursor};
 use crossbeam_channel::{self as channel, Receiver};
 use data_capnp::{
     self, asset_metadata, import_artifact_key,
@@ -102,6 +102,14 @@ impl AssetHub {
             },
             db,
         })
+    }
+
+    pub fn get_metadata_iter<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        txn: &'a V,
+    ) -> Result<Iter<'a>> {
+        let mut cursor = txn.open_ro_cursor(self.tables.asset_metadata)?;
+        Ok(cursor.capnp_iter_start())
     }
 
     pub fn get_metadata<'a, K, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(

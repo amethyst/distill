@@ -38,8 +38,10 @@ struct SourceFileInfo {
 struct SourceMetadata {
   assets @0 :List(AssetId);
   importerVersion @1 :UInt32;
-  importerOptions @2 :Data;
-  importerState @3 :Data;
+  importerOptionsType @2 :Data;
+  importerOptions @3 :Data;
+  importerStateType @4 :Data;
+  importerState @5 :Data;
 }
 
 struct ImportError {

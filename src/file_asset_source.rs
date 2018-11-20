@@ -260,7 +260,7 @@ fn import_pair(
     source: &FileState,
     source_hash: u64,
     meta: Option<&FileState>,
-    meta_hash: Option<u64>,
+    _meta_hash: Option<u64>,
     scratch_buf: &mut Vec<u8>,
     saved_metadata: Option<SavedImportMetadata>,
 ) -> Result<Option<ImportResult>> {
@@ -366,7 +366,6 @@ impl FileAssetSource {
                 let mut options_buf = Vec::new();
                 bincode::serialize_into(&mut options_buf, &metadata.importer_options)?;
                 value.set_importer_options(&options_buf);
-                println!("set options {:?}", options_buf);
             }
             let mut assets = value.reborrow().init_assets(metadata.assets.len() as u32);
             for (idx, asset) in metadata.assets.iter().enumerate() {
@@ -473,8 +472,6 @@ impl FileAssetSource {
                 source_hash: Some(hash),
                 ..
             } => {
-                println!("source file with no meta {}", source.path.to_string_lossy());
-                // TODO: push metadata into import_pair somehow
                 let metadata = self.get_metadata(txn, &source.path)?;
                 match metadata {
                     Some(metadata) => {
@@ -490,7 +487,7 @@ impl FileAssetSource {
                             )),
                             state: metadata.get_importer_state()?,
                         });
-                        println!("got metadata {:?}", saved_metadata);
+                        println!("restored metadata for {:?}", saved_metadata);
                         import_pair(&source, hash, None, None, scratch_buf, saved_metadata)
                     }
                     None => {

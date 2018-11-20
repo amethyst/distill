@@ -61,15 +61,18 @@ fn main() {
             .expect("failed to create asset hub"),
     );
     let asset_source =
-        file_asset_source::FileAssetSource::new(&tracker, &hub, &asset_db)
-            .expect("failed to create asset hub");
+        Arc::new(file_asset_source::FileAssetSource::new(&tracker, &hub, &asset_db)
+            .expect("failed to create asset hub"));
     let handle = {
         let run_tracker = tracker.clone();
         thread::spawn(move || run_tracker.clone().run(vec!["assets"]))
     };
-    asset_source.run().expect("FileAssetSource.run() failed");
-    // let service = asset_hub_service::AssetHubService::new(tracker.clone());
-    // service.run();
+    {
+        let asset_source_handle = asset_source.clone();
+        thread::spawn(move || asset_source_handle.run().expect("FileAssetSource.run() failed"))
+    };
+    let service = asset_hub_service::AssetHubService::new(asset_db.clone(), hub.clone());
+    service.run();
     // loop {
     // tracker.clone().read_all_files().expect("failed to read all files");
     //     thread::sleep(Duration::from_millis(100));
