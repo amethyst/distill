@@ -8,13 +8,13 @@ interface AssetHub {
     getSnapshot @1 () -> (snapshot :Snapshot);
 
     interface Snapshot {
-        getAllAssets @0 () -> (files :List(Data.AssetMetadata));
+        getAllAssets @0 () -> (assets :List(Data.AssetMetadata));
     }
 
     interface Listener {
-        # Called with the initial consistent state of the filesystem
+        # Called with the initial consistent state 
         sync @0 (snapshot :Snapshot);
-        # Called when a batch of file updates has been processed
+        # Called when a batch of asset updates have been processed
         update @1 (updated :List(Data.AssetMetadata), snapshot :Snapshot);
     }
 }

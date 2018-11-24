@@ -1,8 +1,8 @@
 use asset_hub::AssetHub;
 use capnp::{self, capability::Promise};
-use capnp_db::{DBTransaction, Environment, RoTransaction };
-use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
-use data_capnp::{imported_metadata, dirty_file_info};
+use capnp_db::{DBTransaction, Environment, RoTransaction};
+use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
+use data_capnp::{asset_metadata, dirty_file_info, imported_metadata};
 use futures::{Future, Stream};
 use owning_ref::OwningHandle;
 use service_capnp::{asset_hub, asset_hub::snapshot};
@@ -38,28 +38,16 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let ctx = self.txn.as_owner();
         let txn = &*self.txn;
         let mut metadatas = Vec::new();
-        for (_, value) in ctx.hub.get_metadata_iter(txn).unwrap() {
-            let value = value.unwrap();
+        for (_, value) in pry!(ctx.hub.get_metadata_iter(txn)) {
+            let value = pry!(value);
             let metadata = value.into_typed::<imported_metadata::Owned>();
             metadatas.push(metadata);
         }
-        for metadata in metadatas {
-            println!("id {:?}", metadata.get().unwrap().get_metadata().unwrap().get_id().unwrap().get_id().unwrap());
+        let mut assets = results.get().init_assets(metadatas.len() as u32);
+        for (idx, metadata) in metadatas.iter().enumerate() {
+            let metadata = pry!(metadata.get());
+            // assets.get(idx as u32) = pry!(metadata.get_metadata());
         }
-        // let all_files_vec = self
-        //     .txn
-        //     .as_owner()
-        //     .read_all_files(&self.txn)
-        //     .expect("Failed to read all files");
-        // let mut results = results.get();
-        // let mut files = results.init_files(all_files_vec.len() as u32);
-        // for (i, v) in all_files_vec.iter().enumerate() {
-        //     files
-        //         .reborrow()
-        //         .get(i as u32)
-        //         .set_path(&v.path.to_string_lossy());
-        //     files.reborrow().get(i as u32).set_state(v.state);
-        // }
         Promise::ok(())
     }
 }
@@ -79,12 +67,10 @@ impl asset_hub::Server for AssetHubImpl {
     ) -> Promise<(), capnp::Error> {
         let ctx = Arc::clone(&self.ctx);
         let snapshot = AssetHubSnapshotImpl {
-            txn: OwningHandle::new_with_fn(ctx, |t| unsafe {
-                Box::new((*t).db.ro_txn().unwrap())
-            }),
+            txn: OwningHandle::new_with_fn(ctx, |t| unsafe { Box::new((*t).db.ro_txn().unwrap()) }),
         };
         results.get().set_snapshot(
-            asset_hub::snapshot::ToClient::new(snapshot).from_server::<::capnp_rpc::Server>(),
+            asset_hub::snapshot::ToClient::new(snapshot).into_client::<::capnp_rpc::Server>(),
         );
         Promise::ok(())
     }
@@ -112,7 +98,7 @@ impl AssetHubService {
             ctx: self.ctx.clone(),
         };
 
-        let publisher = asset_hub::ToClient::new(service_impl).from_server::<::capnp_rpc::Server>();
+        let publisher = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
 
         let handle1 = handle.clone();
         let done = socket.incoming().for_each(move |(socket, _addr)| {

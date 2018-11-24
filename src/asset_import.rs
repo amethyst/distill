@@ -1,18 +1,18 @@
-use amethyst::assets::{AssetUUID, Importer, ImporterValue, SimpleImporter};
+use amethyst::assets::{Importer, ImporterValue, SimpleImporter};
 use ron;
 use bincode;
 use serde::Deserialize;
 use std::io::Read;
 
-pub use amethyst::assets::SerdeObj;
+pub use amethyst::assets::{SerdeObj, AssetID, AssetUUID};
 
 #[derive(Clone, Serialize, Deserialize, Hash)]
 pub struct AssetMetadata {
     pub id: AssetUUID,
     pub search_tags: Vec<(String, Option<String>)>,
-    pub build_deps: Vec<AssetUUID>,
-    pub load_deps: Vec<AssetUUID>,
-    pub instantiate_deps: Vec<AssetUUID>,
+    pub build_deps: Vec<AssetID>,
+    pub load_deps: Vec<AssetID>,
+    pub instantiate_deps: Vec<AssetID>,
 }
 pub const SOURCEMETADATA_VERSION: u32 = 1;
 #[derive(Serialize, Deserialize)]

@@ -1,6 +1,5 @@
-use amethyst::assets::AssetUUID;
-use asset_import::AssetMetadata;
-use capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction, Iter, CapnpCursor};
+use asset_import::{AssetID, AssetMetadata};
+use capnp_db::{CapnpCursor, DBTransaction, Environment, Iter, MessageReader, RwTransaction};
 use crossbeam_channel::{self as channel, Receiver};
 use data_capnp::{
     self, asset_metadata, import_artifact_key,
@@ -35,14 +34,23 @@ struct AssetHubTables {
     /// AssetID -> ImportedMetadata
     asset_metadata: lmdb::Database,
 }
+
 fn set_assetid_list(
-    asset_ids: &Vec<AssetUUID>,
+    asset_ids: &Vec<AssetID>,
     builder: &mut capnp::struct_list::Builder<data_capnp::asset_id::Owned>,
 ) {
     for (idx, value) in asset_ids.iter().enumerate() {
-        builder.reborrow().get(idx as u32).set_id(value);
+        match value {
+            AssetID::UUID(uuid) => {
+                builder.reborrow().get(idx as u32).set_uuid(uuid);
+            }
+            AssetID::FilePath(path) => {
+                builder.reborrow().get(idx as u32).set_path(path.to_string_lossy().as_bytes());
+            }
+        }
     }
 }
+
 fn build_imported_metadata<K>(
     metadata: &AssetMetadata,
     artifact_hash: Option<&[u8]>,
@@ -133,8 +141,7 @@ impl AssetHub {
     where
         A: AsRef<[u8]>,
     {
-        let hash_bytes: [u8; 8] = unsafe { std::mem::transmute(import_hash) };
-        let sliced_hash: &[u8] = &hash_bytes;
+        let hash_bytes = import_hash.to_le_bytes();
         let mut maybe_id = None;
         {
             {
@@ -160,7 +167,7 @@ impl AssetHub {
                 &metadata,
                 asset
                     .as_ref()
-                    .map(|_| sliced_hash)
+                    .map(|_| &hash_bytes as &[u8])
                     .or_else(|| maybe_id.as_ref().map(|a| a.as_slice())),
             );
             println!("hash {:?}", hash_bytes);

@@ -2,9 +2,11 @@ extern crate capnp;
 extern crate lmdb;
 extern crate rayon;
 
-use capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction, RwTransaction, MessageReader};
+use capnp_db::{
+    CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
+};
 use crossbeam_channel::{self as channel, Receiver, Sender};
-use data_capnp::{self, dirty_file_info, source_file_info, FileType};
+use data_capnp::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use error::Result;
 use lmdb::Cursor;
 use std::{
@@ -20,6 +22,7 @@ use std::{
     thread,
     time::Duration,
 };
+use utils;
 use watcher::{self, FileEvent, FileMetadata};
 
 #[derive(Clone)]
@@ -28,6 +31,8 @@ struct FileTrackerTables {
     source_files: lmdb::Database,
     /// Contains Path -> DirtyFileInfo
     dirty_files: lmdb::Database,
+    /// Contains SequenceNum -> DirtyFileInfo
+    rename_file_events: lmdb::Database,
 }
 #[derive(Debug)]
 pub enum FileTrackerEvent {
@@ -69,6 +74,11 @@ impl PartialEq for FileState {
             && self.length == other.length
     }
 }
+#[derive(Clone, Debug)]
+pub struct RenameFileEvent {
+    pub src: PathBuf,
+    pub dst: PathBuf,
+}
 
 struct ScanContext {
     path: PathBuf,
@@ -83,6 +93,35 @@ fn db_file_type(t: fs::FileType) -> FileType {
     } else {
         FileType::File
     }
+}
+
+fn add_rename_event(
+    tables: &FileTrackerTables,
+    txn: &mut RwTransaction,
+    src: &[u8],
+    dst: &[u8],
+) -> Result<()> {
+    let mut last_seq: u64 = 0;
+    let last_element = txn
+        .open_ro_cursor(tables.rename_file_events)?
+        .capnp_iter_start()
+        .last();
+    if let Some((key, _)) = last_element {
+        last_seq = u64::from_le_bytes(utils::make_array(key));
+    }
+    let mut value_builder = capnp::message::Builder::new_default();
+    {
+        let mut value = value_builder.init_root::<rename_file_event::Builder>();
+        value.set_src(src);
+        value.set_dst(dst);
+    }
+    last_seq += 1;
+    txn.put(
+        tables.rename_file_events,
+        &last_seq.to_le_bytes(),
+        &value_builder,
+    )?;
+    Ok(())
 }
 
 fn build_dirty_file_info(
@@ -189,15 +228,17 @@ fn handle_file_event(
             let value = build_source_info(&metadata);
             txn.delete(tables.source_files, &src_key)?;
             txn.put(tables.source_files, &dst_key, &value)?;
-            let dirty_value = {
-                txn.get_as_bytes(tables.dirty_files, &src_key)?
-                    .map(|x| x.to_owned())
-            };
-            if dirty_value.is_some() {
-                txn.delete(tables.dirty_files, &src_key)?;
-                let dirty_value = dirty_value.unwrap();
-                txn.put_bytes(tables.dirty_files, &dst_key, &dirty_value)?;
-            }
+            let dirty_value_new = build_dirty_file_info(
+                data_capnp::FileState::Exists,
+                value.get_root_as_reader::<source_file_info::Reader>()?,
+            );
+            let dirty_value_old = build_dirty_file_info(
+                data_capnp::FileState::Deleted,
+                value.get_root_as_reader::<source_file_info::Reader>()?,
+            );
+            txn.put(tables.dirty_files, &src_key, &dirty_value_old)?;
+            txn.put(tables.dirty_files, &dst_key, &dirty_value_new)?;
+            add_rename_event(tables, txn, &src_key, &dst_key)?;
         }
         FileEvent::Removed(path) => {
             if !scan_stack.is_empty() {
@@ -317,6 +358,8 @@ impl FileTracker {
             tables: FileTrackerTables {
                 source_files: db.create_db(Some("source_files"), lmdb::DatabaseFlags::default())?,
                 dirty_files: db.create_db(Some("dirty_files"), lmdb::DatabaseFlags::default())?,
+                rename_file_events: db
+                    .create_db(Some("rename_file_events"), lmdb::DatabaseFlags::default())?,
             },
             db: db,
             listener_rx: rx,
@@ -331,6 +374,39 @@ impl FileTracker {
 
     pub fn get_ro_txn<'a>(&'a self) -> Result<RoTransaction<'a>> {
         Ok(self.db.ro_txn()?)
+    }
+
+    pub fn read_rename_events<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        iter_txn: &'a V,
+    ) -> Result<Vec<(u64, RenameFileEvent)>> {
+        let mut rename_events = Vec::new();
+        {
+            let mut cursor = iter_txn.open_ro_cursor(self.tables.rename_file_events)?;
+            for (key_result, value_result) in cursor.capnp_iter_start() {
+                let value_result = value_result?;
+                let evt = value_result.into_typed::<rename_file_event::Owned>();
+                let evt = evt.get()?;
+                let seq_num = u64::from_le_bytes(utils::make_array(key_result));
+                rename_events.push((
+                    seq_num,
+                    RenameFileEvent {
+                        src: PathBuf::from(
+                            str::from_utf8(evt.get_src()?).expect("failed to parse key as utf8"),
+                        ),
+                        dst: PathBuf::from(
+                            str::from_utf8(evt.get_dst()?).expect("failed to parse key as utf8"),
+                        ),
+                    },
+                ));
+            }
+        }
+        Ok(rename_events)
+    }
+
+    pub fn clear_rename_events(&self, txn: &mut RwTransaction) -> Result<()> {
+        txn.clear_db(self.tables.rename_file_events)?;
+        Ok(())
     }
 
     pub fn read_dirty_files<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -394,9 +470,7 @@ impl FileTracker {
         let key = key_str.as_bytes();
         match txn.get::<dirty_file_info::Owned, &[u8]>(self.tables.dirty_files, &key)? {
             Some(value) => {
-                let info = value
-                    .get()?
-                    .get_source_info()?;
+                let info = value.get()?.get_source_info()?;
                 Ok(Some(FileState {
                     path: path.clone(),
                     state: data_capnp::FileState::Exists,
@@ -479,7 +553,7 @@ impl FileTracker {
                     txn.commit()?;
                     println!("Commit");
                     for listener in &listeners {
-                    println!("Sent to listener");
+                        println!("Sent to listener");
                         select! {
                             send(listener, FileTrackerEvent::Updated) => {}
                             default => {}

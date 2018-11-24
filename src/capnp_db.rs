@@ -5,8 +5,7 @@ use lmdb::{self, Cursor, Transaction};
 use std::path::Path;
 use std::result::Result as StdResult;
 
-pub type MessageReader<'a, T> =
-    capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
+pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
 pub struct Environment {
     env: lmdb::Environment,
@@ -46,13 +45,16 @@ impl<'txn> CapnpCursor<'txn> for lmdb::RoCursor<'txn> {
 impl<'txn> Iterator for Iter<'txn> {
     type Item = (
         &'txn [u8],
-        StdResult<capnp::message::Reader<capnp::serialize::OwnedSegments>, capnp::Error>,
+        StdResult<capnp::message::Reader<capnp::serialize::SliceSegments<'txn>>, capnp::Error>,
     );
     fn next(&mut self) -> Option<Self::Item> {
         let (key_bytes, mut value_bytes) = self.iter.next()?;
-
-        let value_msg = capnp::serialize::read_message(
-            &mut value_bytes,
+        let slice;
+        unsafe {
+            slice = capnp::Word::bytes_to_words(value_bytes);
+        }
+        let value_msg = capnp::serialize::read_message_from_words(
+            &slice,
             capnp::message::ReaderOptions::default(),
         );
         Some((key_bytes, value_msg))
@@ -85,7 +87,8 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
             let msg = capnp::serialize::read_message_from_words(
                 slice,
                 capnp::message::ReaderOptions::default(),
-            )?.into_typed::<V>();
+            )?
+            .into_typed::<V>();
             Ok(Some(msg))
         }
     }
@@ -117,7 +120,8 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
             let msg = capnp::serialize::read_message_from_words(
                 slice,
                 capnp::message::ReaderOptions::default(),
-            )?.into_typed::<V>();
+            )?
+            .into_typed::<V>();
             Ok(Some(msg))
         }
     }

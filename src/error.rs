@@ -116,3 +116,8 @@ impl From<ron::ser::Error> for Error {
         Error::RonError(err)
     }
 }
+impl From<Error> for capnp::Error {
+    fn from(err: Error) -> capnp::Error {
+        capnp::Error::failed(format!("{}", err))
+    }
+}

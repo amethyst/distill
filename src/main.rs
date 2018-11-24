@@ -31,6 +31,7 @@ mod asset_import;
 pub mod capnp_db;
 pub mod error;
 mod file_asset_source;
+mod utils;
 pub mod file_tracker;
 pub mod watcher;
 

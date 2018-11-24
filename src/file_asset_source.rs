@@ -22,6 +22,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
+use utils;
 use watcher::file_metadata;
 
 pub struct FileAssetSource {
@@ -72,16 +73,6 @@ struct SavedImportMetadata<'a> {
     options: &'a [u8],
     state_type: u128,
     state: &'a [u8],
-}
-
-fn make_array<A, T>(slice: &[T]) -> A
-where
-    A: Sized + Default + AsMut<[T]>,
-    T: Copy,
-{
-    let mut a = Default::default();
-    <A as AsMut<[T]>>::as_mut(&mut a).copy_from_slice(slice);
-    a
 }
 
 fn to_meta_path(p: &PathBuf) -> PathBuf {
@@ -478,11 +469,11 @@ impl FileAssetSource {
                         let metadata = metadata.get()?;
                         let saved_metadata = Some(SavedImportMetadata {
                             importer_version: metadata.get_importer_version(),
-                            options_type: u128::from_le_bytes(make_array(
+                            options_type: u128::from_le_bytes(utils::make_array(
                                 metadata.get_importer_options_type()?,
                             )),
                             options: metadata.get_importer_options()?,
-                            state_type: u128::from_le_bytes(make_array(
+                            state_type: u128::from_le_bytes(utils::make_array(
                                 metadata.get_importer_state_type()?,
                             )),
                             state: metadata.get_importer_state()?,
@@ -660,10 +651,51 @@ impl FileAssetSource {
         Ok(())
     }
 
+    fn handle_rename_events(&self, txn: &mut RwTransaction) -> Result<()> {
+        let rename_events = self.tracker.read_rename_events(txn)?;
+        println!("rename events");
+        for (_, evt) in rename_events {
+            let src_str = evt.src.to_string_lossy();
+            let src = src_str.as_bytes();
+            let dst_str = evt.dst.to_string_lossy();
+            let dst = dst_str.as_bytes();
+            let mut asset_ids = Vec::new();
+            let mut existing_metadata = None;
+            {
+                let metadata =
+                    txn.get::<source_metadata::Owned, &[u8]>(self.tables.path_to_metadata, &src)?;
+                if let Some(metadata) = metadata {
+                    let metadata = metadata.get()?;
+                    let mut copy = capnp::message::Builder::new_default();
+                    copy.set_root(metadata)?;
+                    existing_metadata = Some(copy);
+                    for asset in metadata.get_assets()? {
+                        asset_ids.push(Vec::from(asset.get_id()?));
+                    }
+                }
+            }
+            for asset in asset_ids {
+                txn.delete(self.tables.asset_id_to_path, &asset)?;
+                txn.put_bytes(self.tables.asset_id_to_path, &asset, &dst)?;
+            }
+            if let Some(existing_metadata) = existing_metadata {
+                txn.delete(self.tables.path_to_metadata, &src)?;
+                txn.put(self.tables.path_to_metadata, &dst, &existing_metadata)?;
+            }
+
+            println!("src {} dst {} ", src_str, dst_str);
+        }
+        self.tracker.clear_rename_events(txn)?;
+        Ok(())
+    }
     fn handle_update(&self, thread_pool: &mut Pool) -> Result<()> {
         let source_meta_pairs = {
+            let mut txn = self.db.rw_txn()?;
+            // Before reading the filesystem state we need to process rename events.
+            // This must be done in the same transaction to stay consistent.
+            self.handle_rename_events(&mut txn)?;
+
             let mut source_meta_pairs: HashMap<PathBuf, AssetFilePair> = HashMap::new();
-            let txn = self.db.ro_txn()?;
             let dirty_files = self.tracker.read_dirty_files(&txn)?;
             if !dirty_files.is_empty() {
                 for state in dirty_files.into_iter() {
@@ -696,6 +728,9 @@ impl FileAssetSource {
                         pair.source = self.tracker.get_file_state(&txn, &path)?;
                     }
                 }
+            }
+            if txn.dirty {
+                txn.commit()?;
             }
             source_meta_pairs
         };
@@ -752,7 +787,7 @@ impl FileAssetSource {
                 });
             });
 
-            let num_queued_imports = num_cpus::get()*2;
+            let num_queued_imports = num_cpus::get() * 2;
             for _ in 0..num_queued_imports {
                 import_iter.next();
             }
@@ -763,6 +798,7 @@ impl FileAssetSource {
                     Some(import) => {
                         self.process_imported_pair(&mut txn, &import.0, import.1)?;
                         num_processed += 1;
+                        println!("processed {}", num_processed);
                         import_iter.next();
                     }
                     _ => {
