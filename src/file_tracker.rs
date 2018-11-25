@@ -194,7 +194,7 @@ fn handle_file_event(
                     {
                         changed = false;
                     } else {
-                        println!("CHANGED {} metadata {:?}", path_str, metadata);
+                        debug!("CHANGED {} metadata {:?}", path_str, metadata);
                     }
                 }
             }
@@ -224,7 +224,7 @@ fn handle_file_event(
             let src_key = src_str.as_bytes();
             let dst_str = dst.to_string_lossy();
             let dst_key = dst_str.as_bytes();
-            println!("rename {} to {} metadata {:?}", src_str, dst_str, metadata);
+            debug!("rename {} to {} metadata {:?}", src_str, dst_str, metadata);
             let value = build_source_info(&metadata);
             txn.delete(tables.source_files, &src_key)?;
             txn.put(tables.source_files, &dst_key, &value)?;
@@ -248,16 +248,16 @@ fn handle_file_event(
             }
             let path_str = path.to_string_lossy();
             let key = path_str.as_bytes();
-            println!("removed {}", path_str);
+            debug!("removed {}", path_str);
             update_deleted_dirty_entry(txn, &tables, &key)?;
             txn.delete(tables.source_files, &key)?;
         }
         FileEvent::FileError(err) => {
-            println!("file event error: {}", err);
+            debug!("file event error: {}", err);
             return Err(err);
         }
         FileEvent::ScanStart(path) => {
-            println!("scan start: {}", path.to_string_lossy());
+            debug!("scan start: {}", path.to_string_lossy());
             scan_stack.push(ScanContext {
                 path,
                 files: HashMap::new(),
@@ -289,7 +289,7 @@ fn handle_file_event(
                 update_deleted_dirty_entry(txn, &tables, &p_key)?;
                 txn.delete(tables.source_files, &p_key)?;
             }
-            println!(
+            info!(
                 "Scanned and compared {} + {}, deleted {}",
                 scan_ctx_set.len(),
                 db_file_set.len(),
@@ -309,7 +309,6 @@ fn handle_file_event(
                     for (key_bytes, _) in cursor.iter_start() {
                         let key = str::from_utf8(key_bytes).expect("Encoded key was invalid utf8");
                         if !dirs_as_strings.iter().any(|dir| key.starts_with(dir)) {
-                            println!("TRASH! {}", key);
                             to_delete.push(key);
                         }
                     }
@@ -319,33 +318,7 @@ fn handle_file_event(
                     update_deleted_dirty_entry(txn, &tables, &key)?;
                 }
             }
-            println!("scan end: {}", path.to_string_lossy());
-        }
-    }
-    Ok(())
-}
-fn read_file_events(
-    is_running: &mut bool,
-    txn: &mut RwTransaction,
-    tables: &FileTrackerTables,
-    rx: &Receiver<FileEvent>,
-    scan_stack: &mut Vec<ScanContext>,
-) -> Result<()> {
-    while *is_running {
-        let timeout = Duration::from_millis(100);
-        select! {
-            recv(rx, evt) => {
-                if let Some(evt) = evt {
-                    handle_file_event(txn, tables, evt, scan_stack)?;
-                } else {
-                    println!("receive error");
-                    *is_running = false;
-                    break;
-                }
-            }
-            recv(channel::after(timeout)) => {
-                break;
-            }
+            debug!("scan end: {}", path.to_string_lossy());
         }
     }
     Ok(())
@@ -515,6 +488,51 @@ impl FileTracker {
         self.is_running.load(Ordering::Acquire)
     }
 
+    fn read_file_events(
+        &self,
+        is_running: &mut bool,
+        rx: &Receiver<FileEvent>,
+        scan_stack: &mut Vec<ScanContext>,
+        listeners: &[Sender<FileTrackerEvent>],
+    ) -> Result<()> {
+        let mut txn = None;
+        while *is_running {
+            let timeout = Duration::from_millis(100);
+            select! {
+                recv(rx, evt) => {
+                    if let Some(evt) = evt {
+                        if txn.is_none() {
+                            txn = Some(self.db.rw_txn()?);
+                        }
+                        let txn = txn.as_mut().unwrap();
+                        handle_file_event(txn, &self.tables, evt, scan_stack)?;
+                    } else {
+                        error!("Receive error");
+                        *is_running = false;
+                        break;
+                    }
+                }
+                recv(channel::after(timeout)) => {
+                    break;
+                }
+            }
+        }
+        if let Some(txn) = txn {
+            if txn.dirty {
+                txn.commit()?;
+                debug!("Commit");
+                for listener in listeners {
+                    debug!("Sent to listener");
+                    select! {
+                        send(listener, FileTrackerEvent::Updated) => {}
+                        default => {}
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn run(&self, to_watch: Vec<&str>) -> Result<()> {
         if self
             .is_running
@@ -538,28 +556,10 @@ impl FileTracker {
                 default => {}
             }
             {
-                let mut txn = self.db.rw_txn()?;
                 let mut scan_stack = Vec::new();
                 let mut is_running = true;
-                read_file_events(
-                    &mut is_running,
-                    &mut txn,
-                    &self.tables,
-                    &rx,
-                    &mut scan_stack,
-                )?;
+                self.read_file_events(&mut is_running, &rx, &mut scan_stack, &listeners)?;
                 assert!(scan_stack.is_empty());
-                if txn.dirty {
-                    txn.commit()?;
-                    println!("Commit");
-                    for listener in &listeners {
-                        println!("Sent to listener");
-                        select! {
-                            send(listener, FileTrackerEvent::Updated) => {}
-                            default => {}
-                        }
-                    }
-                }
                 if !is_running {
                     self.is_running.store(false, Ordering::Release);
                 }

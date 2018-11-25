@@ -8,6 +8,7 @@ use std::error::{Error as StdError};
 use amethyst::assets;
 use bincode;
 use ron;
+use log;
 
 #[derive(Debug)]
 pub enum Error {
@@ -20,6 +21,7 @@ pub enum Error {
     AssetError(assets::Error),
     BincodeError(bincode::ErrorKind),
     RonError(ron::ser::Error),
+    SetLoggerError(log::SetLoggerError),
     RecvError,
     Exit,
 }
@@ -38,6 +40,7 @@ impl std::error::Error for Error {
             Error::AssetError(ref e) => e.description(),
             Error::BincodeError(ref e) => e.description(),
             Error::RonError(ref e) => e.description(),
+            Error::SetLoggerError(ref e) => e.description(),
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
         }
@@ -54,6 +57,7 @@ impl std::error::Error for Error {
             Error::AssetError(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
             Error::RonError(ref e) => Some(e),
+            Error::SetLoggerError(ref e) => Some(e),
             Error::RecvError => None,
             Error::Exit => None,
         }
@@ -71,6 +75,7 @@ impl fmt::Display for Error {
             Error::AssetError(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
             Error::RonError(ref e) => e.fmt(f),
+            Error::SetLoggerError(ref e) => e.fmt(f),
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
         }
@@ -119,5 +124,10 @@ impl From<ron::ser::Error> for Error {
 impl From<Error> for capnp::Error {
     fn from(err: Error) -> capnp::Error {
         capnp::Error::failed(format!("{}", err))
+    }
+}
+impl From<log::SetLoggerError> for Error {
+    fn from(err: log::SetLoggerError) -> Error {
+        Error::SetLoggerError(err)
     }
 }

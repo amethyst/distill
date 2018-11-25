@@ -158,7 +158,7 @@ impl AssetHub {
             if let Some(id) = maybe_id.as_ref() {
                 if !id.is_empty() && hash_bytes != id.as_slice() {
                     txn.delete(self.tables.import_artifacts, id)?;
-                    println!("deleted artifact {:?} {:?}", hash_bytes, id.as_slice());
+                    debug!("deleted artifact {:?} {:?}", hash_bytes, id.as_slice());
                 }
             }
         }
@@ -170,12 +170,12 @@ impl AssetHub {
                     .map(|_| &hash_bytes as &[u8])
                     .or_else(|| maybe_id.as_ref().map(|a| a.as_slice())),
             );
-            println!("hash {:?}", hash_bytes);
+            debug!("hash {:?}", hash_bytes);
             txn.put(self.tables.asset_metadata, &metadata.id, &imported_metadata)?;
         }
         // if let Some(asset) = asset {
         // txn.put_bytes(self.tables.import_artifacts, &hash_bytes, &asset)?;
-        //     println!("put artifact {:?}", hash_bytes);
+        //     debug!("put artifact {:?}", hash_bytes);
         // }
         Ok(())
     }

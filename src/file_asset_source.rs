@@ -22,6 +22,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
+use time::PreciseTime;
 use utils;
 use watcher::file_metadata;
 
@@ -221,8 +222,8 @@ fn import_source(
                 asset: Some(asset_buf),
             }
         });
-        println!(
-            "Import success {} read {}",
+        debug!(
+            "Import success {} read {} bytes",
             path.to_string_lossy(),
             scratch_buf.len(),
         );
@@ -238,7 +239,6 @@ fn import_source(
     let serialized_metadata =
         ron::ser::to_string_pretty(&source_metadata, ron::ser::PrettyConfig::default()).unwrap();
     let meta_path = to_meta_path(&path);
-    // println!("Meta file {}: {}", meta_path.to_string_lossy(), serialized_metadata);
     let mut meta_file = fs::File::create(meta_path)?;
     meta_file.write_all(serialized_metadata.as_bytes())?;
     Ok(ImportResult {
@@ -430,12 +430,12 @@ impl FileAssetSource {
                     ..
                 } = original_pair
                 {
-                    println!("deleted pair {}", state.path.to_string_lossy());
+                    debug!("deleted pair {}", state.path.to_string_lossy());
                 } else if let HashedAssetFilePair {
                     meta: Some(state), ..
                 } = original_pair
                 {
-                    println!("deleted pair {}", state.path.to_string_lossy());
+                    debug!("deleted pair {}", state.path.to_string_lossy());
                 }
                 Ok(None)
             }
@@ -446,7 +446,7 @@ impl FileAssetSource {
                 source: Some(source),
                 source_hash: Some(source_hash),
             } => {
-                println!("full pair {}", source.path.to_string_lossy());
+                debug!("full pair {}", source.path.to_string_lossy());
                 import_pair(
                     &source,
                     source_hash,
@@ -478,11 +478,11 @@ impl FileAssetSource {
                             )),
                             state: metadata.get_importer_state()?,
                         });
-                        println!("restored metadata for {:?}", saved_metadata);
+                        debug!("restored metadata for {:?}", saved_metadata);
                         import_pair(&source, hash, None, None, scratch_buf, saved_metadata)
                     }
                     None => {
-                        println!("no metadata for {}", source.path.to_string_lossy());
+                        debug!("no metadata for {}", source.path.to_string_lossy());
                         import_pair(&source, hash, None, None, scratch_buf, None)
                     }
                 }
@@ -493,7 +493,7 @@ impl FileAssetSource {
                 source: Some(source),
                 source_hash: None,
             } => {
-                println!("directory {}", source.path.to_string_lossy());
+                debug!("directory {}", source.path.to_string_lossy());
                 Ok(None)
             }
             HashedAssetFilePair {
@@ -502,7 +502,7 @@ impl FileAssetSource {
                 source: Some(source),
                 source_hash: None,
             } => {
-                println!(
+                debug!(
                     "directory with meta directory?? {}",
                     source.path.to_string_lossy()
                 );
@@ -514,7 +514,7 @@ impl FileAssetSource {
                 source: Some(source),
                 source_hash: Some(_hash),
             } => {
-                println!(
+                debug!(
                     "source file with meta directory?? {}",
                     source.path.to_string_lossy()
                 );
@@ -526,7 +526,7 @@ impl FileAssetSource {
                 source_hash: None,
                 ..
             } => {
-                println!("directory with no meta {}", source.path.to_string_lossy());
+                debug!("directory with no meta {}", source.path.to_string_lossy());
                 Ok(None)
             }
             HashedAssetFilePair {
@@ -535,7 +535,7 @@ impl FileAssetSource {
                 source: None,
                 ..
             } => {
-                println!(
+                debug!(
                     "meta file without source file {}",
                     meta.path.to_string_lossy()
                 );
@@ -543,7 +543,7 @@ impl FileAssetSource {
                 Ok(None)
             }
             _ => {
-                println!("Unknown case for {:?}", pair);
+                debug!("Unknown case for {:?}", pair);
                 Ok(None)
             }
         }
@@ -556,24 +556,24 @@ impl FileAssetSource {
         result: Option<ImportResult>,
     ) -> Result<()> {
         if let Some(imported) = result {
-            println!("imported {}", path.to_string_lossy());
+            debug!("imported {}", path.to_string_lossy());
             let mut to_remove = Vec::new();;
             if let Some(metadata) = self.get_metadata(txn, path)? {
                 for asset in metadata.get()?.get_assets()? {
                     let id = asset.get_id()?;
-                    println!("asset {:?}", asset.get_id()?);
+                    debug!("asset {:?}", asset.get_id()?);
                     if imported.assets.iter().all(|a| a.metadata.id != id) {
                         to_remove.push(Vec::from(id));
                     }
                 }
             }
             for asset in to_remove {
-                println!("removing deleted asset {:?}", asset);
+                debug!("removing deleted asset {:?}", asset);
                 self.hub.remove_asset(txn, &asset)?;
             }
             self.put_metadata(txn, path, &imported.metadata)?;
             for asset in imported.assets {
-                println!("updating asset {:?}", asset.metadata.id);
+                debug!("updating asset {:?}", asset.metadata.id);
                 self.hub.update_asset::<&Vec<u8>>(
                     txn,
                     asset.import_hash,
@@ -582,7 +582,7 @@ impl FileAssetSource {
                 )?;
             }
         } else {
-            println!("deleting metadata for {}", path.to_string_lossy());
+            debug!("deleting metadata for {}", path.to_string_lossy());
             let mut to_remove = Vec::new();
             {
                 let metadata = self.get_metadata(txn, path)?;
@@ -593,7 +593,7 @@ impl FileAssetSource {
                 }
             }
             for asset in to_remove {
-                println!("remove asset {:?}", asset);
+                debug!("remove asset {:?}", asset);
                 self.hub.remove_asset(txn, &asset)?;
             }
             self.delete_metadata(txn, path)?;
@@ -646,15 +646,15 @@ impl FileAssetSource {
                     }
                 }
             }
-            Err(e) => println!("Error processing pair: {}", e),
+            Err(e) => error!("Error processing pair: {}", e),
         };
         Ok(())
     }
 
     fn handle_rename_events(&self, txn: &mut RwTransaction) -> Result<()> {
         let rename_events = self.tracker.read_rename_events(txn)?;
-        println!("rename events");
-        for (_, evt) in rename_events {
+        debug!("rename events");
+        for (_, evt) in rename_events.iter() {
             let src_str = evt.src.to_string_lossy();
             let src = src_str.as_bytes();
             let dst_str = evt.dst.to_string_lossy();
@@ -683,12 +683,15 @@ impl FileAssetSource {
                 txn.put(self.tables.path_to_metadata, &dst, &existing_metadata)?;
             }
 
-            println!("src {} dst {} ", src_str, dst_str);
+            debug!("src {} dst {} ", src_str, dst_str);
         }
-        self.tracker.clear_rename_events(txn)?;
+        if !rename_events.is_empty() {
+            self.tracker.clear_rename_events(txn)?;
+        }
         Ok(())
     }
     fn handle_update(&self, thread_pool: &mut Pool) -> Result<()> {
+        let start_time = PreciseTime::now();
         let source_meta_pairs = {
             let mut txn = self.db.rw_txn()?;
             // Before reading the filesystem state we need to process rename events.
@@ -739,9 +742,8 @@ impl FileAssetSource {
         for result in &hashed_files {
             match result {
                 Err(err) => {
-                    println!(
-                        "Error hashing {}",
-                        // state.path.to_string_lossy(),
+                    error!(
+                        "Hashing error: {}",
                         err
                     );
                 }
@@ -754,12 +756,18 @@ impl FileAssetSource {
                 .filter(|f| !f.is_err())
                 .map(|e| e.unwrap()),
         );
-        println!("Hashed {}", hashed_files.len());
+        debug!("Hashed {}", hashed_files.len());
+        debug!(
+            "Hashed {} pairs in {}",
+            source_meta_pairs.len(),
+            start_time.to(PreciseTime::now())
+        );
 
         let mut txn = self.db.rw_txn()?;
         use std::cell::RefCell;
         thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
 
+        // Should get rid of this scoped_threadpool madness somehow.
         thread_pool.scoped(|scope| -> Result<()> {
             let (tx, rx) = channel::unbounded();
             let to_process = hashed_files.len();
@@ -798,7 +806,6 @@ impl FileAssetSource {
                     Some(import) => {
                         self.process_imported_pair(&mut txn, &import.0, import.1)?;
                         num_processed += 1;
-                        println!("processed {}", num_processed);
                         import_iter.next();
                     }
                     _ => {
@@ -808,7 +815,14 @@ impl FileAssetSource {
             }
             Ok(())
         })?;
-        txn.commit()?;
+        if txn.dirty {
+            txn.commit()?;
+        }
+        info!(
+            "Processing {} pairs in {}",
+            source_meta_pairs.len(),
+            start_time.to(PreciseTime::now())
+        );
         Ok(())
     }
 

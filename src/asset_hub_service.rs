@@ -65,7 +65,7 @@ impl asset_hub::Server for AssetHubImpl {
         _params: asset_hub::GetSnapshotParams,
         mut results: asset_hub::GetSnapshotResults,
     ) -> Promise<(), capnp::Error> {
-        let ctx = Arc::clone(&self.ctx);
+        let ctx = self.ctx.clone();
         let snapshot = AssetHubSnapshotImpl {
             txn: OwningHandle::new_with_fn(ctx, |t| unsafe { Box::new((*t).db.ro_txn().unwrap()) }),
         };

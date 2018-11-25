@@ -10,6 +10,8 @@ capnp = "0.9.0"
 notify = "4.0.0"
 lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
 rayon = "1.0"
+fern = { version = "0.5", features = ["colored"] }
+log = { version = "0.4", features = ["serde"] }
 capnp-rpc = "0.9.0"
 tokio-core = "0.1"
 tokio-io = "0.1"
@@ -26,6 +28,7 @@ digest = "0.8.0"
 meowhash = "0.1.2"
 scoped_threadpool = "0.1.9"
 num_cpus = "1.0"
+time = "0.1"
 
 
 [build-dependencies]
