@@ -1,7 +1,7 @@
 use asset_import::{AssetID, AssetMetadata};
 use capnp_db::{CapnpCursor, DBTransaction, Environment, Iter, MessageReader, RwTransaction};
 use crossbeam_channel::{self as channel, Receiver};
-use data_capnp::{
+use schema::data::{
     self, asset_metadata, import_artifact_key,
     imported_metadata::{self, latest_artifact},
 };
@@ -37,7 +37,7 @@ struct AssetHubTables {
 
 fn set_assetid_list(
     asset_ids: &Vec<AssetID>,
-    builder: &mut capnp::struct_list::Builder<data_capnp::asset_id::Owned>,
+    builder: &mut capnp::struct_list::Builder<data::asset_id::Owned>,
 ) {
     for (idx, value) in asset_ids.iter().enumerate() {
         match value {
@@ -115,9 +115,9 @@ impl AssetHub {
     pub fn get_metadata_iter<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-    ) -> Result<Iter<'a>> {
+    ) -> Result<lmdb::RoCursor<'a>> {
         let mut cursor = txn.open_ro_cursor(self.tables.asset_metadata)?;
-        Ok(cursor.capnp_iter_start())
+        Ok(cursor)
     }
 
     pub fn get_metadata<'a, K, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(

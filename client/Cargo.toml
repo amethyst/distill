@@ -1,0 +1,14 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+# capnp = "0.9.0"
+capnp = { path = "../../capnproto-rust/capnp" }
+# capnp-rpc = "0.9.0"
+capnp-rpc = { path = "../../capnproto-rust/capnp-rpc" }
+tokio = "0.1"
+futures = "0.1"
+schema = { path = "../schema" }
+time = "0.1"

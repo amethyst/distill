@@ -4,6 +4,17 @@ struct AssetUuid {
     id @0 :Data;
 }
 
+struct AssetUuidTest {
+  wot :union {
+    uuid @0 :Data;
+    path @1 :Data;
+    testgroup :group {
+      huh @2 :Data;
+    }
+  }
+  asdf @3 :AnyPointer;
+}
+
 struct AssetId {
   union {
     uuid @0 :Data;

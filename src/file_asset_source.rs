@@ -1,15 +1,15 @@
-use asset_hub::AssetHub;
-use asset_import::{
+use crate::asset_hub::AssetHub;
+use crate::asset_import::{
     format_from_ext, AssetMetadata, BoxedImporter, SerdeObj, SourceMetadata, SOURCEMETADATA_VERSION,
 };
 use bincode;
 use capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
 use crossbeam_channel::{self as channel, Receiver};
-use data_capnp::{self, source_metadata};
-use error::{Error, Result};
-use file_tracker::{FileState, FileTracker, FileTrackerEvent};
+use crate::error::{Error, Result};
+use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use rayon::prelude::*;
 use ron;
+use schema::data::{self, source_metadata};
 use scoped_threadpool::Pool;
 use std::collections::HashMap;
 use std::{
@@ -20,11 +20,13 @@ use std::{
     io::{Read, Write},
     iter::FromIterator,
     path::PathBuf,
+    str,
     sync::Arc,
 };
 use time::PreciseTime;
-use utils;
-use watcher::file_metadata;
+use log::error;
+use crate::utils;
+use crate::watcher::file_metadata;
 
 pub struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -39,6 +41,7 @@ struct FileAssetSourceTables {
     /// Path -> SourceMetadata
     path_to_metadata: lmdb::Database,
     /// Maps an AssetUUID to its source file path
+    /// AssetUUID -> Path
     asset_id_to_path: lmdb::Database,
 }
 
@@ -112,7 +115,7 @@ fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>)> {
             Ok((
                 FileState {
                     path: state.path.clone(),
-                    state: data_capnp::FileState::Exists,
+                    state: data::FileState::Exists,
                     last_modified: metadata.last_modified,
                     length: metadata.length,
                 },
@@ -135,7 +138,7 @@ where
             meta_hash: None,
         };
         match s.meta {
-            Some(ref state) if state.state == data_capnp::FileState::Exists => {
+            Some(ref state) if state.state == data::FileState::Exists => {
                 let (state, hash) = hash_file(state)?;
                 hashed_pair.meta = Some(state);
                 hashed_pair.meta_hash = hash;
@@ -143,7 +146,7 @@ where
             _ => {}
         };
         match s.source {
-            Some(ref state) if state.state == data_capnp::FileState::Exists => {
+            Some(ref state) if state.state == data::FileState::Exists => {
                 let (state, hash) = hash_file(state)?;
                 hashed_pair.source = Some(state);
                 hashed_pair.source_hash = hash;
@@ -154,16 +157,12 @@ where
     }))
 }
 
-fn calc_import_hash<K>(
+fn calc_import_hash(
     scratch_buf: &mut Vec<u8>,
     importer_options: &Box<SerdeObj>,
     importer_state: &Box<SerdeObj>,
     source_hash: u64,
-    asset_id: &K,
-) -> Result<u64>
-where
-    K: AsRef<[u8]> + Hash,
-{
+) -> Result<u64> {
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
     scratch_buf.clear();
     bincode::serialize_into(&mut *scratch_buf, importer_options)?;
@@ -172,7 +171,6 @@ where
     bincode::serialize_into(&mut *scratch_buf, importer_state)?;
     scratch_buf.hash(&mut hasher);
     source_hash.hash(&mut hasher);
-    asset_id.hash(&mut hasher);
     Ok(hasher.finish())
 }
 
@@ -190,6 +188,12 @@ fn import_source(
     let state = imported.state;
     let imported = imported.value;
     let mut imported_assets = Vec::new();
+    let import_hash = calc_import_hash(
+        scratch_buf,
+        &options,
+        &state,
+        source_hash,
+    )?;
     for mut asset in imported.assets {
         asset.search_tags.push((
             "file_name".to_string(),
@@ -205,13 +209,7 @@ fn import_source(
         bincode::serialize_into(&mut asset_buf, asset_data)?;
         imported_assets.push({
             ImportedAsset {
-                import_hash: calc_import_hash(
-                    scratch_buf,
-                    &options,
-                    &state,
-                    source_hash,
-                    &asset.id,
-                )?,
+                import_hash: import_hash,
                 metadata: AssetMetadata {
                     id: asset.id,
                     search_tags: asset.search_tags,
@@ -230,7 +228,7 @@ fn import_source(
     }
     let source_metadata = SourceMetadata {
         version: SOURCEMETADATA_VERSION,
-        source_hash,
+        import_hash,
         importer_version: importer.version(),
         importer_options: options,
         importer_state: state,
@@ -265,20 +263,20 @@ fn import_pair(
                 let mut f = fs::File::open(&meta_path)?;
                 let mut bytes = Vec::new();
                 f.read_to_end(&mut bytes)?;
-                let metadata = format.deserialize_metadata(&bytes);
-                if metadata.source_hash == source_hash {
+                let metadata = format.deserialize_metadata(&bytes)?;
+                let import_hash = calc_import_hash(
+                    scratch_buf,
+                    &metadata.importer_options,
+                    &metadata.importer_state,
+                    source_hash,
+                )?;
+                if metadata.import_hash == import_hash {
                     let imported_assets: Result<Vec<ImportedAsset>> = metadata
                         .assets
                         .iter()
                         .map(|m| {
                             Ok(ImportedAsset {
-                                import_hash: calc_import_hash(
-                                    scratch_buf,
-                                    &metadata.importer_options,
-                                    &metadata.importer_state,
-                                    source_hash,
-                                    &m.id,
-                                )?,
+                                import_hash,
                                 metadata: m.clone(),
                                 asset: None,
                             })
@@ -296,10 +294,10 @@ fn import_pair(
                 state = format.default_state();
                 if let Some(saved_metadata) = saved_metadata {
                     if saved_metadata.options_type == options.uuid() {
-                        options = format.deserialize_options(saved_metadata.options);
+                        options = format.deserialize_options(saved_metadata.options)?;
                     }
                     if saved_metadata.state_type == state.uuid() {
-                        state = format.deserialize_state(saved_metadata.state);
+                        state = format.deserialize_state(saved_metadata.state)?;
                     }
                 }
             }
@@ -385,6 +383,44 @@ impl FileAssetSource {
         Ok(txn.delete(self.tables.path_to_metadata, &key)?)
     }
 
+    fn put_asset_path<'a, K>(
+        &self,
+        txn: &'a mut RwTransaction,
+        asset_id: &K,
+        path: &PathBuf,
+    ) -> Result<()>
+    where
+        K: AsRef<[u8]>,
+    {
+        let path_str = path.to_string_lossy();
+        let path = path_str.as_bytes();
+        txn.put_bytes(self.tables.asset_id_to_path, &asset_id, &path)?;
+        Ok(())
+    }
+
+    fn get_asset_path<'a, K, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        txn: &'a V,
+        asset_id: &K,
+    ) -> Result<Option<PathBuf>>
+    where
+        K: AsRef<[u8]>,
+    {
+        match txn.get_as_bytes(self.tables.asset_id_to_path, asset_id)? {
+            Some(p) => Ok(Some(PathBuf::from(
+                str::from_utf8(p).expect("Encoded key was invalid utf8"),
+            ))),
+            None => Ok(None),
+        }
+    }
+
+    fn delete_asset_path<K>(&self, txn: &mut RwTransaction, asset_id: &K) -> Result<bool>
+    where
+        K: AsRef<[u8]>,
+    {
+        Ok(txn.delete(self.tables.asset_id_to_path, asset_id)?)
+    }
+
     fn process_pair_cases(
         &self,
         txn: &RoTransaction,
@@ -398,7 +434,7 @@ impl FileAssetSource {
         if let HashedAssetFilePair {
             source:
                 Some(FileState {
-                    state: data_capnp::FileState::Deleted,
+                    state: data::FileState::Deleted,
                     ..
                 }),
             ..
@@ -409,7 +445,7 @@ impl FileAssetSource {
         if let HashedAssetFilePair {
             meta:
                 Some(FileState {
-                    state: data_capnp::FileState::Deleted,
+                    state: data::FileState::Deleted,
                     ..
                 }),
             ..
@@ -570,6 +606,7 @@ impl FileAssetSource {
             for asset in to_remove {
                 debug!("removing deleted asset {:?}", asset);
                 self.hub.remove_asset(txn, &asset)?;
+                self.delete_asset_path(txn, &asset)?;
             }
             self.put_metadata(txn, path, &imported.metadata)?;
             for asset in imported.assets {
@@ -580,6 +617,16 @@ impl FileAssetSource {
                     &asset.metadata,
                     asset.asset.as_ref(),
                 )?;
+                match self.get_asset_path(txn, &asset.metadata.id)? {
+                    Some(ref old_path) if old_path != path => error!(
+                        "asset {:?} already in DB with path {} expected {}",
+                        asset.metadata.id,
+                        old_path.to_string_lossy(),
+                        path.to_string_lossy(),
+                    ),
+                    Some(_) => {} // asset already in DB with correct path
+                    _ => self.put_asset_path(txn, &asset.metadata.id, path)?,
+                }
             }
         } else {
             debug!("deleting metadata for {}", path.to_string_lossy());
@@ -742,10 +789,7 @@ impl FileAssetSource {
         for result in &hashed_files {
             match result {
                 Err(err) => {
-                    error!(
-                        "Hashing error: {}",
-                        err
-                    );
+                    error!("Hashing error: {}", err);
                 }
                 Ok(_) => {}
             }
@@ -767,7 +811,10 @@ impl FileAssetSource {
         use std::cell::RefCell;
         thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
 
-        // Should get rid of this scoped_threadpool madness somehow.
+        // Should get rid of this scoped_threadpool madness somehow,
+        // but can't use par_iter directly since I need to process the results
+        // as soon as they are completed. So essentially I want futures::stream::FuturesUnordered.
+        // But I couldn't figure all that future stuff out, so here we are. Scoped threadpool.
         thread_pool.scoped(|scope| -> Result<()> {
             let (tx, rx) = channel::unbounded();
             let to_process = hashed_files.len();

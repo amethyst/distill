@@ -1,20 +1,22 @@
 [package]
 name = "atelier-assets"
 version = "0.1.0"
-build = "build.rs"
+edition = "2018"
 
 [dependencies]
+schema = { path = "schema" }
 # amethyst = { path = "../amethyst"}
 amethyst = { git = "http://github.com/kabergstrom/amethyst", branch = "asset-format"}
-capnp = "0.9.0"
+# capnp = "0.9.0"
+capnp = { version = "0.9.0", path = "../capnproto-rust/capnp", features = ["rpc_try"] }
 notify = "4.0.0"
 lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
 rayon = "1.0"
 fern = { version = "0.5", features = ["colored"] }
 log = { version = "0.4", features = ["serde"] }
-capnp-rpc = "0.9.0"
-tokio-core = "0.1"
-tokio-io = "0.1"
+# capnp-rpc = "0.9.0"
+capnp-rpc = { version = "0.9.0", path = "../capnproto-rust/capnp-rpc", features = ["rpc_try"] }
+tokio = "0.1"
 futures = "0.1"
 owning_ref = "0.4"
 crossbeam-channel = "0.2"
@@ -29,10 +31,6 @@ meowhash = "0.1.2"
 scoped_threadpool = "0.1.9"
 num_cpus = "1.0"
 time = "0.1"
-
-
-[build-dependencies]
-capnpc = "0.9"
 
 [dev-dependencies]
 tempfile = "3"

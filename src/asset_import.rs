@@ -3,6 +3,7 @@ use ron;
 use bincode;
 use serde::Deserialize;
 use std::io::Read;
+use error::Result;
 
 pub use amethyst::assets::{SerdeObj, AssetID, AssetUUID};
 
@@ -19,8 +20,8 @@ pub const SOURCEMETADATA_VERSION: u32 = 1;
 pub struct SourceMetadata<Options, State> {
     /// Metadata struct version
     pub version: u32,
-    /// Hash of the source file this metadata was generated from
-    pub source_hash: u64,
+    /// Hash of the source file + importer options + importer state this metadata was generated from
+    pub import_hash: u64,
     pub importer_version: u32,
     pub importer_options: Options,
     pub importer_state: State,
@@ -33,16 +34,16 @@ pub trait BoxedImporter {
         source: &mut Read,
         options: Box<SerdeObj>,
         state: Box<SerdeObj>,
-    ) -> ::amethyst::assets::Result<BoxedImporterValue>;
+    ) -> Result<BoxedImporterValue>;
     fn default_options(&self) -> Box<SerdeObj>;
     fn default_state(&self) -> Box<SerdeObj>;
     fn version(&self) -> u32;
     fn deserialize_metadata<'a>(
         &self,
         bytes: &'a [u8],
-    ) -> SourceMetadata<Box<SerdeObj>, Box<SerdeObj>>;
-    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Box<SerdeObj>;
-    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Box<SerdeObj>;
+    ) -> Result<SourceMetadata<Box<SerdeObj>, Box<SerdeObj>>>;
+    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Result<Box<SerdeObj>>;
+    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Result<Box<SerdeObj>>;
 }
 pub struct BoxedImporterValue {
     pub value: ImporterValue,
@@ -61,7 +62,7 @@ where
         source: &mut Read,
         options: Box<SerdeObj>,
         state: Box<SerdeObj>,
-    ) -> ::amethyst::assets::Result<BoxedImporterValue> {
+    ) -> Result<BoxedImporterValue> {
         let mut s = state.downcast::<S>().unwrap();
         let o = *options.downcast::<O>().unwrap();
         let result = self.import(source, o.clone(), &mut s)?;
@@ -83,22 +84,22 @@ where
     fn deserialize_metadata<'a>(
         &self,
         bytes: &'a [u8],
-    ) -> SourceMetadata<Box<SerdeObj>, Box<SerdeObj>> {
-        let metadata: SourceMetadata<O, S> = ron::de::from_bytes(&bytes).unwrap();
-        SourceMetadata {
+    ) -> Result<SourceMetadata<Box<SerdeObj>, Box<SerdeObj>>> {
+        let metadata: SourceMetadata<O, S> = ron::de::from_bytes(&bytes)?;
+        Ok(SourceMetadata {
             version: metadata.version,
-            source_hash: metadata.source_hash,
+            import_hash: metadata.import_hash,
             importer_version: metadata.importer_version,
             importer_options: Box::new(metadata.importer_options),
             importer_state: Box::new(metadata.importer_state),
             assets: metadata.assets.clone(),
-        }
+        })
     }
-    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Box<SerdeObj> {
-        Box::new(bincode::deserialize::<O>(&bytes).unwrap())
+    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Result<Box<SerdeObj>> {
+        Ok(Box::new(bincode::deserialize::<O>(&bytes)?))
     }
-    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Box<SerdeObj> {
-        Box::new(bincode::deserialize::<S>(&bytes).unwrap())
+    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Result<Box<SerdeObj>> {
+        Ok(Box::new(bincode::deserialize::<S>(&bytes)?))
     }
 }
 

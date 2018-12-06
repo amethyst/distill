@@ -5,9 +5,9 @@ extern crate rayon;
 use capnp_db::{
     CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
 };
-use crossbeam_channel::{self as channel, Receiver, Sender};
-use data_capnp::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
-use error::Result;
+use crossbeam_channel::{self as channel, Receiver, Sender, select};
+use schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
+use crate::error::Result;
 use lmdb::Cursor;
 use std::{
     cmp::PartialEq,
@@ -22,8 +22,9 @@ use std::{
     thread,
     time::Duration,
 };
-use utils;
-use watcher::{self, FileEvent, FileMetadata};
+use log::{debug, error, info};
+use crate::utils;
+use crate::watcher::{self, FileEvent, FileMetadata};
 
 #[derive(Clone)]
 struct FileTrackerTables {
@@ -45,23 +46,10 @@ pub struct FileTracker {
     listener_tx: Sender<Sender<FileTrackerEvent>>,
     is_running: AtomicBool,
 }
-impl ::std::fmt::Debug for data_capnp::FileState {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match self {
-            data_capnp::FileState::Exists => {
-                write!(f, "FileState::Exists")?;
-            }
-            data_capnp::FileState::Deleted => {
-                write!(f, "FileState::Deleted")?;
-            }
-        }
-        Ok(())
-    }
-}
 #[derive(Clone, Debug)]
 pub struct FileState {
     pub path: PathBuf,
-    pub state: data_capnp::FileState,
+    pub state: data::FileState,
     pub last_modified: u64,
     pub length: u64,
 }
@@ -125,7 +113,7 @@ fn add_rename_event(
 }
 
 fn build_dirty_file_info(
-    state: data_capnp::FileState,
+    state: data::FileState,
     source_info: source_file_info::Reader,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
@@ -163,7 +151,7 @@ where
         txn.get::<source_file_info::Owned, K>(tables.source_files, key)?
             .map(|v| {
                 let info = v.get().expect("failed to get source_file_info");
-                build_dirty_file_info(data_capnp::FileState::Deleted, info)
+                build_dirty_file_info(data::FileState::Deleted, info)
             })
     };
     if dirty_value.is_some() {
@@ -206,7 +194,7 @@ fn handle_file_event(
             if changed {
                 let value = build_source_info(&metadata);
                 let dirty_value = build_dirty_file_info(
-                    data_capnp::FileState::Exists,
+                    data::FileState::Exists,
                     value.get_root_as_reader::<source_file_info::Reader>()?,
                 );
                 txn.put(tables.source_files, &key, &value)?;
@@ -229,11 +217,11 @@ fn handle_file_event(
             txn.delete(tables.source_files, &src_key)?;
             txn.put(tables.source_files, &dst_key, &value)?;
             let dirty_value_new = build_dirty_file_info(
-                data_capnp::FileState::Exists,
+                data::FileState::Exists,
                 value.get_root_as_reader::<source_file_info::Reader>()?,
             );
             let dirty_value_old = build_dirty_file_info(
-                data_capnp::FileState::Deleted,
+                data::FileState::Deleted,
                 value.get_root_as_reader::<source_file_info::Reader>()?,
             );
             txn.put(tables.dirty_files, &src_key, &dirty_value_old)?;
@@ -415,7 +403,7 @@ impl FileTracker {
                 let info = value_result.get_root::<source_file_info::Reader>()?;
                 file_states.push(FileState {
                     path: PathBuf::from(key),
-                    state: data_capnp::FileState::Exists,
+                    state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
                 });
@@ -446,7 +434,7 @@ impl FileTracker {
                 let info = value.get()?.get_source_info()?;
                 Ok(Some(FileState {
                     path: path.clone(),
-                    state: data_capnp::FileState::Exists,
+                    state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
                 }))
@@ -467,7 +455,7 @@ impl FileTracker {
                 let info = value.get()?;
                 Ok(Some(FileState {
                     path: path.clone(),
-                    state: data_capnp::FileState::Exists,
+                    state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
                 }))

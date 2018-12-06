@@ -20,7 +20,8 @@ pub enum Error {
     NotInSchema(capnp::NotInSchema),
     AssetError(assets::Error),
     BincodeError(bincode::ErrorKind),
-    RonError(ron::ser::Error),
+    RonSerError(ron::ser::Error),
+    RonDeError(ron::de::Error),
     SetLoggerError(log::SetLoggerError),
     RecvError,
     Exit,
@@ -39,7 +40,8 @@ impl std::error::Error for Error {
             Error::NotInSchema(ref e) => e.description(),
             Error::AssetError(ref e) => e.description(),
             Error::BincodeError(ref e) => e.description(),
-            Error::RonError(ref e) => e.description(),
+            Error::RonSerError(ref e) => e.description(),
+            Error::RonDeError(ref e) => e.description(),
             Error::SetLoggerError(ref e) => e.description(),
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
@@ -56,7 +58,8 @@ impl std::error::Error for Error {
             Error::NotInSchema(ref e) => Some(e),
             Error::AssetError(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
-            Error::RonError(ref e) => Some(e),
+            Error::RonSerError(ref e) => Some(e),
+            Error::RonDeError(ref e) => Some(e),
             Error::SetLoggerError(ref e) => Some(e),
             Error::RecvError => None,
             Error::Exit => None,
@@ -74,7 +77,8 @@ impl fmt::Display for Error {
             Error::NotInSchema(ref e) => e.fmt(f),
             Error::AssetError(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
-            Error::RonError(ref e) => e.fmt(f),
+            Error::RonSerError(ref e) => e.fmt(f),
+            Error::RonDeError(ref e) => e.fmt(f),
             Error::SetLoggerError(ref e) => e.fmt(f),
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
@@ -118,7 +122,12 @@ impl From<Box<bincode::ErrorKind>> for Error {
 }
 impl From<ron::ser::Error> for Error {
     fn from(err: ron::ser::Error) -> Error {
-        Error::RonError(err)
+        Error::RonSerError(err)
+    }
+}
+impl From<ron::de::Error> for Error {
+    fn from(err: ron::de::Error) -> Error {
+        Error::RonDeError(err)
     }
 }
 impl From<Error> for capnp::Error {

@@ -1,32 +1,8 @@
+#![feature(try_trait)]
 #![feature(int_to_from_bytes)]
 #![allow(unknown_lints)]
 #![warn(clippy::all)]
-extern crate amethyst;
-extern crate capnp;
-extern crate capnp_rpc;
-extern crate futures;
-extern crate lmdb;
-extern crate owning_ref;
-extern crate rayon;
-extern crate tokio_core;
-extern crate tokio_io;
-#[macro_use]
-extern crate crossbeam_channel;
-extern crate bincode;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate erased_serde;
-extern crate num_cpus;
-extern crate ron;
-extern crate scoped_threadpool;
-#[macro_use]
-extern crate log;
-extern crate fern;
-extern crate time;
-
-#[cfg(test)]
-extern crate tempfile;
+#![feature(mpsc_select)]
 
 mod asset_hub;
 mod asset_hub_service;
@@ -42,18 +18,7 @@ use capnp_db::Environment;
 use error::Result;
 use file_tracker::FileTracker;
 use std::{fs, path::Path, sync::Arc, thread};
-use tokio_core::reactor;
 
-#[allow(clippy::all)]
-#[allow(dead_code)]
-pub mod data_capnp {
-    include!(concat!(env!("OUT_DIR"), "/data_capnp.rs"));
-}
-#[allow(clippy::all)]
-#[allow(dead_code)]
-pub mod service_capnp {
-    include!(concat!(env!("OUT_DIR"), "/service_capnp.rs"));
-}
 
 #[cfg(debug)]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Debug;

@@ -1,16 +1,18 @@
 use asset_hub::AssetHub;
 use capnp::{self, capability::Promise};
-use capnp_db::{DBTransaction, Environment, RoTransaction};
+use capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction};
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
-use data_capnp::{asset_metadata, dirty_file_info, imported_metadata};
+use schema::data::{asset_metadata, dirty_file_info, imported_metadata};
+use schema::service::{asset_hub, asset_hub::snapshot};
 use futures::{Future, Stream};
 use owning_ref::OwningHandle;
-use service_capnp::{asset_hub, asset_hub::snapshot};
 use std::error;
 use std::fmt;
 use std::sync::Arc;
-use tokio_core::reactor;
-use tokio_io::AsyncRead;
+use std::rc::Rc;
+use std::thread;
+use tokio::runtime::current_thread::Runtime;
+use tokio::prelude::*;
 
 struct ServiceContext {
     hub: Arc<AssetHub>,
@@ -21,8 +23,10 @@ pub struct AssetHubService {
     ctx: Arc<ServiceContext>,
 }
 
+// RPC interface implementations
+
 struct AssetHubSnapshotImpl<'a> {
-    txn: OwningHandle<Arc<ServiceContext>, Box<RoTransaction<'a>>>,
+    txn: Rc<OwningHandle<Arc<ServiceContext>, Rc<RoTransaction<'a>>>>,
 }
 
 struct AssetHubImpl {
@@ -36,17 +40,23 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         mut results: asset_hub::snapshot::GetAllAssetsResults,
     ) -> Promise<(), capnp::Error> {
         let ctx = self.txn.as_owner();
-        let txn = &*self.txn;
+        let txn = &**self.txn;
         let mut metadatas = Vec::new();
-        for (_, value) in pry!(ctx.hub.get_metadata_iter(txn)) {
-            let value = pry!(value);
+        for (_, value) in ctx.hub.get_metadata_iter(txn)?.capnp_iter_start() {
+            let value = value?;
             let metadata = value.into_typed::<imported_metadata::Owned>();
             metadatas.push(metadata);
         }
-        let mut assets = results.get().init_assets(metadatas.len() as u32);
+        let mut results_builder = results.get();
+        let mut assets = results_builder
+            .reborrow()
+            .init_assets(metadatas.len() as u32);
         for (idx, metadata) in metadatas.iter().enumerate() {
-            let metadata = pry!(metadata.get());
-            // assets.get(idx as u32) = pry!(metadata.get_metadata());
+            let metadata = metadata.get()?;
+            assets.set_with_caveats(
+                idx as u32,
+                metadata.get_metadata()?
+            );
         }
         Promise::ok(())
     }
@@ -67,7 +77,9 @@ impl asset_hub::Server for AssetHubImpl {
     ) -> Promise<(), capnp::Error> {
         let ctx = self.ctx.clone();
         let snapshot = AssetHubSnapshotImpl {
-            txn: OwningHandle::new_with_fn(ctx, |t| unsafe { Box::new((*t).db.ro_txn().unwrap()) }),
+            txn: Rc::new(OwningHandle::new_with_fn(ctx, |t| unsafe {
+                Rc::new((*t).db.ro_txn().unwrap())
+            })),
         };
         results.get().set_snapshot(
             asset_hub::snapshot::ToClient::new(snapshot).into_client::<::capnp_rpc::Server>(),
@@ -85,41 +97,38 @@ impl AssetHubService {
     pub fn run(&self) -> Result<(), Error> {
         use std::net::ToSocketAddrs;
 
-        let mut core = reactor::Core::new()?;
-        let handle = core.handle();
+        let mut runtime = Runtime::new().unwrap();
 
         let addr = "localhost:9999"
             .to_socket_addrs()?
             .next()
             .map_or(Err(Error::InvalidAddress), Ok)?;
-        let socket = ::tokio_core::net::TcpListener::bind(&addr, &handle)?;
+        let socket = ::tokio::net::TcpListener::bind(&addr)?;
 
-        let service_impl = AssetHubImpl {
-            ctx: self.ctx.clone(),
-        };
-
-        let publisher = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
-
-        let handle1 = handle.clone();
-        let done = socket.incoming().for_each(move |(socket, _addr)| {
-            try!(socket.set_nodelay(true));
+        let done = socket.incoming().for_each(move |socket| {
+            socket.set_nodelay(true)?;
             let (reader, writer) = socket.split();
-            let handle = handle1.clone();
+            let ctx = self.ctx.clone();
+            thread::spawn(move || {
+                let service_impl = AssetHubImpl { ctx: ctx };
+                let hub_impl =
+                    asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
+        let mut runtime = Runtime::new().unwrap();
 
-            let network = twoparty::VatNetwork::new(
-                reader,
-                writer,
-                rpc_twoparty_capnp::Side::Server,
-                Default::default(),
-            );
+                let network = twoparty::VatNetwork::new(
+                    reader,
+                    writer,
+                    rpc_twoparty_capnp::Side::Server,
+                    Default::default(),
+                );
 
-            let rpc_system = RpcSystem::new(Box::new(network), Some(publisher.clone().client));
-
-            handle.spawn(rpc_system.map_err(|_| ()));
+                let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.clone().client));
+                runtime.block_on(rpc_system.map_err(|_| ()));
+            });
             Ok(())
         });
 
-        core.run(done)?;
+        runtime.block_on(done)?;
         Ok(())
     }
 }
