@@ -12,3 +12,4 @@ tokio = "0.1"
 futures = "0.1"
 schema = { path = "../schema" }
 time = "0.1"
+parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }

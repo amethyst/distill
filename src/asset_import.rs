@@ -1,9 +1,9 @@
 use amethyst::assets::{Importer, ImporterValue, SimpleImporter};
 use ron;
 use bincode;
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 use std::io::Read;
-use error::Result;
+use crate::error::Result;
 
 pub use amethyst::assets::{SerdeObj, AssetID, AssetUUID};
 

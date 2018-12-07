@@ -20,11 +20,18 @@ use time::PreciseTime;
 use tokio::runtime::current_thread::Runtime;
 use tokio::prelude::*;
 
+
+fn endpoint() -> String {
+    if cfg!(windows) {
+        r"\\.\pipe\atelier-assets".to_string()
+    } else {
+        r"/tmp/atelier-assets".to_string()
+    }
+}
 pub fn main() {
     use std::net::ToSocketAddrs;
-    use std::collections::HashMap;
-    let mut wot = HashMap::new();
-    wot.insert("fd", "fds");
+    use parity_tokio_ipc::IpcConnection;
+
 
     let addr = "localhost:9999".to_socket_addrs().unwrap().next().unwrap();
 
@@ -39,16 +46,20 @@ pub fn main() {
     let byte_size = Arc::new(AtomicUsize::new(0));
     let start_time = PreciseTime::now();
     let mut threads = Vec::new();
-    for _ in 0..16 {
+    for _ in 0..1 {
         let num_assets = num_assets.clone();
         let byte_size = byte_size.clone();
         threads.push(thread::spawn(move || {
-        let mut runtime = Runtime::new().unwrap();
-            let stream = runtime
-                .block_on(::tokio::net::TcpStream::connect(&addr))
-                .unwrap();
-            stream.set_nodelay(true).unwrap();
-            let (reader, writer) = stream.split();
+            let mut runtime = Runtime::new().unwrap();
+            // let stream = runtime
+            //     .block_on(::tokio::net::TcpStream::connect(&addr))
+            //     .unwrap();
+            // stream.set_nodelay(true).unwrap();
+            // stream.set_send_buffer_size(1 << 20).unwrap();
+            // stream.set_recv_buffer_size(1 << 20).unwrap();
+            // let (reader, writer) = stream.split();
+            let connection = IpcConnection::connect(endpoint(), &tokio::reactor::Handle::current()).expect("failed to create named pipe");
+            let (reader, writer) = connection.split();
             let rpc_network = Box::new(twoparty::VatNetwork::new(
                 reader,
                 writer,
@@ -60,14 +71,13 @@ pub fn main() {
             let hub: asset_hub::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
             runtime.spawn(rpc_system.map_err(|_| ()));
             let request = hub.get_snapshot_request();
-            let snapshot = runtime
-                .block_on(request.send().promise)
+            let snapshot = runtime.block_on(request.send().promise)
                 .unwrap()
                 .get()
                 .unwrap()
                 .get_snapshot()
                 .unwrap();
-            for i in 0..10000 {
+            for _i in 0..1000 {
                 let request = snapshot.get_all_assets_request();
                 let result = runtime.block_on(request.send().promise).unwrap();
                 let result = result.get().unwrap();
@@ -79,6 +89,7 @@ pub fn main() {
                 );
             }
         }));
+        thread::sleep(std::time::Duration::new(0, 1000));
     }
     for thread in threads {
         thread.join().unwrap();

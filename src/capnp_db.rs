@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use capnp;
-use error::{Error, Result};
+use crate::error::{Error, Result};
 use lmdb::{self, Cursor, Transaction, EnvironmentFlags};
 use std::path::Path;
 use std::result::Result as StdResult;
@@ -48,7 +48,7 @@ impl<'txn> Iterator for Iter<'txn> {
         StdResult<capnp::message::Reader<capnp::serialize::SliceSegments<'txn>>, capnp::Error>,
     );
     fn next(&mut self) -> Option<Self::Item> {
-        let (key_bytes, mut value_bytes) = self.iter.next()?;
+        let (key_bytes, value_bytes) = self.iter.next()?;
         let slice;
         unsafe {
             slice = capnp::Word::bytes_to_words(value_bytes);

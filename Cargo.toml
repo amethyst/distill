@@ -19,7 +19,7 @@ capnp-rpc = { version = "0.9.0", path = "../capnproto-rust/capnp-rpc", features 
 tokio = "0.1"
 futures = "0.1"
 owning_ref = "0.4"
-crossbeam-channel = "0.2"
+crossbeam-channel = "0.3"
 mopa = "0.2.2"
 serde = "1.0"
 serde_derive = "1.0"
@@ -31,6 +31,7 @@ meowhash = "0.1.2"
 scoped_threadpool = "0.1.9"
 num_cpus = "1.0"
 time = "0.1"
+parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
 
 [dev-dependencies]
 tempfile = "3"

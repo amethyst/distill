@@ -2,7 +2,7 @@ extern crate notify;
 
 use self::notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use crossbeam_channel::Sender as cbSender;
-use error::{Result, Error};
+use crate::error::{Result, Error};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -161,7 +161,7 @@ impl DirWatcher {
                 Ok(event) => match self.handle_notify_event(event, false) {
                     Ok(maybe_event) => {
                         if let Some(evt) = maybe_event {
-                            self.asset_tx.send(evt)
+                            self.asset_tx.send(evt);
                         }
                     }
                     Err(err) => match err {
@@ -240,7 +240,7 @@ impl DirWatcher {
         if let Some(dst) = dst {
             let link = fs::read_link(&dst);
             if link.is_ok() {
-                let mut link_path = link.unwrap();
+                let link_path = link.unwrap();
                 match fs::canonicalize(dst.join(link_path)) {
                     Err(err) => match err.kind() {
                         io::ErrorKind::NotFound => {}

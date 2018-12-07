@@ -1,5 +1,4 @@
 #![feature(try_trait)]
-#![feature(int_to_from_bytes)]
 #![allow(unknown_lints)]
 #![warn(clippy::all)]
 #![feature(mpsc_select)]
@@ -14,9 +13,9 @@ pub mod file_tracker;
 mod utils;
 pub mod watcher;
 
-use capnp_db::Environment;
-use error::Result;
-use file_tracker::FileTracker;
+use crate::capnp_db::Environment;
+use crate::error::Result;
+use crate::file_tracker::FileTracker;
 use std::{fs, path::Path, sync::Arc, thread};
 
 

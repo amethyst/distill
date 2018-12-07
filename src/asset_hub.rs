@@ -1,11 +1,12 @@
-use asset_import::{AssetID, AssetMetadata};
-use capnp_db::{CapnpCursor, DBTransaction, Environment, Iter, MessageReader, RwTransaction};
+use crate::asset_import::{AssetID, AssetMetadata};
+use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, Iter, MessageReader, RwTransaction};
+use log::{debug, info, error};
 use crossbeam_channel::{self as channel, Receiver};
 use schema::data::{
     self, asset_metadata, import_artifact_key,
     imported_metadata::{self, latest_artifact},
 };
-use error::Result;
+use crate::error::Result;
 use rayon::prelude::*;
 use ron;
 use std::collections::hash_map::DefaultHasher;
@@ -116,7 +117,7 @@ impl AssetHub {
         &self,
         txn: &'a V,
     ) -> Result<lmdb::RoCursor<'a>> {
-        let mut cursor = txn.open_ro_cursor(self.tables.asset_metadata)?;
+        let cursor = txn.open_ro_cursor(self.tables.asset_metadata)?;
         Ok(cursor)
     }
 

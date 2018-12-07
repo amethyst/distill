@@ -2,7 +2,7 @@ extern crate capnp;
 extern crate lmdb;
 extern crate rayon;
 
-use capnp_db::{
+use crate::capnp_db::{
     CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
 };
 use crossbeam_channel::{self as channel, Receiver, Sender, select};
@@ -465,7 +465,7 @@ impl FileTracker {
     }
 
     pub fn register_listener(&self, sender: Sender<FileTrackerEvent>) {
-        self.listener_tx.send(sender)
+        self.listener_tx.send(sender);
     }
 
     pub fn stop(&self) {
@@ -487,8 +487,8 @@ impl FileTracker {
         while *is_running {
             let timeout = Duration::from_millis(100);
             select! {
-                recv(rx, evt) => {
-                    if let Some(evt) = evt {
+                recv(rx) -> evt => {
+                    if let Ok(evt) = evt {
                         if txn.is_none() {
                             txn = Some(self.db.rw_txn()?);
                         }
@@ -500,7 +500,7 @@ impl FileTracker {
                         break;
                     }
                 }
-                recv(channel::after(timeout)) => {
+                recv(channel::after(timeout)) -> _msg => {
                     break;
                 }
             }
@@ -512,7 +512,7 @@ impl FileTracker {
                 for listener in listeners {
                     debug!("Sent to listener");
                     select! {
-                        send(listener, FileTrackerEvent::Updated) => {}
+                        send(listener, FileTrackerEvent::Updated) -> _ => {}
                         default => {}
                     }
                 }
@@ -536,8 +536,8 @@ impl FileTracker {
         let mut listeners = vec![];
         while self.is_running.load(Ordering::Acquire) {
             select! {
-                recv(self.listener_rx, listener) => {
-                    if let Some(listener) = listener {
+                recv(self.listener_rx) -> listener => {
+                    if let Ok(listener) = listener {
                         listeners.push(listener);
                     }
                 },
@@ -561,9 +561,9 @@ impl FileTracker {
 
 #[cfg(test)]
 mod tests {
-    use capnp_db::Environment;
-    use crossbeam_channel::{self as channel, Receiver};
-    use file_tracker::{FileTracker, FileTrackerEvent};
+    use crate::capnp_db::Environment;
+    use crossbeam_channel::{self as channel, Receiver, select};
+    use crate::file_tracker::{FileTracker, FileTrackerEvent};
     use std::{
         fs,
         path::{Path, PathBuf},
@@ -611,16 +611,17 @@ mod tests {
         }
     }
 
+
     fn expect_no_event(rx: &Receiver<FileTrackerEvent>) {
         select! {
-            recv(rx, evt) => {
-                if let Some(evt) = evt {
+            recv(rx) -> evt => {
+                if let Ok(evt) = evt {
                     assert!(false, "Received unexpected event {:?}", evt);
                 } else {
                     assert!(false, "Receive error when waiting for file event");
                 }
             }
-            recv(channel::after(Duration::from_millis(1000))) => {
+            recv(channel::after(Duration::from_millis(1000))) -> _ => {
                 return;
             }
         };
@@ -629,14 +630,14 @@ mod tests {
 
     fn expect_event(rx: &Receiver<FileTrackerEvent>) -> FileTrackerEvent {
         select! {
-            recv(rx, evt) => {
-                if let Some(evt) = evt {
+            recv(rx) -> evt => {
+                if let Ok(evt) = evt {
                     return evt;
                 } else {
                     assert!(false, "Receive error when waiting for file event");
                 }
             }
-            recv(channel::after(Duration::from_millis(1000))) => {
+            recv(channel::after(Duration::from_millis(1000))) -> _ => {
                     assert!(false, "Timed out waiting for file event");
             }
         };

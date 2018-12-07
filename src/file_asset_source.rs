@@ -3,7 +3,7 @@ use crate::asset_import::{
     format_from_ext, AssetMetadata, BoxedImporter, SerdeObj, SourceMetadata, SOURCEMETADATA_VERSION,
 };
 use bincode;
-use capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
+use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
 use crossbeam_channel::{self as channel, Receiver};
 use crate::error::{Error, Result};
 use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
@@ -24,7 +24,7 @@ use std::{
     sync::Arc,
 };
 use time::PreciseTime;
-use log::error;
+use log::{error, info, debug};
 use crate::utils;
 use crate::watcher::file_metadata;
 
@@ -828,7 +828,7 @@ impl FileAssetSource {
                             *local_store = Some(Vec::new());
                         }
                         match self.db.ro_txn() {
-                            Err(e) => sender.send((processed_pair, Err(e))),
+                            Err(e) => { sender.send((processed_pair, Err(e))); }
                             Ok(read_txn) => {
                                 let result = self.process_pair_cases(
                                     &read_txn,
@@ -850,7 +850,7 @@ impl FileAssetSource {
             let mut num_processed = 0;
             while num_processed < to_process {
                 match rx.recv() {
-                    Some(import) => {
+                    Ok(import) => {
                         self.process_imported_pair(&mut txn, &import.0, import.1)?;
                         num_processed += 1;
                         import_iter.next();
@@ -877,10 +877,10 @@ impl FileAssetSource {
         let mut thread_pool = Pool::new(num_cpus::get() as u32);
         loop {
             match self.rx.recv() {
-                Some(_evt) => {
+                Ok(_evt) => {
                     self.handle_update(&mut thread_pool)?;
                 }
-                None => {
+                Err(_) => {
                     return Ok(());
                 }
             }
