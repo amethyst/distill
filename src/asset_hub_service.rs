@@ -50,21 +50,14 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let mut results_builder = results.get();
         let assets = results_builder
             .reborrow()
-            .init_assets(metadatas.len() as u32 * 100);
-        // for (idx, metadata) in metadatas.iter().enumerate() {
-        //     let metadata = metadata.get()?;
-        //     assets.set_with_caveats(
-        //         idx as u32,
-        //         metadata.get_metadata()?
-        //     );
-        // }
-        // for (idx, metadata) in metadatas.iter().enumerate() {
-        //     let metadata = metadata.get()?;
-        //     assets.set_with_caveats(
-        //         idx as u32 + metadatas.len() as u32,
-        //         metadata.get_metadata()?
-        //     );
-        // }
+            .init_assets(metadatas.len() as u32);
+        for (idx, metadata) in metadatas.iter().enumerate() {
+            let metadata = metadata.get()?;
+            assets.set_with_caveats(
+                idx as u32,
+                metadata.get_metadata()?
+            );
+        }
         Promise::ok(())
     }
 }
