@@ -8,14 +8,14 @@ schema = { path = "schema" }
 # amethyst = { path = "../amethyst"}
 amethyst = { git = "http://github.com/kabergstrom/amethyst", branch = "asset-format"}
 # capnp = "0.9.0"
-capnp = { version = "0.9.0", path = "../capnproto-rust/capnp", features = ["rpc_try"] }
+capnp = { git = "http://github.com/capnproto/capnproto-rust", branch = "master", features = ["rpc_try"]}
 notify = "4.0.0"
 lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
 rayon = "1.0"
 fern = { version = "0.5", features = ["colored"] }
 log = { version = "0.4", features = ["serde"] }
 # capnp-rpc = "0.9.0"
-capnp-rpc = { version = "0.9.0", path = "../capnproto-rust/capnp-rpc", features = ["rpc_try"] }
+capnp-rpc = { git = "http://github.com/capnproto/capnproto-rust", branch = "master"}
 tokio = "0.1"
 futures = "0.1"
 owning_ref = "0.4"
@@ -35,3 +35,6 @@ parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch
 
 [dev-dependencies]
 tempfile = "3"
+
+[profile.release]
+debug = true

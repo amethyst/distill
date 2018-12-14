@@ -5,7 +5,7 @@ build = "build.rs"
 
 [dependencies]
 # capnp = "0.9.0"
-capnp = { path = "../../capnproto-rust/capnp" }
+capnp = { git = "http://github.com/capnproto/capnproto-rust", branch = "master"}
 
 [build-dependencies]
-capnpc = { path = "../../capnproto-rust/capnpc"}
+capnpc = { git = "http://github.com/capnproto/capnproto-rust", branch = "master"}

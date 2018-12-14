@@ -5,9 +5,9 @@ edition = "2018"
 
 [dependencies]
 # capnp = "0.9.0"
-capnp = { path = "../../capnproto-rust/capnp" }
+capnp = { git = "http://github.com/capnproto/capnproto-rust", branch = "master", features = ["rpc_try"]}
 # capnp-rpc = "0.9.0"
-capnp-rpc = { path = "../../capnproto-rust/capnp-rpc" }
+capnp-rpc = { git = "http://github.com/capnproto/capnproto-rust", branch = "master"}
 tokio = "0.1"
 futures = "0.1"
 schema = { path = "../schema" }

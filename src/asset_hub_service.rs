@@ -1,18 +1,18 @@
 use crate::asset_hub::AssetHub;
-use capnp::{self, capability::Promise};
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction};
+use capnp::{self, capability::Promise};
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
-use schema::data::{asset_metadata, dirty_file_info, imported_metadata};
-use schema::service::{asset_hub, asset_hub::snapshot};
 use futures::{Future, Stream};
 use owning_ref::OwningHandle;
+use schema::data::{asset_metadata, dirty_file_info, imported_metadata};
+use schema::service::{asset_hub, asset_hub::snapshot};
 use std::error;
 use std::fmt;
-use std::sync::Arc;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::thread;
-use tokio::runtime::current_thread::Runtime;
 use tokio::prelude::*;
+use tokio::runtime::current_thread::Runtime;
 
 struct ServiceContext {
     hub: Arc<AssetHub>,
@@ -50,14 +50,15 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let mut results_builder = results.get();
         let assets = results_builder
             .reborrow()
-            .init_assets(metadatas.len() as u32);
+            .init_assets(metadatas.len() as u32 * 5);
         for (idx, metadata) in metadatas.iter().enumerate() {
             let metadata = metadata.get()?;
-            assets.set_with_caveats(
-                idx as u32,
-                metadata.get_metadata()?
-            );
+            assets.set_with_caveats(idx as u32, metadata.get_metadata()?)?;
         }
+        // let mut results_builder = results.get();
+        // let assets = results_builder
+        //     .reborrow()
+        //     .init_assets(1000000 as u32);
         Promise::ok(())
     }
 }
@@ -95,12 +96,17 @@ fn endpoint() -> String {
         r"/tmp/atelier-assets".to_string()
     }
 }
-fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'static>(reader: R, writer: W, ctx: Arc<ServiceContext>) {
+fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'static>(
+    reader: R,
+    writer: W,
+    ctx: Arc<ServiceContext>,
+) {
     thread::spawn(move || {
+        
+
         let service_impl = AssetHubImpl { ctx: ctx };
-        let hub_impl =
-            asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
-    let mut runtime = Runtime::new().unwrap();
+        let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
+        let mut runtime = Runtime::new().unwrap();
 
         let network = twoparty::VatNetwork::new(
             reader,
@@ -120,32 +126,35 @@ impl AssetHubService {
         }
     }
     pub fn run(&self) -> Result<(), Error> {
-        use std::net::ToSocketAddrs;
         use parity_tokio_ipc::Endpoint;
+        use std::net::ToSocketAddrs;
 
         let mut runtime = Runtime::new().unwrap();
 
-        let addr = "localhost:9999"
+        let addr = "127.0.0.1:9999"
             .to_socket_addrs()?
             .next()
             .map_or(Err(Error::InvalidAddress), Ok)?;
         let tcp = ::tokio::net::TcpListener::bind(&addr)?;
-        let tcp_future = tcp.incoming().for_each(move |(stream)| {
+        let tcp_future = tcp.incoming().for_each(move |stream| {
             stream.set_nodelay(true)?;
-            stream.set_send_buffer_size(1 << 20)?;
-            stream.set_recv_buffer_size(1 << 20)?;
+            stream.set_send_buffer_size(1 << 24)?;
+            stream.set_recv_buffer_size(1 << 24)?;
             let (reader, writer) = stream.split();
             spawn_rpc(reader, writer, self.ctx.clone());
             Ok(())
         });
-        
+
         let ipc = Endpoint::new(endpoint());
 
-        let ipc_future = ipc.incoming(&tokio::reactor::Handle::current()).expect("failed to listen for incoming IPC connections").for_each(move |(stream, _id)| {
-            let (reader, writer) = stream.split();
-            spawn_rpc(reader, writer, self.ctx.clone());
-            Ok(())
-        });
+        let ipc_future = ipc
+            .incoming(&tokio::reactor::Handle::current())
+            .expect("failed to listen for incoming IPC connections")
+            .for_each(move |(stream, _id)| {
+                let (reader, writer) = stream.split();
+                spawn_rpc(reader, writer, self.ctx.clone());
+                Ok(())
+            });
 
         runtime.block_on(tcp_future.join(ipc_future))?;
         Ok(())
