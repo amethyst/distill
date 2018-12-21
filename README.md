@@ -1,3 +1,15 @@
+Compilation dependencies:
+- [capnpc in PATH](https://capnproto.org/install.html)
+
+To run:
+
+- Create an `assets` folder in the root of the repository
+- Put some images (png, jpg, tga) in the `assets` folder
+
+Enjoy glorious .meta files!
+
+## Modules
+
 ### DirWatcher
 Provides filesystem events with cross-platform support using the glorious crate [notify](https://docs.rs/notify/4.0.6/notify/). DirWatcher follows symlinks and supports watching multiple directories, providing events through a crossbeam_channel.
 
