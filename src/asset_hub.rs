@@ -1,14 +1,16 @@
 use crate::asset_import::{AssetID, AssetMetadata};
-use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, Iter, MessageReader, RwTransaction};
-use log::{debug, info, error};
+use crate::capnp_db::{
+    CapnpCursor, DBTransaction, Environment, Iter, MessageReader, RwTransaction,
+};
+use crate::error::Result;
 use crossbeam_channel::{self as channel, Receiver};
+use log::{debug, error, info};
+use rayon::prelude::*;
+use ron;
 use schema::data::{
     self, asset_metadata, import_artifact_key,
     imported_metadata::{self, latest_artifact},
 };
-use crate::error::Result;
-use rayon::prelude::*;
-use ron;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::{
@@ -46,7 +48,10 @@ fn set_assetid_list(
                 builder.reborrow().get(idx as u32).set_uuid(uuid);
             }
             AssetID::FilePath(path) => {
-                builder.reborrow().get(idx as u32).set_path(path.to_string_lossy().as_bytes());
+                builder
+                    .reborrow()
+                    .get(idx as u32)
+                    .set_path(path.to_string_lossy().as_bytes());
             }
         }
     }
@@ -144,36 +149,29 @@ impl AssetHub {
     {
         let hash_bytes = import_hash.to_le_bytes();
         let mut maybe_id = None;
-        {
-            {
-                let existing_metadata: Option<
-                    MessageReader<imported_metadata::Owned>,
-                > = txn.get(self.tables.asset_metadata, &metadata.id)?;
-                if let Some(existing_metadata) = existing_metadata {
-                    let latest_artifact = existing_metadata.get()?.get_latest_artifact();
-                    if let latest_artifact::Id(Ok(id)) = latest_artifact.which()? {
-                        maybe_id = Some(Vec::from(id.get_hash()?));
-                    }
-                }
-            }
-            if let Some(id) = maybe_id.as_ref() {
-                if !id.is_empty() && hash_bytes != id.as_slice() {
-                    txn.delete(self.tables.import_artifacts, id)?;
-                    debug!("deleted artifact {:?} {:?}", hash_bytes, id.as_slice());
-                }
+        let existing_metadata: Option<MessageReader<imported_metadata::Owned>> =
+            txn.get(self.tables.asset_metadata, &metadata.id)?;
+        if let Some(existing_metadata) = existing_metadata {
+            let latest_artifact = existing_metadata.get()?.get_latest_artifact();
+            if let latest_artifact::Id(Ok(id)) = latest_artifact.which()? {
+                maybe_id = Some(Vec::from(id.get_hash()?));
             }
         }
-        {
-            let imported_metadata = build_imported_metadata::<&[u8; 8]>(
-                &metadata,
-                asset
-                    .as_ref()
-                    .map(|_| &hash_bytes as &[u8])
-                    .or_else(|| maybe_id.as_ref().map(|a| a.as_slice())),
-            );
-            debug!("hash {:?}", hash_bytes);
-            txn.put(self.tables.asset_metadata, &metadata.id, &imported_metadata)?;
+        if let Some(id) = maybe_id.as_ref() {
+            if !id.is_empty() && hash_bytes != id.as_slice() {
+                txn.delete(self.tables.import_artifacts, id)?;
+                debug!("deleted artifact {:?} {:?}", hash_bytes, id.as_slice());
+            }
         }
+        let imported_metadata = build_imported_metadata::<&[u8; 8]>(
+            &metadata,
+            asset
+                .as_ref()
+                .map(|_| &hash_bytes as &[u8])
+                .or_else(|| maybe_id.as_ref().map(|a| a.as_slice())),
+        );
+        debug!("hash {:?}", hash_bytes);
+        txn.put(self.tables.asset_metadata, &metadata.id, &imported_metadata)?;
         // if let Some(asset) = asset {
         // txn.put_bytes(self.tables.import_artifacts, &hash_bytes, &asset)?;
         //     debug!("put artifact {:?}", hash_bytes);
@@ -186,19 +184,15 @@ impl AssetHub {
         K: AsRef<[u8]>,
     {
         let mut artifact_hash = None;
-        {
-            let metadata = self.get_metadata(txn, id)?;
-            if let Some(metadata) = metadata {
-                if let latest_artifact::Id(Ok(id)) =
-                    metadata.get()?.get_latest_artifact().which()?
-                {
-                    let hash = id.get_hash()?;
-                    if !hash.is_empty() {
-                        artifact_hash = Some(Vec::from(hash));
-                    }
+        let metadata = self.get_metadata(txn, id)?;
+        if let Some(metadata) = metadata {
+            if let latest_artifact::Id(Ok(id)) = metadata.get()?.get_latest_artifact().which()? {
+                let hash = id.get_hash()?;
+                if !hash.is_empty() {
+                    artifact_hash = Some(Vec::from(hash));
                 }
             }
-        };
+        }
         if let Some(artifact_hash) = artifact_hash {
             txn.delete(self.tables.import_artifacts, &artifact_hash)?;
         }

@@ -10,9 +10,9 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, UNIX_EPOCH};
 
-/// The purpose of this module is to provide enough information to
+/// The purpose of DirWatcher is to provide enough information to
 /// determine which files may be candidates for going through the asset import process.
-/// It handles updating watches for directories behind symlinks and scans on create/delete.
+/// It handles updating watches for directories behind symlinks and scans directories on create/delete.
 pub struct DirWatcher {
     watcher: RecommendedWatcher,
     symlink_map: HashMap<PathBuf, PathBuf>,
