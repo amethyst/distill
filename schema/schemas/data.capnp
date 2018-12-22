@@ -15,12 +15,6 @@ struct AssetUuidTest {
   asdf @3 :AnyPointer;
 }
 
-struct AssetId {
-  union {
-    uuid @0 :Data;
-    path @1 :Data;
-  }
-}
 struct AssetType {
 
 }
@@ -82,9 +76,9 @@ struct ImportArtifactKey {
 
 struct AssetMetadata {
   id @0 :AssetUuid;
-  loadDeps @1 :List(AssetId);
-  buildDeps @2 :List(AssetId);
-  instantiateDeps @3 :List(AssetId);
+  loadDeps @1 :List(AssetUuid);
+  buildDeps @2 :List(AssetUuid);
+  instantiateDeps @3 :List(AssetUuid);
   searchTags @4 :List(KeyValue);
 }
 

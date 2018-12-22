@@ -1,4 +1,4 @@
-use crate::asset_import::{AssetID, AssetMetadata};
+use crate::asset_import::{AssetMetadata, AssetUUID};
 use crate::capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
 use log::debug;
@@ -7,10 +7,9 @@ use schema::data::{
     imported_metadata::{self, latest_artifact},
 };
 use std::sync::Arc;
-use uuid::Uuid;
 
 pub struct AssetHub {
-    db: Arc<Environment>,
+    // db: Arc<Environment>,
     tables: AssetHubTables,
 }
 
@@ -24,21 +23,11 @@ struct AssetHubTables {
 }
 
 fn set_assetid_list(
-    asset_ids: &[AssetID],
-    builder: &mut capnp::struct_list::Builder<data::asset_id::Owned>,
+    asset_ids: &[AssetUUID],
+    builder: &mut capnp::struct_list::Builder<data::asset_uuid::Owned>,
 ) {
-    for (idx, value) in asset_ids.iter().enumerate() {
-        match value {
-            AssetID::UUID(uuid) => {
-                builder.reborrow().get(idx as u32).set_uuid(uuid.as_bytes());
-            }
-            AssetID::FilePath(path) => {
-                builder
-                    .reborrow()
-                    .get(idx as u32)
-                    .set_path(path.to_string_lossy().as_bytes());
-            }
-        }
+    for (idx, uuid) in asset_ids.iter().enumerate() {
+        builder.reborrow().get(idx as u32).set_id(uuid.as_bytes());
     }
 }
 
@@ -99,7 +88,7 @@ impl AssetHub {
                 asset_metadata: db
                     .create_db(Some("asset_metadata"), lmdb::DatabaseFlags::default())?,
             },
-            db,
+            // db,
         })
     }
 
@@ -114,7 +103,7 @@ impl AssetHub {
     pub fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        id: &Uuid,
+        id: &AssetUUID,
     ) -> Result<Option<MessageReader<'a, imported_metadata::Owned>>> {
         Ok(txn.get::<imported_metadata::Owned, _>(self.tables.asset_metadata, id.as_bytes())?)
     }
@@ -165,7 +154,7 @@ impl AssetHub {
         Ok(())
     }
 
-    pub fn remove_asset(&self, txn: &mut RwTransaction, id: &Uuid) -> Result<()> {
+    pub fn remove_asset(&self, txn: &mut RwTransaction, id: &AssetUUID) -> Result<()> {
         let mut artifact_hash = None;
         let metadata = self.get_metadata(txn, id)?;
         if let Some(metadata) = metadata {

@@ -18,7 +18,6 @@ use crate::error::Result;
 use crate::file_tracker::FileTracker;
 use std::{fs, path::Path, sync::Arc, thread};
 
-
 #[cfg(debug)]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
 #[cfg(not(debug))]

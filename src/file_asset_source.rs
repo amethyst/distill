@@ -7,6 +7,7 @@ use crate::error::{Error, Result};
 use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use crate::utils;
 use crate::watcher::file_metadata;
+use amethyst::assets::AssetUUID;
 use bincode;
 use crossbeam_channel::{self as channel, Receiver};
 use log::{debug, error, info};
@@ -27,7 +28,6 @@ use std::{
     sync::Arc,
 };
 use time::PreciseTime;
-use uuid::Uuid;
 
 pub struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -385,7 +385,7 @@ impl FileAssetSource {
     fn put_asset_path<'a>(
         &self,
         txn: &'a mut RwTransaction,
-        asset_id: &Uuid,
+        asset_id: &AssetUUID,
         path: &PathBuf,
     ) -> Result<()> {
         let path_str = path.to_string_lossy();
@@ -397,7 +397,7 @@ impl FileAssetSource {
     fn get_asset_path<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        asset_id: &Uuid,
+        asset_id: &AssetUUID,
     ) -> Result<Option<PathBuf>> {
         match txn.get_as_bytes(self.tables.asset_id_to_path, asset_id.as_bytes())? {
             Some(p) => Ok(Some(PathBuf::from(
@@ -407,7 +407,7 @@ impl FileAssetSource {
         }
     }
 
-    fn delete_asset_path(&self, txn: &mut RwTransaction, asset_id: &Uuid) -> Result<bool> {
+    fn delete_asset_path(&self, txn: &mut RwTransaction, asset_id: &AssetUUID) -> Result<bool> {
         Ok(txn.delete(self.tables.asset_id_to_path, asset_id.as_bytes())?)
     }
 
@@ -586,7 +586,7 @@ impl FileAssetSource {
             let mut to_remove = Vec::new();
             if let Some(metadata) = self.get_metadata(txn, path)? {
                 for asset in metadata.get()?.get_assets()? {
-                    let id = Uuid::from_slice(asset.get_id()?)?;
+                    let id = AssetUUID::from_slice(asset.get_id()?)?;
                     debug!("asset {:?}", asset.get_id()?);
                     if imported.assets.iter().all(|a| a.metadata.id != id) {
                         to_remove.push(id);
@@ -625,7 +625,7 @@ impl FileAssetSource {
                 let metadata = self.get_metadata(txn, path)?;
                 if let Some(ref metadata) = metadata {
                     for asset in metadata.get()?.get_assets()? {
-                        to_remove.push(Uuid::from_slice(asset.get_id()?)?);
+                        to_remove.push(AssetUUID::from_slice(asset.get_id()?)?);
                     }
                 }
             }
