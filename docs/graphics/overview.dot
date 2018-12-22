@@ -1,0 +1,3 @@
+digraph architecture {
+overview [shape=record,label="<fr> Frontend |{<pr> Processing |<vl> Validation }|<be> Backend"];
+}

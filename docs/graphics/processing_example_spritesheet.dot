@@ -1,0 +1,14 @@
+digraph import {
+    image1 [shape=record,label="{Asset Intermediate Format|Image 1}"];
+    image2 [shape=record,label="{Asset Intermediate Format|Image 2}"];
+    image3 [shape=record,label="{Asset Intermediate Format|Image 3}"];
+    spritesheet_generator [label="Spritesheet Generator"];
+    intermediate1 [shape=record,label="{Asset Intermediate Format|Spritesheet}"];
+    platform_backend [label="Spritesheet Platform Backend"];
+
+    image1 -> spritesheet_generator
+    image2 -> spritesheet_generator
+    image3 -> spritesheet_generator
+    spritesheet_generator -> intermediate1 -> platform_backend
+
+}

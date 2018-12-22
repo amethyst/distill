@@ -1,0 +1,18 @@
+digraph import {
+    rankdir=LR
+    intermediate [shape=record,label="
+        Asset Intermediate Format|<data>Data
+    "];
+    platform_backend1 [label="Asset Platform Backend"]
+    platform_backend2 [label="Asset Platform Backend"]
+    graph_node1 [shape=record, label="Graph Node|{<in>Inputs|<out>Outputs}|Generated Asset Slots"];
+    graph_node2 [shape=record, label="Graph Node|{<in>Inputs|<out>Outputs}|Generated Asset Slots"];
+    graph_node3 [shape=record, label="Graph Node|{<in>Inputs|<out>Outputs}|Generated Asset Slots"];
+    intermediate:data -> graph_node1:in
+    graph_node1:out -> graph_node2:in
+    graph_node1:out -> graph_node3:in
+    graph_node2:out -> platform_backend1
+    graph_node2:out -> platform_backend2
+    graph_node3:out -> platform_backend2
+    graph_node3:out -> platform_backend1
+}

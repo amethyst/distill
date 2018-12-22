@@ -1,0 +1,11 @@
+digraph import {
+    intermediate [shape=record,label="{Asset Intermediate Format|MeshData}"];
+    intermediate2 [shape=record,label="{Asset Intermediate Format|MeshData}"];
+    intermediate3 [shape=record,label="{Asset Intermediate Format|MeshData}"];
+    mesh_indexing [label="Mesh Indexing\n(creates index buffer)"];
+    vertex_cache_opt [label="Vertex Cache\nOptimization"];
+    platform_backend [label="Mesh Platform Backend"];
+
+    intermediate -> mesh_indexing -> intermediate2 -> vertex_cache_opt -> intermediate3 -> platform_backend
+
+}

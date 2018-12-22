@@ -1,0 +1,17 @@
+digraph import {
+    source_file [shape=plaintext,label="Source File"];
+    source_file_metadata [shape=plaintext,label=".meta"];
+    file_asset_source [label="File Asset Source"];
+    importer_input [shape=record,label="{{Importer Options|Importer State}|Processing Pipeline Template|Source File}"];
+    intermediate [shape=record,label="
+        {Asset Intermediate Format|{ID|Search Tags|<dep>Dependencies}|{Processing Pipeline Instance}|Data}
+    "];
+    importer [label="Importer"];
+    asset_hub [label="Asset Hub\n(indexing)"];
+
+    source_file -> file_asset_source -> importer_input -> importer -> intermediate;
+    source_file_metadata -> file_asset_source;
+    importer -> intermediate;
+    importer -> intermediate;
+    intermediate -> asset_hub;
+}

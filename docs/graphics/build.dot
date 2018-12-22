@@ -1,0 +1,15 @@
+digraph import {
+    intermediate [shape=record,label="Asset Intermediate Format"];
+    pipeline [label="Processing Pipeline"];
+    build_artifact [shape=record, label="{Asset Build Artifact|{Engine TypeUUID}|Data}"];
+    pack_file [shape=record, label="{Packfile}"];
+    build_cache [label="Build Cache"];
+    engine [label="Engine"];
+    packing [label="Packing"];
+    asset_hub_api [label="Asset Hub RPC"];
+
+
+    intermediate -> pipeline -> build_artifact
+    build_artifact -> packing -> pack_file -> engine;
+    build_artifact -> build_cache -> asset_hub_api -> engine;
+}
