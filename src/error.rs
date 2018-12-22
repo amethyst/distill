@@ -1,14 +1,14 @@
 extern crate notify;
 
-use std::fmt;
-use std::io;
-use lmdb;
-use capnp;
-use std::error::{Error as StdError};
 use amethyst::assets;
 use bincode;
-use ron;
+use capnp;
+use lmdb;
 use log;
+use ron;
+use std::error::Error as StdError;
+use std::fmt;
+use std::io;
 
 #[derive(Debug)]
 pub enum Error {
@@ -23,6 +23,7 @@ pub enum Error {
     RonSerError(ron::ser::Error),
     RonDeError(ron::de::Error),
     SetLoggerError(log::SetLoggerError),
+    UuidBytesError(uuid::BytesError),
     RecvError,
     Exit,
 }
@@ -43,6 +44,7 @@ impl std::error::Error for Error {
             Error::RonSerError(ref e) => e.description(),
             Error::RonDeError(ref e) => e.description(),
             Error::SetLoggerError(ref e) => e.description(),
+            Error::UuidBytesError(ref e) => e.description(),
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
         }
@@ -61,6 +63,7 @@ impl std::error::Error for Error {
             Error::RonSerError(ref e) => Some(e),
             Error::RonDeError(ref e) => Some(e),
             Error::SetLoggerError(ref e) => Some(e),
+            Error::UuidBytesError(ref e) => Some(e),
             Error::RecvError => None,
             Error::Exit => None,
         }
@@ -80,6 +83,7 @@ impl fmt::Display for Error {
             Error::RonSerError(ref e) => e.fmt(f),
             Error::RonDeError(ref e) => e.fmt(f),
             Error::SetLoggerError(ref e) => e.fmt(f),
+            Error::UuidBytesError(ref e) => e.fmt(f),
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
         }
@@ -138,5 +142,10 @@ impl From<Error> for capnp::Error {
 impl From<log::SetLoggerError> for Error {
     fn from(err: log::SetLoggerError) -> Error {
         Error::SetLoggerError(err)
+    }
+}
+impl From<uuid::BytesError> for Error {
+    fn from(err: uuid::BytesError) -> Error {
+        Error::UuidBytesError(err)
     }
 }

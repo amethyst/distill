@@ -69,7 +69,7 @@ fn main() {
         })
     };
     let service = asset_hub_service::AssetHubService::new(asset_db.clone(), hub.clone());
-    service.run();
+    service.run().unwrap();
     // loop {
     // tracker.clone().read_all_files().expect("failed to read all files");
     //     thread::sleep(Duration::from_millis(100));

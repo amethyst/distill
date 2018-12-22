@@ -2,11 +2,14 @@ use crate::asset_hub::AssetHub;
 use crate::asset_import::{
     format_from_ext, AssetMetadata, BoxedImporter, SerdeObj, SourceMetadata, SOURCEMETADATA_VERSION,
 };
-use bincode;
 use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
-use crossbeam_channel::{self as channel, Receiver};
 use crate::error::{Error, Result};
 use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
+use crate::utils;
+use crate::watcher::file_metadata;
+use bincode;
+use crossbeam_channel::{self as channel, Receiver};
+use log::{debug, error, info};
 use rayon::prelude::*;
 use ron;
 use schema::data::{self, source_metadata};
@@ -24,9 +27,7 @@ use std::{
     sync::Arc,
 };
 use time::PreciseTime;
-use log::{error, info, debug};
-use crate::utils;
-use crate::watcher::file_metadata;
+use uuid::Uuid;
 
 pub struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -159,8 +160,8 @@ where
 
 fn calc_import_hash(
     scratch_buf: &mut Vec<u8>,
-    importer_options: &Box<SerdeObj>,
-    importer_state: &Box<SerdeObj>,
+    importer_options: &dyn SerdeObj,
+    importer_state: &dyn SerdeObj,
     source_hash: u64,
 ) -> Result<u64> {
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
@@ -177,7 +178,7 @@ fn calc_import_hash(
 fn import_source(
     path: &PathBuf,
     source_hash: u64,
-    importer: &Box<dyn BoxedImporter>,
+    importer: &dyn BoxedImporter,
     options: Box<dyn SerdeObj>,
     state: Box<dyn SerdeObj>,
     scratch_buf: &mut Vec<u8>,
@@ -188,12 +189,7 @@ fn import_source(
     let state = imported.state;
     let imported = imported.value;
     let mut imported_assets = Vec::new();
-    let import_hash = calc_import_hash(
-        scratch_buf,
-        &options,
-        &state,
-        source_hash,
-    )?;
+    let import_hash = calc_import_hash(scratch_buf, &*options, &*state, source_hash)?;
     for mut asset in imported.assets {
         asset.search_tags.push((
             "file_name".to_string(),
@@ -266,8 +262,8 @@ fn import_pair(
                 let metadata = format.deserialize_metadata(&bytes)?;
                 let import_hash = calc_import_hash(
                     scratch_buf,
-                    &metadata.importer_options,
-                    &metadata.importer_state,
+                    &*metadata.importer_options,
+                    &*metadata.importer_state,
                     source_hash,
                 )?;
                 if metadata.import_hash == import_hash {
@@ -304,7 +300,7 @@ fn import_pair(
             Ok(Some(import_source(
                 &source.path,
                 source_hash,
-                &format,
+                &*format,
                 options,
                 state,
                 scratch_buf,
@@ -358,7 +354,10 @@ impl FileAssetSource {
             }
             let mut assets = value.reborrow().init_assets(metadata.assets.len() as u32);
             for (idx, asset) in metadata.assets.iter().enumerate() {
-                assets.reborrow().get(idx as u32).set_id(&asset.id);
+                assets
+                    .reborrow()
+                    .get(idx as u32)
+                    .set_id(asset.id.as_bytes());
             }
         }
         let key_str = path.to_string_lossy();
@@ -383,30 +382,24 @@ impl FileAssetSource {
         Ok(txn.delete(self.tables.path_to_metadata, &key)?)
     }
 
-    fn put_asset_path<'a, K>(
+    fn put_asset_path<'a>(
         &self,
         txn: &'a mut RwTransaction,
-        asset_id: &K,
+        asset_id: &Uuid,
         path: &PathBuf,
-    ) -> Result<()>
-    where
-        K: AsRef<[u8]>,
-    {
+    ) -> Result<()> {
         let path_str = path.to_string_lossy();
         let path = path_str.as_bytes();
-        txn.put_bytes(self.tables.asset_id_to_path, &asset_id, &path)?;
+        txn.put_bytes(self.tables.asset_id_to_path, asset_id.as_bytes(), &path)?;
         Ok(())
     }
 
-    fn get_asset_path<'a, K, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+    fn get_asset_path<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        asset_id: &K,
-    ) -> Result<Option<PathBuf>>
-    where
-        K: AsRef<[u8]>,
-    {
-        match txn.get_as_bytes(self.tables.asset_id_to_path, asset_id)? {
+        asset_id: &Uuid,
+    ) -> Result<Option<PathBuf>> {
+        match txn.get_as_bytes(self.tables.asset_id_to_path, asset_id.as_bytes())? {
             Some(p) => Ok(Some(PathBuf::from(
                 str::from_utf8(p).expect("Encoded key was invalid utf8"),
             ))),
@@ -414,11 +407,8 @@ impl FileAssetSource {
         }
     }
 
-    fn delete_asset_path<K>(&self, txn: &mut RwTransaction, asset_id: &K) -> Result<bool>
-    where
-        K: AsRef<[u8]>,
-    {
-        Ok(txn.delete(self.tables.asset_id_to_path, asset_id)?)
+    fn delete_asset_path(&self, txn: &mut RwTransaction, asset_id: &Uuid) -> Result<bool> {
+        Ok(txn.delete(self.tables.asset_id_to_path, asset_id.as_bytes())?)
     }
 
     fn process_pair_cases(
@@ -593,13 +583,13 @@ impl FileAssetSource {
     ) -> Result<()> {
         if let Some(imported) = result {
             debug!("imported {}", path.to_string_lossy());
-            let mut to_remove = Vec::new();;
+            let mut to_remove = Vec::new();
             if let Some(metadata) = self.get_metadata(txn, path)? {
                 for asset in metadata.get()?.get_assets()? {
-                    let id = asset.get_id()?;
+                    let id = Uuid::from_slice(asset.get_id()?)?;
                     debug!("asset {:?}", asset.get_id()?);
                     if imported.assets.iter().all(|a| a.metadata.id != id) {
-                        to_remove.push(Vec::from(id));
+                        to_remove.push(id);
                     }
                 }
             }
@@ -611,7 +601,7 @@ impl FileAssetSource {
             self.put_metadata(txn, path, &imported.metadata)?;
             for asset in imported.assets {
                 debug!("updating asset {:?}", asset.metadata.id);
-                self.hub.update_asset::<&Vec<u8>>(
+                self.hub.update_asset(
                     txn,
                     asset.import_hash,
                     &asset.metadata,
@@ -635,7 +625,7 @@ impl FileAssetSource {
                 let metadata = self.get_metadata(txn, path)?;
                 if let Some(ref metadata) = metadata {
                     for asset in metadata.get()?.get_assets()? {
-                        to_remove.push(Vec::from(asset.get_id()?));
+                        to_remove.push(Uuid::from_slice(asset.get_id()?)?);
                     }
                 }
             }
@@ -828,14 +818,16 @@ impl FileAssetSource {
                             *local_store = Some(Vec::new());
                         }
                         match self.db.ro_txn() {
-                            Err(e) => { sender.send((processed_pair, Err(e))); }
+                            Err(e) => {
+                                sender.send((processed_pair, Err(e))).unwrap();
+                            }
                             Ok(read_txn) => {
                                 let result = self.process_pair_cases(
                                     &read_txn,
                                     &processed_pair,
                                     local_store.as_mut().unwrap(),
                                 );
-                                sender.send((processed_pair, result));
+                                sender.send((processed_pair, result)).unwrap();
                             }
                         }
                     });

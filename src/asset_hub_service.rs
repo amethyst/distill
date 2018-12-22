@@ -1,11 +1,11 @@
 use crate::asset_hub::AssetHub;
-use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction};
+use crate::capnp_db::{CapnpCursor, Environment, RoTransaction};
 use capnp::{self, capability::Promise};
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{Future, Stream};
 use owning_ref::OwningHandle;
-use schema::data::{asset_metadata, dirty_file_info, imported_metadata};
-use schema::service::{asset_hub, asset_hub::snapshot};
+use schema::data::imported_metadata;
+use schema::service::asset_hub;
 use std::error;
 use std::fmt;
 use std::rc::Rc;
@@ -98,8 +98,6 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
     ctx: Arc<ServiceContext>,
 ) {
     thread::spawn(move || {
-        
-
         let service_impl = AssetHubImpl { ctx: ctx };
         let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
         let mut runtime = Runtime::new().unwrap();
@@ -112,7 +110,7 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
         );
 
         let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.clone().client));
-        runtime.block_on(rpc_system.map_err(|_| ()));
+        runtime.block_on(rpc_system.map_err(|_| ())).unwrap();
     });
 }
 impl AssetHubService {

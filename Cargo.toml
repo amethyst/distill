@@ -5,8 +5,8 @@ edition = "2018"
 
 [dependencies]
 schema = { path = "schema" }
-# amethyst = { path = "../amethyst"}
-amethyst = { git = "http://github.com/kabergstrom/amethyst", branch = "asset-format"}
+amethyst = { path = "../amethyst"}
+# amethyst = { git = "http://github.com/kabergstrom/amethyst", branch = "asset-format"}
 # capnp = "0.9.0"
 capnp = { git = "http://github.com/capnproto/capnproto-rust", branch = "master", features = ["rpc_try"]}
 notify = "4.0.0"
@@ -32,6 +32,7 @@ scoped_threadpool = "0.1.9"
 num_cpus = "1.0"
 time = "0.1"
 parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
+uuid = "0.7.1"
 
 [dev-dependencies]
 tempfile = "3"
