@@ -5,10 +5,13 @@ extern crate rayon;
 use crate::capnp_db::{
     CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
 };
-use crossbeam_channel::{self as channel, Receiver, Sender, select};
-use schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use crate::error::Result;
+use crate::utils;
+use crate::watcher::{self, FileEvent, FileMetadata};
+use crossbeam_channel::{self as channel, select, Receiver, Sender};
 use lmdb::Cursor;
+use log::{debug, error, info};
+use schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use std::{
     cmp::PartialEq,
     collections::{HashMap, HashSet},
@@ -22,9 +25,6 @@ use std::{
     thread,
     time::Duration,
 };
-use log::{debug, error, info};
-use crate::utils;
-use crate::watcher::{self, FileEvent, FileMetadata};
 
 #[derive(Clone)]
 struct FileTrackerTables {
@@ -465,7 +465,7 @@ impl FileTracker {
     }
 
     pub fn register_listener(&self, sender: Sender<FileTrackerEvent>) {
-        self.listener_tx.send(sender);
+        self.listener_tx.send(sender).unwrap();
     }
 
     pub fn stop(&self) {
@@ -562,8 +562,8 @@ impl FileTracker {
 #[cfg(test)]
 mod tests {
     use crate::capnp_db::Environment;
-    use crossbeam_channel::{self as channel, Receiver, select};
     use crate::file_tracker::{FileTracker, FileTrackerEvent};
+    use crossbeam_channel::{self as channel, select, Receiver};
     use std::{
         fs,
         path::{Path, PathBuf},
@@ -611,7 +611,6 @@ mod tests {
         }
     }
 
-
     fn expect_no_event(rx: &Receiver<FileTrackerEvent>) {
         select! {
             recv(rx) -> evt => {
@@ -646,10 +645,8 @@ mod tests {
 
     fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_ro_txn().expect("failed to open ro txn");
-        let path = fs::canonicalize(&asset_dir).expect(&format!(
-            "failed to canonicalize {}",
-            asset_dir.to_string_lossy()
-        ));
+        let path = fs::canonicalize(&asset_dir)
+            .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
         let canonical_path = path.join(name);
         let maybe_state = t
             .get_file_state(&txn, &canonical_path)
@@ -667,7 +664,7 @@ mod tests {
             fs::canonicalize(asset_dir.join(name)).expect("failed to canonicalize");
         t.get_file_state(&txn, &canonical_path)
             .expect("error getting file state")
-            .expect(&format!("expected file state for file {}", name));
+            .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
 
     fn add_test_dir(asset_dir: &Path, name: &str) -> PathBuf {
@@ -693,14 +690,12 @@ mod tests {
 
     fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_ro_txn().expect("failed to open ro txn");
-        let path = fs::canonicalize(&asset_dir).expect(&format!(
-            "failed to canonicalize {}",
-            asset_dir.to_string_lossy()
-        ));
+        let path = fs::canonicalize(&asset_dir)
+            .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
         let canonical_path = path.join(name);
         t.get_dirty_file_state(&txn, &canonical_path)
             .expect("error getting dirty file state")
-            .expect(&format!("expected dirty file state for file {}", name));
+            .unwrap_or_else(|| panic!("expected dirty file state for file {}", name));
     }
 
     fn clear_dirty_file_state(t: &FileTracker) {

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
-use capnp;
 use crate::error::{Error, Result};
-use lmdb::{self, Cursor, Transaction, EnvironmentFlags};
+use capnp;
+use lmdb::{self, Cursor, Transaction};
 use std::path::Path;
 use std::result::Result as StdResult;
 

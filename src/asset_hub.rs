@@ -1,31 +1,15 @@
-use crate::asset_import::{AssetID, AssetMetadata};
-use crate::capnp_db::{
-    CapnpCursor, DBTransaction, Environment, Iter, MessageReader, RwTransaction,
-};
+use crate::capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
-use crossbeam_channel::{self as channel, Receiver};
-use log::{debug, error, info};
-use rayon::prelude::*;
-use ron;
+use importer::{AssetMetadata, AssetUUID};
+use log::debug;
 use schema::data::{
-    self, asset_metadata, import_artifact_key,
+    self,
     imported_metadata::{self, latest_artifact},
 };
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::{
-    ffi::OsStr,
-    fs,
-    hash::{Hash, Hasher},
-    io::BufRead,
-    io::{Read, Write},
-    iter::FromIterator,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::sync::Arc;
 
 pub struct AssetHub {
-    db: Arc<Environment>,
+    // db: Arc<Environment>,
     tables: AssetHubTables,
 }
 
@@ -39,21 +23,11 @@ struct AssetHubTables {
 }
 
 fn set_assetid_list(
-    asset_ids: &Vec<AssetID>,
-    builder: &mut capnp::struct_list::Builder<data::asset_id::Owned>,
+    asset_ids: &[AssetUUID],
+    builder: &mut capnp::struct_list::Builder<data::asset_uuid::Owned>,
 ) {
-    for (idx, value) in asset_ids.iter().enumerate() {
-        match value {
-            AssetID::UUID(uuid) => {
-                builder.reborrow().get(idx as u32).set_uuid(uuid);
-            }
-            AssetID::FilePath(path) => {
-                builder
-                    .reborrow()
-                    .get(idx as u32)
-                    .set_path(path.to_string_lossy().as_bytes());
-            }
-        }
+    for (idx, uuid) in asset_ids.iter().enumerate() {
+        builder.reborrow().get(idx as u32).set_id(uuid.as_bytes());
     }
 }
 
@@ -67,7 +41,7 @@ fn build_imported_metadata<K>(
         {
             let mut m = value.reborrow().init_metadata();
             {
-                m.reborrow().init_id().set_id(&metadata.id);
+                m.reborrow().init_id().set_id(metadata.id.as_bytes());
             }
             {
                 set_assetid_list(
@@ -114,7 +88,7 @@ impl AssetHub {
                 asset_metadata: db
                     .create_db(Some("asset_metadata"), lmdb::DatabaseFlags::default())?,
             },
-            db,
+            // db,
         })
     }
 
@@ -126,15 +100,12 @@ impl AssetHub {
         Ok(cursor)
     }
 
-    pub fn get_metadata<'a, K, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+    pub fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        id: &K,
-    ) -> Result<Option<MessageReader<'a, imported_metadata::Owned>>>
-    where
-        K: AsRef<[u8]>,
-    {
-        Ok(txn.get::<imported_metadata::Owned, K>(self.tables.asset_metadata, id)?)
+        id: &AssetUUID,
+    ) -> Result<Option<MessageReader<'a, imported_metadata::Owned>>> {
+        Ok(txn.get::<imported_metadata::Owned, _>(self.tables.asset_metadata, id.as_bytes())?)
     }
 
     pub fn update_asset<A>(
@@ -150,7 +121,7 @@ impl AssetHub {
         let hash_bytes = import_hash.to_le_bytes();
         let mut maybe_id = None;
         let existing_metadata: Option<MessageReader<imported_metadata::Owned>> =
-            txn.get(self.tables.asset_metadata, &metadata.id)?;
+            txn.get(self.tables.asset_metadata, metadata.id.as_bytes())?;
         if let Some(existing_metadata) = existing_metadata {
             let latest_artifact = existing_metadata.get()?.get_latest_artifact();
             if let latest_artifact::Id(Ok(id)) = latest_artifact.which()? {
@@ -171,7 +142,11 @@ impl AssetHub {
                 .or_else(|| maybe_id.as_ref().map(|a| a.as_slice())),
         );
         debug!("hash {:?}", hash_bytes);
-        txn.put(self.tables.asset_metadata, &metadata.id, &imported_metadata)?;
+        txn.put(
+            self.tables.asset_metadata,
+            metadata.id.as_bytes(),
+            &imported_metadata,
+        )?;
         // if let Some(asset) = asset {
         // txn.put_bytes(self.tables.import_artifacts, &hash_bytes, &asset)?;
         //     debug!("put artifact {:?}", hash_bytes);
@@ -179,10 +154,7 @@ impl AssetHub {
         Ok(())
     }
 
-    pub fn remove_asset<K>(&self, txn: &mut RwTransaction, id: &K) -> Result<()>
-    where
-        K: AsRef<[u8]>,
-    {
+    pub fn remove_asset(&self, txn: &mut RwTransaction, id: &AssetUUID) -> Result<()> {
         let mut artifact_hash = None;
         let metadata = self.get_metadata(txn, id)?;
         if let Some(metadata) = metadata {
@@ -196,7 +168,7 @@ impl AssetHub {
         if let Some(artifact_hash) = artifact_hash {
             txn.delete(self.tables.import_artifacts, &artifact_hash)?;
         }
-        txn.delete(self.tables.asset_metadata, id)?;
+        txn.delete(self.tables.asset_metadata, id.as_bytes())?;
         Ok(())
     }
 }

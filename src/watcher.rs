@@ -1,8 +1,8 @@
 extern crate notify;
 
 use self::notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
+use crate::error::{Error, Result};
 use crossbeam_channel::Sender as cbSender;
-use crate::error::{Result, Error};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -59,10 +59,7 @@ pub fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
 }
 
 impl DirWatcher {
-    pub fn from_path_iter<'a, T>(
-        paths: T,
-        chan: cbSender<FileEvent>,
-    ) -> Result<DirWatcher>
+    pub fn from_path_iter<'a, T>(paths: T, chan: cbSender<FileEvent>) -> Result<DirWatcher>
     where
         T: Iterator<Item = &'a str>,
     {
@@ -106,10 +103,12 @@ impl DirWatcher {
             },
             Ok(canonical_dir) => {
                 self.asset_tx
-                    .send(FileEvent::ScanStart(canonical_dir.clone()));
+                    .send(FileEvent::ScanStart(canonical_dir.clone()))
+                    .unwrap();
                 let result = self.scan_directory_recurse(&canonical_dir, evt_create);
                 self.asset_tx
-                    .send(FileEvent::ScanEnd(canonical_dir, self.dirs.clone()));
+                    .send(FileEvent::ScanEnd(canonical_dir, self.dirs.clone()))
+                    .unwrap();
                 result
             }
         }
@@ -129,7 +128,7 @@ impl DirWatcher {
                         Ok(entry) => {
                             let evt = self.handle_notify_event(evt_create(entry.path()), true)?;
                             if evt.is_some() {
-                                self.asset_tx.send(evt.unwrap());
+                                self.asset_tx.send(evt.unwrap()).unwrap();
                             }
                             let metadata;
                             match entry.metadata() {
@@ -153,7 +152,9 @@ impl DirWatcher {
         for dir in &self.dirs.clone() {
             let err = self.scan_directory(&dir, &|path| DebouncedEvent::Create(path));
             if err.is_err() {
-                self.asset_tx.send(FileEvent::FileError(err.unwrap_err()));
+                self.asset_tx
+                    .send(FileEvent::FileError(err.unwrap_err()))
+                    .unwrap();
             }
         }
         loop {
@@ -161,7 +162,7 @@ impl DirWatcher {
                 Ok(event) => match self.handle_notify_event(event, false) {
                     Ok(maybe_event) => {
                         if let Some(evt) = maybe_event {
-                            self.asset_tx.send(evt);
+                            self.asset_tx.send(evt).unwrap();
                         }
                     }
                     Err(err) => match err {
@@ -170,7 +171,9 @@ impl DirWatcher {
                                 let err =
                                     self.scan_directory(&dir, &|path| DebouncedEvent::Create(path));
                                 if err.is_err() {
-                                    self.asset_tx.send(FileEvent::FileError(err.unwrap_err()));
+                                    self.asset_tx
+                                        .send(FileEvent::FileError(err.unwrap_err()))
+                                        .unwrap();
                                 }
                             }
                         }
@@ -178,13 +181,14 @@ impl DirWatcher {
                             break;
                         }
                         _ => {
-                            self.asset_tx.send(FileEvent::FileError(err));
+                            self.asset_tx.send(FileEvent::FileError(err)).unwrap();
                         }
                     },
                 },
                 Err(_) => {
                     self.asset_tx
-                        .send(FileEvent::FileError(Error::RecvError));
+                        .send(FileEvent::FileError(Error::RecvError))
+                        .unwrap();
                     return Ok(());
                 }
             }
@@ -286,7 +290,11 @@ impl DirWatcher {
                                 DebouncedEvent::Rename(replaced, p)
                             })?;
                         }
-                        Ok(Some(FileEvent::Renamed(src, dest, file_metadata(&metadata))))
+                        Ok(Some(FileEvent::Renamed(
+                            src,
+                            dest,
+                            file_metadata(&metadata),
+                        )))
                     }
                 }
             }

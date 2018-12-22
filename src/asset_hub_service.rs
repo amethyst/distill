@@ -1,11 +1,11 @@
 use crate::asset_hub::AssetHub;
-use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, RoTransaction};
+use crate::capnp_db::{CapnpCursor, Environment, RoTransaction};
 use capnp::{self, capability::Promise};
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{Future, Stream};
 use owning_ref::OwningHandle;
-use schema::data::{asset_metadata, dirty_file_info, imported_metadata};
-use schema::service::{asset_hub, asset_hub::snapshot};
+use schema::data::imported_metadata;
+use schema::service::asset_hub;
 use std::error;
 use std::fmt;
 use std::rc::Rc;
@@ -98,8 +98,6 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
     ctx: Arc<ServiceContext>,
 ) {
     thread::spawn(move || {
-        
-
         let service_impl = AssetHubImpl { ctx: ctx };
         let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
         let mut runtime = Runtime::new().unwrap();
@@ -112,7 +110,7 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
         );
 
         let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.clone().client));
-        runtime.block_on(rpc_system.map_err(|_| ()));
+        runtime.block_on(rpc_system.map_err(|_| ())).unwrap();
     });
 }
 impl AssetHubService {
@@ -121,16 +119,11 @@ impl AssetHubService {
             ctx: Arc::new(ServiceContext { hub, db }),
         }
     }
-    pub fn run(&self) -> Result<(), Error> {
+    pub fn run(&self, addr: std::net::SocketAddr) -> Result<(), Error> {
         use parity_tokio_ipc::Endpoint;
-        use std::net::ToSocketAddrs;
 
         let mut runtime = Runtime::new().unwrap();
 
-        let addr = "127.0.0.1:9999"
-            .to_socket_addrs()?
-            .next()
-            .map_or(Err(Error::InvalidAddress), Ok)?;
         let tcp = ::tokio::net::TcpListener::bind(&addr)?;
         let tcp_future = tcp.incoming().for_each(move |stream| {
             stream.set_nodelay(true)?;
@@ -160,21 +153,18 @@ impl AssetHubService {
 #[derive(Debug)]
 pub enum Error {
     IO(::std::io::Error),
-    InvalidAddress,
 }
 
 impl error::Error for Error {
     fn description(&self) -> &str {
         match *self {
             Error::IO(ref e) => e.description(),
-            Error::InvalidAddress => "Invalid address",
         }
     }
 
     fn cause(&self) -> Option<&error::Error> {
         match *self {
             Error::IO(ref e) => Some(e),
-            Error::InvalidAddress => None,
         }
     }
 }
@@ -182,7 +172,6 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::IO(ref e) => e.fmt(f),
-            Error::InvalidAddress => f.write_str("Invalid address"),
         }
     }
 }

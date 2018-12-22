@@ -1,14 +1,13 @@
 extern crate notify;
 
+use bincode;
+use capnp;
+use lmdb;
+use log;
+use ron;
+use std::error::Error as StdError;
 use std::fmt;
 use std::io;
-use lmdb;
-use capnp;
-use std::error::{Error as StdError};
-use amethyst::assets;
-use bincode;
-use ron;
-use log;
 
 #[derive(Debug)]
 pub enum Error {
@@ -18,13 +17,14 @@ pub enum Error {
     LMDB(lmdb::Error),
     Capnp(capnp::Error),
     NotInSchema(capnp::NotInSchema),
-    AssetError(assets::Error),
     BincodeError(bincode::ErrorKind),
     RonSerError(ron::ser::Error),
     RonDeError(ron::de::Error),
     SetLoggerError(log::SetLoggerError),
+    UuidBytesError(uuid::BytesError),
     RecvError,
     Exit,
+    ImporterError(importer::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -38,13 +38,14 @@ impl std::error::Error for Error {
             Error::LMDB(ref e) => e.description(),
             Error::Capnp(ref e) => e.description(),
             Error::NotInSchema(ref e) => e.description(),
-            Error::AssetError(ref e) => e.description(),
             Error::BincodeError(ref e) => e.description(),
             Error::RonSerError(ref e) => e.description(),
             Error::RonDeError(ref e) => e.description(),
             Error::SetLoggerError(ref e) => e.description(),
+            Error::UuidBytesError(ref e) => e.description(),
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
+            Error::ImporterError(ref e) => e.description(),
         }
     }
 
@@ -56,13 +57,14 @@ impl std::error::Error for Error {
             Error::LMDB(ref e) => Some(e),
             Error::Capnp(ref e) => Some(e),
             Error::NotInSchema(ref e) => Some(e),
-            Error::AssetError(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
             Error::RonSerError(ref e) => Some(e),
             Error::RonDeError(ref e) => Some(e),
             Error::SetLoggerError(ref e) => Some(e),
+            Error::UuidBytesError(ref e) => Some(e),
             Error::RecvError => None,
             Error::Exit => None,
+            Error::ImporterError(ref e) => Some(e),
         }
     }
 }
@@ -75,13 +77,14 @@ impl fmt::Display for Error {
             Error::LMDB(ref e) => e.fmt(f),
             Error::Capnp(ref e) => e.fmt(f),
             Error::NotInSchema(ref e) => e.fmt(f),
-            Error::AssetError(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
             Error::RonSerError(ref e) => e.fmt(f),
             Error::RonDeError(ref e) => e.fmt(f),
             Error::SetLoggerError(ref e) => e.fmt(f),
+            Error::UuidBytesError(ref e) => e.fmt(f),
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
+            Error::ImporterError(ref e) => e.fmt(f),
         }
     }
 }
@@ -110,11 +113,6 @@ impl From<capnp::NotInSchema> for Error {
         Error::NotInSchema(err)
     }
 }
-impl From<assets::Error> for Error {
-    fn from(err: assets::Error) -> Error {
-        Error::AssetError(err)
-    }
-}
 impl From<Box<bincode::ErrorKind>> for Error {
     fn from(err: Box<bincode::ErrorKind>) -> Error {
         Error::BincodeError(*err)
@@ -138,5 +136,15 @@ impl From<Error> for capnp::Error {
 impl From<log::SetLoggerError> for Error {
     fn from(err: log::SetLoggerError) -> Error {
         Error::SetLoggerError(err)
+    }
+}
+impl From<uuid::BytesError> for Error {
+    fn from(err: uuid::BytesError) -> Error {
+        Error::UuidBytesError(err)
+    }
+}
+impl From<importer::Error> for Error {
+    fn from(err: importer::Error) -> Error {
+        Error::ImporterError(err)
     }
 }

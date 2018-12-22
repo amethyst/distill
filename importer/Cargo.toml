@@ -1,0 +1,15 @@
+[package]
+name = "importer"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+uuid = { version = "0.7", features = ["v4", "serde"] }
+downcast = "0.9.2"
+serde = "1.0"
+serde_dyn = "0.2.2"
+# amethyst = { path = "../../amethyst"}
+amethyst = { git = "http://github.com/kabergstrom/amethyst", branch = "asset-format"}
+erased-serde = "0.3.6"
+ron = "0.4.0"
+bincode = "1.0.1"
