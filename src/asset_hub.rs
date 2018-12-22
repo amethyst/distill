@@ -1,6 +1,6 @@
-use crate::asset_import::{AssetMetadata, AssetUUID};
 use crate::capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
+use importer::{AssetMetadata, AssetUUID};
 use log::debug;
 use schema::data::{
     self,

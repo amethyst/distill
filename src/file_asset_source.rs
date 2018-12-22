@@ -1,15 +1,15 @@
+use crate::asset_daemon::ImporterMap;
 use crate::asset_hub::AssetHub;
-use crate::asset_import::{
-    format_from_ext, AssetMetadata, BoxedImporter, SerdeObj, SourceMetadata, SOURCEMETADATA_VERSION,
-};
 use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
 use crate::error::{Error, Result};
 use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use crate::utils;
 use crate::watcher::file_metadata;
-use amethyst::assets::AssetUUID;
 use bincode;
 use crossbeam_channel::{self as channel, Receiver};
+use importer::{
+    AssetMetadata, AssetUUID, BoxedImporter, SerdeObj, SourceMetadata, SOURCEMETADATA_VERSION,
+};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use ron;
@@ -35,6 +35,7 @@ pub struct FileAssetSource {
     rx: Receiver<FileTrackerEvent>,
     db: Arc<Environment>,
     tables: FileAssetSourceTables,
+    importers: Arc<ImporterMap>,
 }
 
 struct FileAssetSourceTables {
@@ -248,8 +249,9 @@ fn import_pair(
     _meta_hash: Option<u64>,
     scratch_buf: &mut Vec<u8>,
     saved_metadata: Option<SavedImportMetadata>,
+    importers: &ImporterMap,
 ) -> Result<Option<ImportResult>> {
-    let format = format_from_ext(source.path.extension().unwrap().to_str().unwrap());
+    let format = importers.get(source.path.extension().unwrap().to_str().unwrap());
     match format {
         Some(format) => {
             let mut options;
@@ -300,7 +302,7 @@ fn import_pair(
             Ok(Some(import_source(
                 &source.path,
                 source_hash,
-                &*format,
+                &**format,
                 options,
                 state,
                 scratch_buf,
@@ -315,6 +317,7 @@ impl FileAssetSource {
         tracker: &Arc<FileTracker>,
         hub: &Arc<AssetHub>,
         db: &Arc<Environment>,
+        importers: &Arc<ImporterMap>,
     ) -> Result<FileAssetSource> {
         let (tx, rx) = channel::unbounded();
         tracker.register_listener(tx);
@@ -329,6 +332,7 @@ impl FileAssetSource {
                 asset_id_to_path: db
                     .create_db(Some("asset_id_to_path"), lmdb::DatabaseFlags::default())?,
             },
+            importers: importers.clone(),
         })
     }
 
@@ -480,6 +484,7 @@ impl FileAssetSource {
                     Some(meta_hash),
                     scratch_buf,
                     None,
+                    &*self.importers,
                 )
             }
             // Source file with no metadata
@@ -505,11 +510,27 @@ impl FileAssetSource {
                             state: metadata.get_importer_state()?,
                         });
                         debug!("restored metadata for {:?}", saved_metadata);
-                        import_pair(&source, hash, None, None, scratch_buf, saved_metadata)
+                        import_pair(
+                            &source,
+                            hash,
+                            None,
+                            None,
+                            scratch_buf,
+                            saved_metadata,
+                            &*self.importers,
+                        )
                     }
                     None => {
                         debug!("no metadata for {}", source.path.to_string_lossy());
-                        import_pair(&source, hash, None, None, scratch_buf, None)
+                        import_pair(
+                            &source,
+                            hash,
+                            None,
+                            None,
+                            scratch_buf,
+                            None,
+                            &*self.importers,
+                        )
                     }
                 }
             }
