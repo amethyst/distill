@@ -2,7 +2,8 @@ digraph import {
     rankdir=LR
     pipeline_inputs [shape=record, label="Pipeline Inputs|<out>List\<Image\>"];
     pipeline_output [shape=record, label="Pipeline Output|<in>Inferred"];
-    spritesheet_gen [shape=record, label="Spritesheet Generator|{<in>in: List\<Image\>|<out>out: Image}"];
+    new_asset_uuid [shape=record, label="Generated AssetID"];
+    spritesheet_gen [shape=record, label="Spritesheet Generator|{{<id_in>id: AssetUUID|<in>in: List\<Image\>}|{<out>spritesheet: Spritesheet|<sprites_out>sprites: List\<Sprite\>}}"];
     subgraph cluster_process_list {
         style=filled;
         color=lightgrey;
@@ -15,6 +16,7 @@ digraph import {
     }
     pipeline_inputs:out -> map_input:in
     map_input:out -> spritesheet_gen:in
+    new_asset_uuid -> spritesheet_gen:id_in
     spritesheet_gen:out -> pipeline_output:in
-    
+    spritesheet_gen:sprites_out -> pipeline_output:in
 }
