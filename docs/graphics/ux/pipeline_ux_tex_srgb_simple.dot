@@ -1,0 +1,8 @@
+digraph import {
+    rankdir=LR
+    pipeline_inputs [shape=record, label="Pipeline Inputs|<out>Image"];
+    pipeline_output [shape=record, label="Pipeline Output|<in>Inferred"];
+    linear_colorspace [shape=record, label="Linear Colorspace|{<in>in: Image|<out>out: Image}"];
+    pipeline_inputs:out -> linear_colorspace:in
+    linear_colorspace:out -> pipeline_output:in
+}

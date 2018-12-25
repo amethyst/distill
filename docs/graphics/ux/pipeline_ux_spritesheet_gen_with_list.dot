@@ -1,0 +1,20 @@
+digraph import {
+    rankdir=LR
+    pipeline_inputs [shape=record, label="Pipeline Inputs|<out>List\<Image\>"];
+    pipeline_output [shape=record, label="Pipeline Output|<in>Inferred"];
+    spritesheet_gen [shape=record, label="Spritesheet Generator|{<in>in: List\<Image\>|<out>out: Image}"];
+    subgraph cluster_process_list {
+        style=filled;
+        color=lightgrey;
+        iter [shape=record, label="<in>iter_in: Inferred|<out>iter_out: Inferred"];
+        map_input [shape=record, label="{<in>in: List\<Inferred\>|<out>out: List\<Inferred\>}"];
+        linear_colorspace [shape=record, label="Linear Colorspace|{<in>in: Image|<out>out: Image}"];
+        iter:in -> linear_colorspace:in
+        linear_colorspace:out -> iter:out
+        label="Process List";
+    }
+    pipeline_inputs:out -> map_input:in
+    map_input:out -> spritesheet_gen:in
+    spritesheet_gen:out -> pipeline_output:in
+    
+}

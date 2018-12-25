@@ -1,0 +1,17 @@
+digraph import {
+    rankdir=LR
+    pipeline_inputs [shape=record, label="Pipeline Inputs|{{<out_r>r: Image|<out_g>g: Image|<out_b>b: Image|<out_a>a: Image}}"];
+    pipeline_output [shape=record, label="Pipeline Output\nAMBIGUOUS ASSETUUID|<in>Inferred"];
+    image_combine [shape=record, label="Image From Channels|{{<in_r>r: Image|<in_g>g: Image|<in_b>b: Image|<in_a>a: Image}|<out>out: Image}"];
+    channel_select [shape=record, label="Channel Select\lconstant input: a [rgba/0-9]|{<in>in: Image|<out>out: Image}"]
+    grayscale [shape=record, label="Grayscale|{<in>in: Image|<out>out: Image}"];
+    linear_colorspace [shape=record, label="Linear Colorspace|{<in>in: Image|<out>out: Image}"];
+    pipeline_inputs:out_r -> grayscale:in
+    grayscale:out -> image_combine:in_r
+    pipeline_inputs:out_g -> channel_select:in
+    channel_select:out -> image_combine:in_g
+    pipeline_inputs:out_b -> image_combine:in_b
+    pipeline_inputs:out_a -> image_combine:in_a
+    image_combine:out -> linear_colorspace:in
+    linear_colorspace:out -> pipeline_output:in
+}

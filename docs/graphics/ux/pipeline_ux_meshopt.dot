@@ -1,0 +1,14 @@
+digraph import {
+    rankdir=LR
+    pipeline_inputs [shape=record, label="Pipeline Inputs|<out>Mesh"];
+    pipeline_output [shape=record, label="Pipeline Output|<in>Inferred"];
+    mesh_index [shape=record, label="Index Mesh Vertices|{<in>in: Mesh|<out>out: Mesh}"];
+    vertex_cache_opt [shape=record, label="Vertex Cache Optimization|{<in>in: Mesh|<out>out: Mesh}"];
+    overdraw_optimization [shape=record, label="Overdraw Optimization|{<in>in: Mesh|<out>out: Mesh}"];
+    vertex_quantization [shape=record, label="Vertex Quantization|{<in>in: Mesh|<out>out: Mesh}"];
+    pipeline_inputs:out -> mesh_index:in 
+    mesh_index:out -> vertex_cache_opt:in
+    vertex_cache_opt:out -> overdraw_optimization:in
+    overdraw_optimization:out -> vertex_quantization:in
+    vertex_quantization:out -> pipeline_output:in
+}
