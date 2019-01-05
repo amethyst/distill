@@ -1,15 +1,19 @@
 
-use daggy::{Dag};
-use std::collections::HashMap;
+use petgraph;
+use std::collections::{HashMap};
 use std::marker::PhantomData;
 use std::fmt;
-use crate::processor::{self, Processor, AnyProcessor, TypeId};
+use crate::processor::{self, Processor, AnyProcessor, TypeId, ProcessorObj, ProcessorValues};
 
-type NodeId = u32;
+#[derive(Copy, Ord, PartialOrd, PartialEq, Eq, Clone, Hash, Debug)]
+pub struct NodeId(u32);
 type ArgIndex = usize;
 type ArgId = (NodeId, ArgIndex);
-type NodeRef = daggy::NodeIndex;
-type NodeGraph = Dag<Node, NodeEdge, u32>;
+type NodeGraph = petgraph::graphmap::GraphMap<NodeId, NodeEdge, DirectedEdgeType>;
+struct DirectedEdgeType;
+impl petgraph::EdgeType for DirectedEdgeType {
+    fn is_directed() -> bool { true }
+}
 
 #[derive(Copy, Clone, Debug)]
 pub struct NodeEdge {
@@ -29,10 +33,13 @@ impl Node {
     pub fn new(id: NodeId, processor: Box<AnyProcessor>) -> Node {
         Node { id, processor }
     }
-    pub fn from_processor<T: Processor + 'static>(id: NodeId) -> Node {
+    pub fn from_constants(id: NodeId, values: Vec<processor::IOData>) -> Node {
+        Node { id, processor: Box::new(processor::ConstantProcessor::new(values)) }
+    }
+    pub fn from_processor<'a, T: Processor<'a> + 'static>(id: NodeId) -> Node {
         Node { id, processor: Box::new(processor::into_any::<T>()) }
     }
-    pub fn make_edge(from: &Node, from_arg: &'static str, to: &Node, to_arg: &'static str) -> Result<NodeEdge> {
+    pub fn make_edge(from: & Node, from_arg: &'static str, to: &Node, to_arg: &'static str) -> Result<NodeEdge> {
         let mut from_idx = None;
         for (idx, name) in from.processor.output_names().iter().enumerate() {
             if *name == from_arg {
@@ -57,7 +64,24 @@ impl Node {
 
 pub struct Graph {
     graph: NodeGraph,
-    nodes: HashMap<NodeId, NodeRef>,
+    execution_order: Vec<NodeId>,
+    nodes: HashMap<NodeId, Node>,
+}
+impl Graph {
+    pub fn execute(&mut self, root: NodeId) {
+        let mut outputs: HashMap<NodeId, Vec<Option<Box<ProcessorObj>>>> = HashMap::new();
+        for node_id in self.execution_order.iter() {
+            let mut inputs: Vec<Option<Box<ProcessorObj>>> = Vec::new();
+            for (_, _, e) in self.graph.edges(*node_id).filter(|(_,_, e)| e.to.0 == *node_id) {
+                // inputs.push(outputs[&e.from.0][e.from.1].clone());
+            }
+            let mut values = ProcessorValues::new(inputs);
+            let node = &self.nodes[&node_id];
+            node.processor.run(&mut values);
+            // outputs[&node_id] = values.outputs();
+        }
+
+    }
 }
 pub struct GraphBuilder {
     nodes: Vec<Node>,
@@ -72,7 +96,7 @@ pub enum Error {
     ArgNotFound(NodeEdge),
     NodeNotFound(NodeEdge),
     TypeMismatch(NodeEdge, TypeId, TypeId),
-    GraphCycle(NodeEdge),
+    GraphCycle(NodeId),
     ArgNameNotFound(NodeId, &'static str),
 }
 
@@ -101,22 +125,24 @@ impl std::error::Error for Error {
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use std::error::Error as StdError;
         match *self {
-            _ => { Ok(())}
-            // Error::SelfReference(_) => "Node referenced itself",
-            // Error::ArgNotFound(_) => "Node argument not found",
-            // Error::NodeNotFound(_) => "Node not found",
-            // Error::TypeMismatch(_, _, _) => "Node argument type mismatch",
-            // Error::GraphCycle(_) => "Node argument type mismatch",
+            Error::SelfReference(_) => f.write_str(self.description()),
+            Error::ArgNotFound(_) => f.write_str(self.description()),
+            Error::NodeNotFound(_) => f.write_str(self.description()),
+            Error::TypeMismatch(_, _, _) => f.write_str(self.description()),
+            Error::GraphCycle(_) => f.write_str(self.description()),
+            Error::ArgNameNotFound(_, _) => f.write_str(self.description()),
         }
     }
 }
 
-impl From<daggy::WouldCycle<NodeEdge>> for Error {
-    fn from(err: daggy::WouldCycle<NodeEdge>) -> Error {
-        Error::GraphCycle(err.0)
+impl From<petgraph::algo::Cycle<NodeId>> for Error {
+    fn from(err: petgraph::algo::Cycle<NodeId>) -> Error {
+        Error::GraphCycle(err.node_id())
     }
 }
+
 
 impl GraphBuilder {
     pub fn new() -> Self {
@@ -167,12 +193,16 @@ impl GraphBuilder {
         let mut graph = NodeGraph::new();
         let mut node_refs = HashMap::new();
         for node in self.nodes {
-            node_refs.insert(node.id, graph.add_node(node));
+            graph.add_node(node.id);
+            node_refs.insert(node.id, node);
         }
         for edge in self.edges {
-            graph.add_edge(node_refs[&edge.from.0], node_refs[&edge.to.0], edge)?;
+            println!("adding edge from {:?} to {:?}",edge.from, edge.to);
+            graph.add_edge(edge.from.0, edge.to.0, edge);
         }
-        Ok(Graph { graph: graph, nodes: node_refs })
+        let sorted = petgraph::algo::toposort(&graph, None)?;
+            println!("got {} edges and {} nodes", graph.edge_count(), graph.node_count());
+        Ok(Graph { graph: graph, nodes: node_refs, execution_order: sorted, })
     }
 }
 
@@ -180,7 +210,7 @@ impl GraphBuilder {
 mod tests {
     use super::*;
     use serde_dyn::uuid;
-    use crate::processor::{self, Arg, Processor, ProcessorValues, RunNow};
+    use crate::processor::{self, Arg, Val, Processor, ProcessorValues, RunNow};
     use downcast::Downcast;
 
     uuid!{
@@ -189,47 +219,41 @@ mod tests {
     }
 
     struct First;
-    impl Processor for First {
+    impl<'a> Processor<'a> for First {
         fn name() -> &'static str { "First" }
-        fn input_names() -> &'static [&'static str] { &["f", "b"] }
-        fn output_names() -> &'static [&'static str] { &["g", "c"] }
-        type Inputs = (Vec<Arg<f32>>, Arg<u8>);
-        type Outputs = (Arg<u32>, Vec<Arg<u16>>);
-        fn run((f, b): &Self::Inputs) -> Self::Outputs {
+        fn input_names() -> Vec<String> { vec!["i"].iter().map(|d| d.to_string()).collect() }
+        fn output_names() -> Vec<String> { vec!["g", "c"].iter().map(|d| d.to_string()).collect() }
+        type Inputs = (Arg<'a, u32>);
+        type Outputs = (Val<u32>, Vec<Val<u16>>);
+        fn run((i): Self::Inputs) -> Self::Outputs {
             let mut total = 0u32;
-            for x in f.iter() {
-                total += **x as u32;
-            }
-            total += **b as u32;
-            (Arg::from(total), vec![Arg::from(88u16)])
+            total += *i as u32;
+            (Val::from(total), vec![Val::from(88u16)])
         }
     }
     struct Second;
-    impl Processor for Second {
+    impl<'a> Processor<'a> for Second {
         fn name() -> &'static str { "Second" }
-        fn input_names() -> &'static [&'static str] { &["f", "b"] }
-        fn output_names() -> &'static [&'static str] { &["g", "c"] }
-        type Inputs = (Arg<u32>, Vec<Arg<u16>>);
-        type Outputs = (Arg<u32>, Arg<u16>);
-        fn run((i, _f): &Self::Inputs) -> Self::Outputs {
+        fn input_names() -> Vec<String> { vec!["f", "b"].iter().map(|d| d.to_string()).collect() }
+        fn output_names() -> Vec<String> { vec!["g", "c"].iter().map(|d| d.to_string()).collect() }
+        type Inputs = (Arg<'a, u32>, Vec<Arg<'a, u16>>);
+        type Outputs = (Val<u32>, Val<u16>);
+        fn run((i, _f): Self::Inputs) -> Self::Outputs {
             let mut total = 0u32;
-            total += **i as u32;
-            (Arg::from(total), Arg::from(88u16))
+            total += *i as u32;
+            (Val::from(total), Val::from(88u16))
         }
     }
 
     #[test]
     fn test() {
-        let first_node = Node::from_processor::<First>(1);
-        let second_node = Node::from_processor::<Second>(2);
+        let graph_inputs = Node::from_constants(NodeId(0), vec![ processor::IOData::new("a".to_string(), Some(Box::new(Arg::from(15u32)))) ] );
+        let first_node = Node::from_processor::<First>(NodeId(1));
+        let second_node = Node::from_processor::<Second>(NodeId(2));
+        let edge0 = Node::make_edge(&graph_inputs, "a", &first_node, "i").unwrap();
         let edge1 = Node::make_edge(&first_node, "g", &second_node, "f").unwrap();
         let edge2 = Node::make_edge(&first_node, "c", &second_node, "b").unwrap();
-        let graph = GraphBuilder::new().add_node(first_node).add_node(second_node).add_edge(edge1).add_edge(edge2).build().unwrap();
-        
-
-        let mut values = ProcessorValues::new(vec![ Some(Box::new(vec![Arg::from(3.2f32)])), Some(Box::new(2u8)) ]);
-        First::run_now(&mut values);
-        let out = values.outputs().get(0).unwrap();
-        println!("{}", **Downcast::<Arg<u32>>::downcast_ref(&**out.as_ref().unwrap()).unwrap());
+        let mut graph = GraphBuilder::new().add_node(graph_inputs).add_edge(edge0).add_edge(edge1).add_edge(edge2).add_node(first_node).add_node(second_node).build().unwrap();
+        graph.execute(NodeId(0));
     }
 }
