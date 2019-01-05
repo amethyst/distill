@@ -163,16 +163,8 @@ impl GraphBuilder {
             nodes_by_id.insert(node.id, node);
         }
         for edge in self.edges.iter() {
-            let from_node = nodes_by_id.get(&edge.from.0);
-            if let None = from_node {
-                return Err(Error::NodeNotFound(*edge));
-            }
-            let from_node = from_node.unwrap();
-            let to_node = nodes_by_id.get(&edge.to.0);
-            if let None = to_node {
-                return Err(Error::NodeNotFound(*edge));
-            }
-            let to_node = to_node.unwrap();
+            let from_node = nodes_by_id.get(&edge.from.0).ok_or_else(|| Error::NodeNotFound(*edge))?;
+            let to_node = nodes_by_id.get(&edge.to.0).ok_or_else(|| Error::NodeNotFound(*edge))?;
             if from_node.id == to_node.id {
                 return Err(Error::SelfReference(*edge))
             }
