@@ -35,11 +35,18 @@ impl<T: ProcessorType> ProcessorType for Vec<T> {
 
 pub trait ProcessorObj : Any + Send + Sync {
     fn get_processor_type(&self) -> TypeId;
+    fn shallow_clone(&self) -> Box<ProcessorObj>;
+}
+pub trait ShallowClone {
+    fn shallow_clone(&self) -> Self;
 }
 impl_downcast!(ProcessorObj);
-impl<T: ProcessorType + Send + Sync + 'static> ProcessorObj for T {
+impl<T: ProcessorType + ShallowClone + Send + Sync + 'static> ProcessorObj for T {
     fn get_processor_type(&self) -> TypeId {
         T::get_processor_type()
+    }
+    fn shallow_clone(&self) -> Box<ProcessorObj> {
+        Box::new(<T as ShallowClone>::shallow_clone(self))
     }
 }
 
@@ -49,9 +56,8 @@ pub trait ProcessorAccess {
     fn put_vec<T: TypeUuid + Send + Sync + 'static>(&mut self, index: u32, value: Vec<Val<T>>);
 }
 
-pub trait InputData {
+pub trait InputData: ShallowClone {
     fn get_read<T: ProcessorAccess>(access: &mut T, index: u32) -> Self;
-    fn shallow_clone(&self) -> Self;
     fn reads() -> Vec<TypeId>;
 }
 
@@ -120,12 +126,13 @@ where T: Processor
     }
 }
 
-impl InputData for () {
-    fn get_read<T: ProcessorAccess>(_: &mut T, _: u32) -> Self {
+impl ShallowClone for () {
+    fn shallow_clone(&self) -> Self {
         ()
     }
-    
-    fn shallow_clone(&self) -> Self {
+}
+impl InputData for () {
+    fn get_read<T: ProcessorAccess>(_: &mut T, _: u32) -> Self {
         ()
     }
 
@@ -134,14 +141,15 @@ impl InputData for () {
     }
 }
 
+impl<T: TypeUuid + Send + Sync + 'static> ShallowClone for Arg<T> {
+    fn shallow_clone(&self) -> Self {
+        Arg { inner: Arc::clone(&self.inner) }
+    }
+}
 impl<T: TypeUuid + Send + Sync + 'static> InputData for Arg<T>
 {
     fn get_read<P: ProcessorAccess>(access: &mut P, idx: u32) -> Self {
         <P as ProcessorAccess>::get_input(access, idx)
-    }
-    
-    fn shallow_clone(&self) -> Self {
-        Arg { inner: Arc::clone(&self.inner) }
     }
 
     fn reads() -> Vec<TypeId> {
@@ -149,14 +157,15 @@ impl<T: TypeUuid + Send + Sync + 'static> InputData for Arg<T>
     }
 }
 
+impl<T: ShallowClone + ProcessorType + 'static + Send + Sync> ShallowClone for Vec<T> {
+    fn shallow_clone(&self) -> Self {
+        self.iter().map(|o| o.shallow_clone()).collect()
+    }
+}
 impl<T: InputData + ProcessorType + 'static + Send + Sync> InputData for Vec<T>
 {
     fn get_read<P: ProcessorAccess>(access: &mut P, idx: u32) -> Self {
         <P as ProcessorAccess>::get_input(access, idx)
-    }
-
-    fn shallow_clone(&self) -> Self {
-        self.iter().map(|o| o.shallow_clone()).collect()
     }
 
     fn reads() -> Vec<TypeId> {
@@ -234,6 +243,13 @@ impl<T> Deref for Arg<T>
 
 macro_rules! impl_inputs {
     ( $($ty:ident, $idx:tt),* ) => {
+        impl<$($ty),*> ShallowClone for ( $( $ty , )* )
+            where $( $ty : InputData),*
+            {
+                fn shallow_clone(&self) -> Self {
+                    ( $( <$ty as ShallowClone>::shallow_clone(&self.$idx), ) *) 
+                }
+            }
         impl<$($ty),*> InputData for ( $( $ty , )* )
             where $( $ty : InputData),*
             {
@@ -241,10 +257,6 @@ macro_rules! impl_inputs {
                     #![allow(unused_variables)]
 
                     ( $( <$ty as InputData>::get_read(access, $idx), ) *) 
-                }
-
-                fn shallow_clone(&self) -> Self {
-                    ( $( <$ty as InputData>::shallow_clone(&self.$idx), ) *) 
                 }
 
                 fn reads() -> Vec<TypeId> {
@@ -355,7 +367,7 @@ impl ProcessorValues {
 impl ProcessorAccess for ProcessorValues {
     fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(&mut self, index: u32) -> T {
         let val = &self.inputs[index as usize];
-        <T as InputData>::shallow_clone(val.as_ref().unwrap().downcast_ref().unwrap())
+        <T as ShallowClone>::shallow_clone(val.as_ref().unwrap().downcast_ref().unwrap())
     }
     fn put_val<T: TypeUuid + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>) {
         self.outputs.insert(index as usize, Some(Box::new(Arg::from(value.inner))));

@@ -72,9 +72,14 @@ impl Graph {
         let mut outputs: HashMap<NodeId, Vec<Option<Box<ProcessorObj>>>> = HashMap::new();
         for node_id in self.execution_order.iter() {
             let mut inputs: Vec<Option<Box<ProcessorObj>>> = Vec::new();
-            for (_, _, e) in self.graph.edges(*node_id).filter(|(_,_, e)| e.to.0 == *node_id) {
-                // inputs.push(outputs[&e.from.0 as usize][&e.from.1 as usize].shallow_clone());
+            for (_, _, e) in self.graph.edges(*node_id)
+            // .filter(|(_,_, e)| e.to.0 == *node_id) 
+            
+            {
+                println!("input e {:?}", e);
+                inputs.push(outputs[&e.from.0][e.from.1 as usize].as_ref().map(|o| o.shallow_clone()));
             }
+            println!("running {}", inputs.len());
             let mut values = ProcessorValues::new(inputs);
             let node = &self.nodes[&node_id];
             node.processor.run(&mut values);
