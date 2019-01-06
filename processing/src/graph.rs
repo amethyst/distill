@@ -9,11 +9,8 @@ use crate::processor::{self, Processor, AnyProcessor, TypeId, ProcessorObj, Proc
 pub struct NodeId(u32);
 type ArgIndex = usize;
 type ArgId = (NodeId, ArgIndex);
-type NodeGraph = petgraph::graphmap::GraphMap<NodeId, NodeEdge, DirectedEdgeType>;
-struct DirectedEdgeType;
-impl petgraph::EdgeType for DirectedEdgeType {
-    fn is_directed() -> bool { true }
-}
+type NodeGraph = petgraph::graph::Graph<Node, NodeEdge>;
+type NodeRef = petgraph::graph::NodeIndex;
 
 #[derive(Copy, Clone, Debug)]
 pub struct NodeEdge {
@@ -64,26 +61,35 @@ impl Node {
 
 pub struct Graph {
     graph: NodeGraph,
-    execution_order: Vec<NodeId>,
-    nodes: HashMap<NodeId, Node>,
+    execution_order: Vec<NodeRef>,
+    nodes: HashMap<NodeId, NodeRef>,
 }
 impl Graph {
     pub fn execute(&mut self, root: NodeId) {
         let mut outputs: HashMap<NodeId, Vec<Option<Box<ProcessorObj>>>> = HashMap::new();
         for node_id in self.execution_order.iter() {
             let mut inputs: Vec<Option<Box<ProcessorObj>>> = Vec::new();
-            for (_, _, e) in self.graph.edges(*node_id)
-            // .filter(|(_,_, e)| e.to.0 == *node_id) 
-            
+            for edge in self.graph.edges_directed(*node_id, petgraph::Direction::Incoming)
             {
-                println!("input e {:?}", e);
-                inputs.push(outputs[&e.from.0][e.from.1 as usize].as_ref().map(|o| o.shallow_clone()));
+                let edge = edge.weight();
+                println!("input edge {:?}", edge);
+                println!("output len {:?}", outputs[&edge.from.0].len());
+                for (idx, input) in outputs[&edge.from.0].iter().enumerate() {
+                    println!("incoming node's output {:?} at idx {} ", input, idx);
+                }
+                if inputs.len() <= edge.to.1 {
+                    inputs.resize_with(edge.to.1 + 1, || None);
+                }
+                inputs[edge.to.1] = outputs[&edge.from.0][edge.from.1 as usize].as_ref().map(|o| o.shallow_clone());
+                for (idx, input) in inputs.iter().enumerate() {
+                    println!("using input {:?} at idx {} ", input, idx);
+                }
             }
-            println!("running {}", inputs.len());
+            println!("running {:?}", node_id);
             let mut values = ProcessorValues::new(inputs);
-            let node = &self.nodes[&node_id];
+            let mut node = &mut self.graph[*node_id];
             node.processor.run(&mut values);
-            outputs.insert(*node_id, values.drain_outputs());
+            outputs.insert(node.id, values.drain_outputs());
         }
     }
 }
@@ -91,62 +97,6 @@ pub struct GraphBuilder {
     nodes: Vec<Node>,
     edges: Vec<NodeEdge>,
 }
-
-
-pub type Result<T> = std::result::Result<T, Error>;
-#[derive(Debug)]
-pub enum Error {
-    SelfReference(NodeEdge),
-    ArgNotFound(NodeEdge),
-    NodeNotFound(NodeEdge),
-    TypeMismatch(NodeEdge, TypeId, TypeId),
-    GraphCycle(NodeId),
-    ArgNameNotFound(NodeId, &'static str),
-}
-
-impl std::error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::SelfReference(_) => "Node referenced itself",
-            Error::ArgNotFound(_) => "Node argument not found",
-            Error::NodeNotFound(_) => "Node not found",
-            Error::TypeMismatch(_, _, _) => "Node argument type mismatch",
-            Error::GraphCycle(_) => "Node argument type mismatch",
-            Error::ArgNameNotFound(_, _) => "Node argument name not found",
-        }
-    }
-
-    fn cause(&self) -> Option<&std::error::Error> {
-        match *self {
-            Error::SelfReference(_) => None,
-            Error::ArgNotFound(_) => None,
-            Error::NodeNotFound(_) => None,
-            Error::TypeMismatch(_, _, _) => None,
-            Error::GraphCycle(_) => None,
-            Error::ArgNameNotFound(_, _) => None,
-        }
-    }
-}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use std::error::Error as StdError;
-        match *self {
-            Error::SelfReference(_) => f.write_str(self.description()),
-            Error::ArgNotFound(_) => f.write_str(self.description()),
-            Error::NodeNotFound(_) => f.write_str(self.description()),
-            Error::TypeMismatch(_, _, _) => f.write_str(self.description()),
-            Error::GraphCycle(_) => f.write_str(self.description()),
-            Error::ArgNameNotFound(_, _) => f.write_str(self.description()),
-        }
-    }
-}
-
-impl From<petgraph::algo::Cycle<NodeId>> for Error {
-    fn from(err: petgraph::algo::Cycle<NodeId>) -> Error {
-        Error::GraphCycle(err.node_id())
-    }
-}
-
 
 impl GraphBuilder {
     pub fn new() -> Self {
@@ -189,12 +139,11 @@ impl GraphBuilder {
         let mut graph = NodeGraph::new();
         let mut node_refs = HashMap::new();
         for node in self.nodes {
-            graph.add_node(node.id);
-            node_refs.insert(node.id, node);
+            node_refs.insert(node.id, graph.add_node(node));
         }
         for edge in self.edges {
             println!("adding edge from {:?} to {:?}",edge.from, edge.to);
-            graph.add_edge(edge.from.0, edge.to.0, edge);
+            graph.add_edge(node_refs[&edge.from.0], node_refs[&edge.to.0], edge);
         }
         let sorted = petgraph::algo::toposort(&graph, None)?;
             println!("got {} edges and {} nodes", graph.edge_count(), graph.node_count());
@@ -251,5 +200,58 @@ mod tests {
         let edge2 = Node::make_edge(&first_node, "c", &second_node, "b").unwrap();
         let mut graph = GraphBuilder::new().add_node(graph_inputs).add_edge(edge0).add_edge(edge1).add_edge(edge2).add_node(first_node).add_node(second_node).build().unwrap();
         graph.execute(NodeId(0));
+    }
+}
+pub type Result<T> = std::result::Result<T, Error>;
+#[derive(Debug)]
+pub enum Error {
+    SelfReference(NodeEdge),
+    ArgNotFound(NodeEdge),
+    NodeNotFound(NodeEdge),
+    TypeMismatch(NodeEdge, TypeId, TypeId),
+    GraphCycle(NodeRef),
+    ArgNameNotFound(NodeId, &'static str),
+}
+
+impl std::error::Error for Error {
+    fn description(&self) -> &str {
+        match *self {
+            Error::SelfReference(_) => "Node referenced itself",
+            Error::ArgNotFound(_) => "Node argument not found",
+            Error::NodeNotFound(_) => "Node not found",
+            Error::TypeMismatch(_, _, _) => "Node argument type mismatch",
+            Error::GraphCycle(_) => "Node argument type mismatch",
+            Error::ArgNameNotFound(_, _) => "Node argument name not found",
+        }
+    }
+
+    fn cause(&self) -> Option<&std::error::Error> {
+        match *self {
+            Error::SelfReference(_) => None,
+            Error::ArgNotFound(_) => None,
+            Error::NodeNotFound(_) => None,
+            Error::TypeMismatch(_, _, _) => None,
+            Error::GraphCycle(_) => None,
+            Error::ArgNameNotFound(_, _) => None,
+        }
+    }
+}
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use std::error::Error as StdError;
+        match *self {
+            Error::SelfReference(_) => f.write_str(self.description()),
+            Error::ArgNotFound(_) => f.write_str(self.description()),
+            Error::NodeNotFound(_) => f.write_str(self.description()),
+            Error::TypeMismatch(_, _, _) => f.write_str(self.description()),
+            Error::GraphCycle(_) => f.write_str(self.description()),
+            Error::ArgNameNotFound(_, _) => f.write_str(self.description()),
+        }
+    }
+}
+
+impl From<petgraph::algo::Cycle<NodeRef>> for Error {
+    fn from(err: petgraph::algo::Cycle<NodeRef>) -> Error {
+        Error::GraphCycle(err.node_id())
     }
 }

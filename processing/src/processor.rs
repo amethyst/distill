@@ -33,7 +33,7 @@ impl<T: ProcessorType> ProcessorType for Vec<T> {
     }
 }
 
-pub trait ProcessorObj : Any + Send + Sync {
+pub trait ProcessorObj : Any + Send + Sync + Debug {
     fn get_processor_type(&self) -> TypeId;
     fn shallow_clone(&self) -> Box<ProcessorObj>;
 }
@@ -41,7 +41,7 @@ pub trait ShallowClone {
     fn shallow_clone(&self) -> Self;
 }
 impl_downcast!(ProcessorObj);
-impl<T: ProcessorType + ShallowClone + Send + Sync + 'static> ProcessorObj for T {
+impl<T: ProcessorType + ShallowClone + Send + Sync + Debug + 'static> ProcessorObj for T {
     fn get_processor_type(&self) -> TypeId {
         T::get_processor_type()
     }
@@ -52,8 +52,8 @@ impl<T: ProcessorType + ShallowClone + Send + Sync + 'static> ProcessorObj for T
 
 pub trait ProcessorAccess {
     fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(&mut self, index: u32) -> T;
-    fn put_val<T: TypeUuid + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>);
-    fn put_vec<T: TypeUuid + Send + Sync + 'static>(&mut self, index: u32, value: Vec<Val<T>>);
+    fn put_val<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>);
+    fn put_vec<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Vec<Val<T>>);
 }
 
 pub trait InputData: ShallowClone {
@@ -86,7 +86,7 @@ pub trait AnyProcessor: Send + Sync {
     fn output_names(&self) -> Vec<String>;
     fn inputs(&self) -> Vec<TypeId>;
     fn outputs(&self) -> Vec<TypeId>;
-    fn run(&self, access: &mut ProcessorValues);
+    fn run(&mut self, access: &mut ProcessorValues);
 }
 impl<T> AnyProcessor for AnyProcessorImpl<T>
 where T: Processor
@@ -106,7 +106,7 @@ where T: Processor
     fn outputs(&self) -> Vec<TypeId> {
         T::Outputs::writes()
     }
-    fn run(&self, access: &mut ProcessorValues) {
+    fn run(&mut self, access: &mut ProcessorValues) {
         <T as RunNow>::run_now(access)
     }
 }
@@ -173,7 +173,7 @@ impl<T: InputData + ProcessorType + 'static + Send + Sync> InputData for Vec<T>
     }
 }
 
-impl<T: TypeUuid + Send + Sync + 'static> OutputData for Val<T> {
+impl<T: TypeUuid + Debug + Send + Sync + 'static> OutputData for Val<T> {
     fn put_write<P: ProcessorAccess>(access: &mut P, index: u32, value: Self) {
         access.put_val(index, value);
     }
@@ -183,7 +183,7 @@ impl<T: TypeUuid + Send + Sync + 'static> OutputData for Val<T> {
     }
 }
 
-impl<T: TypeUuid + Send + Sync + 'static> OutputData for Vec<Val<T>> {
+impl<T: TypeUuid + Send + Debug + Sync + 'static> OutputData for Vec<Val<T>> {
     fn put_write<P: ProcessorAccess>(access: &mut P, index: u32, value: Self) {
         access.put_vec(index, value);
     }
@@ -203,6 +203,7 @@ impl OutputData for () {
     }
 }
 
+#[derive(Debug)]
 pub struct Val<T> {
     inner: T,
 }
@@ -222,6 +223,7 @@ impl<T> Deref for Val<T>
     }
 }
 
+#[derive(Debug)]
 pub struct Arg<T> {
     inner: Arc<T>,
 }
@@ -362,17 +364,20 @@ impl ProcessorValues {
     pub fn drain_outputs(self) -> Vec<Option<Box<ProcessorObj>>> {
         self.outputs
     }
+    fn set_outputs(&mut self, outputs: Vec<Option<Box<ProcessorObj>>>) {
+        self.outputs = outputs;
+    }
 }
 
 impl ProcessorAccess for ProcessorValues {
     fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(&mut self, index: u32) -> T {
         let val = &self.inputs[index as usize];
-        <T as ShallowClone>::shallow_clone(val.as_ref().unwrap().downcast_ref().unwrap())
+        <T as ShallowClone>::shallow_clone(val.as_ref().expect(&format!("expected input at argument index {}", index)).downcast_ref().expect(&format!("failed to downcast type for argument {}", index)))
     }
-    fn put_val<T: TypeUuid + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>) {
+    fn put_val<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>) {
         self.outputs.insert(index as usize, Some(Box::new(Arg::from(value.inner))));
     }
-    fn put_vec<T: TypeUuid + Send + Sync + 'static>(&mut self, index: u32, value: Vec<Val<T>>) {
+    fn put_vec<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Vec<Val<T>>) {
         let input_converted: Vec<Arg<T>> = value.into_iter().map(|o| Arg::from(o.inner)).collect();
         self.outputs.insert(index as usize, Some(Box::new(input_converted)));
     }
@@ -404,7 +409,9 @@ impl AnyProcessor for ConstantProcessor {
      fn output_names(&self) -> Vec<String> { self.outputs.iter().map(|d| d.name.clone()).collect() }
      fn inputs(&self) -> Vec<TypeId> { vec![] }
      fn outputs(&self) -> Vec<TypeId> { self.outputs.iter().filter(|d| d.value.is_some()).map(|d| ProcessorObj::get_processor_type(d.value.as_ref().unwrap().as_ref())).collect() }
-     fn run(&self, _access: &mut ProcessorValues) {}
+     fn run(&mut self, access: &mut ProcessorValues) {
+        access.set_outputs(self.outputs.drain(0..self.outputs.len()).map(|o| o.value).collect());
+     }
 }
 
 #[cfg(test)]
