@@ -73,14 +73,13 @@ impl Graph {
         for node_id in self.execution_order.iter() {
             let mut inputs: Vec<Option<Box<ProcessorObj>>> = Vec::new();
             for (_, _, e) in self.graph.edges(*node_id).filter(|(_,_, e)| e.to.0 == *node_id) {
-                // inputs.push(outputs[&e.from.0][e.from.1].clone());
+                // inputs.push(outputs[&e.from.0 as usize][&e.from.1 as usize].shallow_clone());
             }
             let mut values = ProcessorValues::new(inputs);
             let node = &self.nodes[&node_id];
             node.processor.run(&mut values);
-            // outputs[&node_id] = values.outputs();
+            outputs.insert(*node_id, values.drain_outputs());
         }
-
     }
 }
 pub struct GraphBuilder {
@@ -211,11 +210,11 @@ mod tests {
     }
 
     struct First;
-    impl<'a> Processor for First {
+    impl Processor for First {
         fn name() -> &'static str { "First" }
         fn input_names() -> Vec<String> { vec!["i"].iter().map(|d| d.to_string()).collect() }
         fn output_names() -> Vec<String> { vec!["g", "c"].iter().map(|d| d.to_string()).collect() }
-        type Inputs = (Arg<'a, u32>);
+        type Inputs = (Arg<u32>);
         type Outputs = (Val<u32>, Vec<Val<u16>>);
         fn run((i): Self::Inputs) -> Self::Outputs {
             let mut total = 0u32;
@@ -224,11 +223,11 @@ mod tests {
         }
     }
     struct Second;
-    impl<'a> Processor for Second {
+    impl Processor for Second {
         fn name() -> &'static str { "Second" }
         fn input_names() -> Vec<String> { vec!["f", "b"].iter().map(|d| d.to_string()).collect() }
         fn output_names() -> Vec<String> { vec!["g", "c"].iter().map(|d| d.to_string()).collect() }
-        type Inputs = (Arg<'a, u32>, Vec<Arg<'a, u16>>);
+        type Inputs = (Arg<u32>, Vec<Arg<u16>>);
         type Outputs = (Val<u32>, Val<u16>);
         fn run((i, _f): Self::Inputs) -> Self::Outputs {
             let mut total = 0u32;
