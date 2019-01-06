@@ -36,7 +36,7 @@ impl Node {
     pub fn from_constants(id: NodeId, values: Vec<processor::IOData>) -> Node {
         Node { id, processor: Box::new(processor::ConstantProcessor::new(values)) }
     }
-    pub fn from_processor<'a, T: Processor<'a> + 'static>(id: NodeId) -> Node {
+    pub fn from_processor<T: Processor + 'static>(id: NodeId) -> Node {
         Node { id, processor: Box::new(processor::into_any::<T>()) }
     }
     pub fn make_edge(from: & Node, from_arg: &'static str, to: &Node, to_arg: &'static str) -> Result<NodeEdge> {
@@ -211,7 +211,7 @@ mod tests {
     }
 
     struct First;
-    impl<'a> Processor<'a> for First {
+    impl<'a> Processor for First {
         fn name() -> &'static str { "First" }
         fn input_names() -> Vec<String> { vec!["i"].iter().map(|d| d.to_string()).collect() }
         fn output_names() -> Vec<String> { vec!["g", "c"].iter().map(|d| d.to_string()).collect() }
@@ -224,7 +224,7 @@ mod tests {
         }
     }
     struct Second;
-    impl<'a> Processor<'a> for Second {
+    impl<'a> Processor for Second {
         fn name() -> &'static str { "Second" }
         fn input_names() -> Vec<String> { vec!["f", "b"].iter().map(|d| d.to_string()).collect() }
         fn output_names() -> Vec<String> { vec!["g", "c"].iter().map(|d| d.to_string()).collect() }

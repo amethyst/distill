@@ -47,7 +47,7 @@ pub trait ProcessorAccess {
     fn put_write<T: ProcessorObj>(&mut self, index: u32, value: T);
 }
 
-pub trait InputData<'a> {
+pub trait InputData {
     fn get_read<T: ProcessorAccess>(access: &mut T, index: u32) -> Self;
     fn reads() -> Vec<TypeId>;
 }
@@ -57,8 +57,8 @@ pub trait OutputData {
     fn writes() -> Vec<TypeId>;
 }
 
-pub trait Processor<'a> {
-    type Inputs: InputData<'a>;
+pub trait Processor {
+    type Inputs: InputData;
     type Outputs: OutputData;
     fn name() -> &'static str;
     fn input_names() -> Vec<String>;
@@ -68,8 +68,8 @@ pub trait Processor<'a> {
 struct AnyProcessorImpl<T> {
     _marker: std::marker::PhantomData<T>,
 }
-unsafe impl<'a, T: Processor<'a>> Send for AnyProcessorImpl<T> {}
-unsafe impl<'a, T: Processor<'a>> Sync for AnyProcessorImpl<T> {}
+unsafe impl<T: Processor> Send for AnyProcessorImpl<T> {}
+unsafe impl<T: Processor> Sync for AnyProcessorImpl<T> {}
 
 pub trait AnyProcessor: Send + Sync {
     fn name(&self) -> &'static str;
@@ -79,8 +79,8 @@ pub trait AnyProcessor: Send + Sync {
     fn outputs(&self) -> Vec<TypeId>;
     fn run(&self, access: &mut ProcessorValues);
 }
-impl<'a, T: 'a> AnyProcessor for AnyProcessorImpl<T>
-where T: Processor<'a> 
+impl<T> AnyProcessor for AnyProcessorImpl<T>
+where T: Processor 
 {
     fn name(&self) -> &'static str {
         T::name()
@@ -101,15 +101,15 @@ where T: Processor<'a>
         <T as RunNow>::run_now(access)
     }
 }
-pub fn into_any<'a, T: Processor<'a> + 'a>() -> impl AnyProcessor {
+pub fn into_any<T: Processor>() -> impl AnyProcessor {
     AnyProcessorImpl::<T> { _marker: std::marker::PhantomData }
 }
 
 pub trait RunNow {
     fn run_now<T: ProcessorAccess>(access: &mut T);
 }
-impl<'a, T> RunNow for T
-where T: Processor<'a>
+impl<T> RunNow for T
+where T: Processor
 {
     fn run_now<PA: ProcessorAccess>(access: &mut PA) {
         let input = T::Inputs::get_read(access, 0);
@@ -117,7 +117,7 @@ where T: Processor<'a>
     }
 }
 
-impl<'a> InputData<'a> for () {
+impl InputData for () {
     fn get_read<T: ProcessorAccess>(_: &mut T, _: u32) -> Self {
         ()
     }
@@ -127,7 +127,7 @@ impl<'a> InputData<'a> for () {
     }
 }
 
-impl<'a, T: TypeUuid + Send + Sync + 'static> InputData<'a> for Arg<'a, T>
+impl<'a, T: TypeUuid + Send + Sync + 'static> InputData for Arg<'a, T>
 {
     fn get_read<P: ProcessorAccess>(access: &mut P, idx: u32) -> Self {
         <P as ProcessorAccess>::get_read(access, idx)
@@ -138,7 +138,7 @@ impl<'a, T: TypeUuid + Send + Sync + 'static> InputData<'a> for Arg<'a, T>
     }
 }
 
-impl<'a, T: ProcessorType + 'static + Send + Sync> InputData<'a> for Vec<T>
+impl<T: ProcessorType + 'static + Send + Sync> InputData for Vec<T>
 {
     fn get_read<P: ProcessorAccess>(access: &mut P, idx: u32) -> Self {
         <P as ProcessorAccess>::get_read(access, idx)
@@ -198,7 +198,7 @@ impl<T> Deref for Val<T>
     }
 }
 
-pub struct Arg<'a, T: 'static> {
+pub struct Arg<'a, T> {
     inner: &'a T,
 }
 
@@ -219,8 +219,8 @@ impl<'a, T: 'a> Deref for Arg<'a, T>
 
 macro_rules! impl_inputs {
     ( $($ty:ident, $idx:expr),* ) => {
-        impl<'a, $($ty),*> InputData<'a> for ( $( $ty , )* )
-            where $( $ty : InputData<'a>),*
+        impl<$($ty),*> InputData for ( $( $ty , )* )
+            where $( $ty : InputData),*
             {
                 fn get_read<PA: ProcessorAccess>(access: &mut PA, index: u32) -> Self {
                     #![allow(unused_variables)]
@@ -383,7 +383,7 @@ mod tests {
 
     struct ABC {
     }
-    impl<'a> Processor<'a> for ABC {
+    impl<'a> Processor for ABC {
         fn name() -> &'static str { "ABC" }
         fn input_names() -> Vec<String> { vec!["f", "b"].iter().map(|d| d.to_string()).collect() }
         fn output_names() -> Vec<String> { vec!["g", "c"].iter().map(|d| d.to_string()).collect() }
