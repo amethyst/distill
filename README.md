@@ -5,6 +5,7 @@ To run:
 
 - Create an `assets` folder in the root of the repository
 - Put some images (png, jpg, tga) in the `assets` folder
+- `cargo run --release`
 
 Enjoy glorious .meta files!
 
