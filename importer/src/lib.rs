@@ -61,6 +61,8 @@ pub struct ImportedAsset {
     /// Instantiate dependencies will be instantiated along with this asset when
     /// the asset is instantiated into a world
     pub instantiate_deps: Vec<AssetUUID>,
+    /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset
+    pub build_pipeline: Option<AssetUUID>,
     /// The actual asset data used by tools and Builder
     pub asset_data: Box<dyn SerdeObj>,
 }
@@ -127,6 +129,7 @@ where
                 load_deps: Vec::new(),
                 instantiate_deps: Vec::new(),
                 asset_data: Box::new(import_result),
+                build_pipeline: None,
             }],
         })
     }

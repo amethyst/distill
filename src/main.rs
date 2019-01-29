@@ -34,6 +34,7 @@ fn init_logging() -> Result<()> {
         .level(DEFAULT_LOGGING_LEVEL)
         .level_for("mio", log::LevelFilter::Info)
         .level_for("tokio_core", log::LevelFilter::Info)
+        .level_for("atelier_assets", log::LevelFilter::Debug)
         // .chain(fern::log_file("output.log")?)
         .apply()?;
     Ok(())

@@ -3,6 +3,7 @@ use petgraph;
 use std::collections::{HashMap};
 use std::marker::PhantomData;
 use std::fmt;
+use serde_dyn::{TypeUuid};
 use crate::processor::{self, Processor, AnyProcessor, TypeId, ProcessorObj, ProcessorValues};
 
 #[derive(Copy, Ord, PartialOrd, PartialEq, Eq, Clone, Hash, Debug)]
@@ -11,6 +12,7 @@ type ArgIndex = usize;
 type ArgId = (NodeId, ArgIndex);
 type NodeGraph = petgraph::graph::Graph<Node, NodeEdge>;
 type NodeRef = petgraph::graph::NodeIndex;
+type ProcessorId = u128;
 
 #[derive(Copy, Clone, Debug)]
 pub struct NodeEdge {
@@ -33,7 +35,7 @@ impl Node {
     pub fn from_constants(id: NodeId, values: Vec<processor::IOData>) -> Node {
         Node { id, processor: Box::new(processor::ConstantProcessor::new(values)) }
     }
-    pub fn from_processor<T: Processor + 'static>(id: NodeId) -> Node {
+    pub fn from_processor<T: Processor + TypeUuid + 'static>(id: NodeId) -> Node {
         Node { id, processor: Box::new(processor::into_any::<T>()) }
     }
     pub fn make_edge(from: & Node, from_arg: &'static str, to: &Node, to_arg: &'static str) -> Result<NodeEdge> {
@@ -151,6 +153,51 @@ impl GraphBuilder {
     }
 }
 
+pub struct ProcessorRegistry {
+    processors: HashMap<ProcessorId, Box<Fn() -> Box<AnyProcessor>>>,
+}
+
+impl ProcessorRegistry {
+    pub fn new() -> ProcessorRegistry {
+        ProcessorRegistry { processors: HashMap::new() }
+    }
+
+    pub fn register<T: Processor + TypeUuid + 'static>(&mut self) {
+        self.processors.insert(T::UUID, Box::new(|| Box::new(processor::into_any::<T>())));
+    }
+
+    pub fn get_processor(&self, id: ProcessorId) -> Option<Box<AnyProcessor>> {
+        self.processors.get(&id).map(|p| p())
+    }
+}
+
+mod serde {
+    use super::*;
+    //#[derive(Serialize, Deserialize)]
+    struct SerdeNode {
+        id: NodeId,
+        processor_id: ProcessorId,
+    }
+    //#[derive(Serialize, Deserialize)]
+    pub struct SerdeGraph {
+        nodes: Vec<SerdeNode>,
+        edges: Vec<NodeEdge>,
+    }
+    impl SerdeGraph {
+        fn instantiate(self, registry: &ProcessorRegistry) -> Result<Graph> {
+            let mut builder = GraphBuilder::new();
+            for node in self.nodes {
+                let processor = registry.get_processor(node.processor_id).ok_or_else(|| Error::ProcessorNotFound(node.processor_id, node.id))?;
+                builder = builder.add_node(Node::new(node.id, processor));
+            }
+            for edge in self.edges {
+                builder = builder.add_edge(edge);
+            }
+            Ok(builder.build()?)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +258,7 @@ pub enum Error {
     TypeMismatch(NodeEdge, TypeId, TypeId),
     GraphCycle(NodeRef),
     ArgNameNotFound(NodeId, &'static str),
+    ProcessorNotFound(ProcessorId, NodeId),
 }
 
 impl std::error::Error for Error {
@@ -222,6 +270,7 @@ impl std::error::Error for Error {
             Error::TypeMismatch(_, _, _) => "Node argument type mismatch",
             Error::GraphCycle(_) => "Node argument type mismatch",
             Error::ArgNameNotFound(_, _) => "Node argument name not found",
+            Error::ProcessorNotFound(_, _) => "Processor not found for node",
         }
     }
 
@@ -233,6 +282,7 @@ impl std::error::Error for Error {
             Error::TypeMismatch(_, _, _) => None,
             Error::GraphCycle(_) => None,
             Error::ArgNameNotFound(_, _) => None,
+            Error::ProcessorNotFound(_, _) => None,
         }
     }
 }
@@ -246,6 +296,7 @@ impl fmt::Display for Error {
             Error::TypeMismatch(_, _, _) => f.write_str(self.description()),
             Error::GraphCycle(_) => f.write_str(self.description()),
             Error::ArgNameNotFound(_, _) => f.write_str(self.description()),
+            Error::ProcessorNotFound(_, _) => f.write_str(self.description()),
         }
     }
 }

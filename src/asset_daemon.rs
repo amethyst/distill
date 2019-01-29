@@ -68,9 +68,12 @@ impl AssetDaemon {
 
         let asset_source = Arc::new(
             file_asset_source::FileAssetSource::new(&tracker, &hub, &asset_db, &importers)
-                .expect("failed to create asset hub"),
+                .expect("failed to create asset source"),
         );
 
+        // create the assets folder automatically to make it easier to get started.
+        // might want to remove later when watched dirs become configurable?
+        let _ = std::fs::create_dir_all(&Path::new("assets"));
         let handle = thread::spawn(move || tracker.run(vec!["assets"]));
         thread::spawn(move || asset_source.run().expect("FileAssetSource.run() failed"));
 

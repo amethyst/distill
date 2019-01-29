@@ -79,6 +79,7 @@ struct SavedImportMetadata<'a> {
     options: &'a [u8],
     state_type: u128,
     state: &'a [u8],
+    build_pipelines: HashMap<AssetUUID, AssetUUID>,
 }
 
 fn to_meta_path(p: &PathBuf) -> PathBuf {
@@ -182,10 +183,13 @@ fn import_source(
     importer: &dyn BoxedImporter,
     options: Box<dyn SerdeObj>,
     state: Box<dyn SerdeObj>,
+    build_pipelines: HashMap<AssetUUID, AssetUUID>,
     scratch_buf: &mut Vec<u8>,
 ) -> Result<ImportResult> {
-    let mut f = fs::File::open(&path)?;
-    let imported = importer.import_boxed(&mut f, options, state)?;
+    let imported = {
+        let mut f = fs::File::open(&path)?;
+        importer.import_boxed(&mut f, options, state)?
+    };
     let options = imported.options;
     let state = imported.state;
     let imported = imported.value;
@@ -202,8 +206,19 @@ fn import_source(
             ),
         ));
         let asset_data = &asset.asset_data;
-        let mut asset_buf = Vec::new();
-        bincode::serialize_into(&mut asset_buf, asset_data)?;
+        let size = bincode::serialized_size(asset_data)? as usize;
+        scratch_buf.clear();
+        scratch_buf.resize(size, 0);
+        bincode::serialize_into(scratch_buf.as_mut_slice(), asset_data)?;
+        let asset_buf = {
+            let mut encoder = lz4::EncoderBuilder::new()
+                .level(9)
+                .build(Vec::with_capacity(size / 2))?;
+            encoder.write_all(&scratch_buf[..size])?;
+            let (output, result) = encoder.finish();
+            result?;
+            output
+        };
         imported_assets.push({
             ImportedAsset {
                 import_hash: import_hash,
@@ -213,6 +228,7 @@ fn import_source(
                     build_deps: asset.build_deps,
                     load_deps: asset.load_deps,
                     instantiate_deps: asset.instantiate_deps,
+                    build_pipeline: build_pipelines.get(&asset.id).cloned(),
                 },
                 asset: Some(asset_buf),
             }
@@ -243,21 +259,28 @@ fn import_source(
 }
 
 fn import_pair(
-    source: &FileState,
+    source: &PathBuf,
     source_hash: u64,
-    meta: Option<&FileState>,
+    meta: Option<&PathBuf>,
     _meta_hash: Option<u64>,
     scratch_buf: &mut Vec<u8>,
     saved_metadata: Option<SavedImportMetadata>,
     importers: &ImporterMap,
 ) -> Result<Option<ImportResult>> {
-    let format = importers.get(source.path.extension().unwrap().to_str().unwrap());
+    let lower_extension = source
+        .extension()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_lowercase();
+    let format = importers.get(lower_extension.as_str());
     match format {
         Some(format) => {
             let mut options;
             let mut state;
+            let mut build_pipelines;
             if let Some(_meta) = meta {
-                let meta_path = to_meta_path(&source.path);
+                let meta_path = to_meta_path(source);
                 let mut f = fs::File::open(&meta_path)?;
                 let mut bytes = Vec::new();
                 f.read_to_end(&mut bytes)?;
@@ -287,9 +310,16 @@ fn import_pair(
                 }
                 options = metadata.importer_options;
                 state = metadata.importer_state;
+                build_pipelines = HashMap::new();
+                for asset in metadata.assets {
+                    if let Some(pipeline) = asset.build_pipeline {
+                        build_pipelines.insert(asset.id, pipeline);
+                    }
+                }
             } else {
                 options = format.default_options();
                 state = format.default_state();
+                build_pipelines = HashMap::new();
                 if let Some(saved_metadata) = saved_metadata {
                     if saved_metadata.options_type == options.uuid() {
                         options = format.deserialize_options(saved_metadata.options)?;
@@ -297,14 +327,16 @@ fn import_pair(
                     if saved_metadata.state_type == state.uuid() {
                         state = format.deserialize_state(saved_metadata.state)?;
                     }
+                    build_pipelines = saved_metadata.build_pipelines;
                 }
             }
             Ok(Some(import_source(
-                &source.path,
+                source,
                 source_hash,
                 &**format,
                 options,
                 state,
+                build_pipelines,
                 scratch_buf,
             )?))
         }
@@ -362,6 +394,26 @@ impl FileAssetSource {
                     .reborrow()
                     .get(idx as u32)
                     .set_id(asset.id.as_bytes());
+            }
+            let assets_with_pipelines: Vec<&AssetMetadata> = metadata
+                .assets
+                .iter()
+                .filter(|a| a.build_pipeline.is_some())
+                .collect();
+            let mut build_pipelines = value
+                .reborrow()
+                .init_build_pipelines(assets_with_pipelines.len() as u32);
+            for (idx, asset) in assets_with_pipelines.iter().enumerate() {
+                build_pipelines
+                    .reborrow()
+                    .get(idx as u32)
+                    .init_key()
+                    .set_id(asset.id.as_bytes());
+                build_pipelines
+                    .reborrow()
+                    .get(idx as u32)
+                    .init_value()
+                    .set_id(asset.build_pipeline.unwrap().as_bytes());
             }
         }
         let key_str = path.to_string_lossy();
@@ -478,9 +530,9 @@ impl FileAssetSource {
             } => {
                 debug!("full pair {}", source.path.to_string_lossy());
                 import_pair(
-                    &source,
+                    &source.path,
                     source_hash,
-                    Some(&meta),
+                    Some(&meta.path),
                     Some(meta_hash),
                     scratch_buf,
                     None,
@@ -498,6 +550,17 @@ impl FileAssetSource {
                 match metadata {
                     Some(metadata) => {
                         let metadata = metadata.get()?;
+                        let mut build_pipelines = HashMap::new();
+                        for pair in metadata.get_build_pipelines()?.iter() {
+                            build_pipelines.insert(
+                                AssetUUID::from_bytes(utils::make_array(
+                                    &pair.get_key()?.get_id()?,
+                                )),
+                                AssetUUID::from_bytes(utils::make_array(
+                                    &pair.get_value()?.get_id()?,
+                                )),
+                            );
+                        }
                         let saved_metadata = Some(SavedImportMetadata {
                             importer_version: metadata.get_importer_version(),
                             options_type: u128::from_le_bytes(utils::make_array(
@@ -508,10 +571,11 @@ impl FileAssetSource {
                                 metadata.get_importer_state_type()?,
                             )),
                             state: metadata.get_importer_state()?,
+                            build_pipelines: build_pipelines,
                         });
                         debug!("restored metadata for {:?}", saved_metadata);
                         import_pair(
-                            &source,
+                            &source.path,
                             hash,
                             None,
                             None,
@@ -523,7 +587,7 @@ impl FileAssetSource {
                     None => {
                         debug!("no metadata for {}", source.path.to_string_lossy());
                         import_pair(
-                            &source,
+                            &source.path,
                             hash,
                             None,
                             None,
@@ -626,7 +690,8 @@ impl FileAssetSource {
                     txn,
                     asset.import_hash,
                     &asset.metadata,
-                    asset.asset.as_ref(),
+                    asset.asset.as_ref().map(|a| a.as_slice()),
+                    data::AssetSource::File,
                 )?;
                 match self.get_asset_path(txn, &asset.metadata.id)? {
                     Some(ref old_path) if old_path != path => error!(

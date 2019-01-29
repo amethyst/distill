@@ -2,11 +2,14 @@ use crate::capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
 use importer::{AssetMetadata, AssetUUID};
 use log::debug;
+use lz4;
 use schema::data::{
     self,
     imported_metadata::{self, latest_artifact},
 };
-use std::sync::Arc;
+use std::{
+    io::Write, sync::Arc,
+};
 
 pub struct AssetHub {
     // db: Arc<Environment>,
@@ -34,6 +37,7 @@ fn set_assetid_list(
 fn build_imported_metadata<K>(
     metadata: &AssetMetadata,
     artifact_hash: Option<&[u8]>,
+    source: data::AssetSource,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
@@ -42,6 +46,9 @@ fn build_imported_metadata<K>(
             let mut m = value.reborrow().init_metadata();
             {
                 m.reborrow().init_id().set_id(metadata.id.as_bytes());
+                if let Some(pipeline) = metadata.build_pipeline {
+                    m.reborrow().init_build_pipeline().set_id(pipeline.as_bytes());
+                }
             }
             {
                 set_assetid_list(
@@ -75,6 +82,7 @@ fn build_imported_metadata<K>(
                     .set_hash(artifact_hash);
             }
         }
+        value.reborrow().set_source(source);
     }
     value_builder
 }
@@ -108,16 +116,14 @@ impl AssetHub {
         Ok(txn.get::<imported_metadata::Owned, _>(self.tables.asset_metadata, id.as_bytes())?)
     }
 
-    pub fn update_asset<A>(
+    pub fn update_asset(
         &self,
         txn: &mut RwTransaction,
         import_hash: u64,
         metadata: &AssetMetadata,
-        asset: Option<A>,
-    ) -> Result<()>
-    where
-        A: AsRef<[u8]>,
-    {
+        asset: Option<&[u8]>,
+        source: data::AssetSource,
+    ) -> Result<()> {
         let hash_bytes = import_hash.to_le_bytes();
         let mut maybe_id = None;
         let existing_metadata: Option<MessageReader<imported_metadata::Owned>> =
@@ -128,8 +134,10 @@ impl AssetHub {
                 maybe_id = Some(Vec::from(id.get_hash()?));
             }
         }
+        let mut artifact_changed = true;
         if let Some(id) = maybe_id.as_ref() {
-            if !id.is_empty() && hash_bytes != id.as_slice() {
+            artifact_changed = hash_bytes != id.as_slice();
+            if !id.is_empty() && artifact_changed {
                 txn.delete(self.tables.import_artifacts, id)?;
                 debug!("deleted artifact {:?} {:?}", hash_bytes, id.as_slice());
             }
@@ -140,17 +148,25 @@ impl AssetHub {
                 .as_ref()
                 .map(|_| &hash_bytes as &[u8])
                 .or_else(|| maybe_id.as_ref().map(|a| a.as_slice())),
+            source
         );
+        debug!("asset {:?} new id {:?} old id {:?}", asset.is_some(), asset
+                .as_ref()
+                .map(|_| &hash_bytes as &[u8])
+                .or_else(|| maybe_id.as_ref().map(|a| a.as_slice())),
+                maybe_id);
         debug!("hash {:?}", hash_bytes);
         txn.put(
             self.tables.asset_metadata,
             metadata.id.as_bytes(),
             &imported_metadata,
         )?;
-        // if let Some(asset) = asset {
-        // txn.put_bytes(self.tables.import_artifacts, &hash_bytes, &asset)?;
-        //     debug!("put artifact {:?}", hash_bytes);
-        // }
+        if artifact_changed {
+            if let Some(asset) = asset {
+                txn.put_bytes(self.tables.import_artifacts, &hash_bytes, &asset)?;
+                debug!("put artifact {:?}", hash_bytes);
+            }
+        }
         Ok(())
     }
 

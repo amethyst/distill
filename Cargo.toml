@@ -32,6 +32,7 @@ num_cpus = "1.0"
 time = "0.1"
 parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
 uuid = "0.7.1"
+lz4 = "1.23.1"
 
 [dev-dependencies]
 tempfile = "3"

@@ -3,6 +3,7 @@ use crate::{AssetUUID, Importer, ImporterValue, SerdeObj};
 use ron;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
+use std::collections::HashMap;
 
 #[derive(Clone, Serialize, Deserialize, Hash)]
 pub struct AssetMetadata {
@@ -11,6 +12,7 @@ pub struct AssetMetadata {
     pub build_deps: Vec<AssetUUID>,
     pub load_deps: Vec<AssetUUID>,
     pub instantiate_deps: Vec<AssetUUID>,
+    pub build_pipeline: Option<AssetUUID>,
 }
 pub const SOURCEMETADATA_VERSION: u32 = 1;
 #[derive(Serialize, Deserialize)]

@@ -4,21 +4,6 @@ struct AssetUuid {
     id @0 :Data;
 }
 
-struct AssetUuidTest {
-  wot :union {
-    uuid @0 :Data;
-    path @1 :Data;
-    testgroup :group {
-      huh @2 :Data;
-    }
-  }
-  asdf @3 :AnyPointer;
-}
-
-struct AssetType {
-
-}
-
 struct KeyValue {
   key @0 :Data;
   value @1 :Data;
@@ -34,6 +19,10 @@ enum FileType {
 enum FileState {
   exists @0;
   deleted @1;
+}
+
+enum AssetSource {
+  file @0;
 }
 
 struct DirtyFileInfo {
@@ -52,6 +41,11 @@ struct RenameFileEvent {
   dst @1 :Data;
 }
 
+struct AssetUuidPair {
+  key @0 :AssetUuid;
+  value @1 :AssetUuid;
+}
+
 struct SourceMetadata {
   assets @0 :List(AssetUuid);
   importerVersion @1 :UInt32;
@@ -59,6 +53,7 @@ struct SourceMetadata {
   importerOptions @3 :Data;
   importerStateType @4 :Data;
   importerState @5 :Data;
+  buildPipelines @6 :List(AssetUuidPair);
 }
 
 struct ImportError {
@@ -69,7 +64,6 @@ struct ImportError {
 # - Source asset contents
 # - Source metadata contents
 # - Importer version/id
-# - Importer configuration (target platform etc)
 struct ImportArtifactKey {
   hash @0 :Data;
 }
@@ -80,6 +74,7 @@ struct AssetMetadata {
   buildDeps @2 :List(AssetUuid);
   instantiateDeps @3 :List(AssetUuid);
   searchTags @4 :List(KeyValue);
+  buildPipeline @5 :AssetUuid;
 }
 
 struct ImportedMetadata {
@@ -90,5 +85,22 @@ struct ImportedMetadata {
     none @2 :Void;
   }
   # The source of the imported asset
-  source @3 :UInt64;
+  source @3 :AssetSource;
 }
+
+# The identifier for a build artifact is the hash of 
+# - Import artifact hash
+# - Build configuration (target platform etc)
+struct BuildArtifactKey {
+    hash @0 :Data;
+}
+
+struct BuildArtifact {
+    key @0 :BuildArtifactKey;
+    data @1 :Data;
+}
+
+struct BuildParameters {
+
+}
+

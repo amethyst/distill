@@ -1,18 +1,30 @@
-use crate::asset_hub::AssetHub;
-use crate::capnp_db::{CapnpCursor, Environment, RoTransaction};
-use capnp::{self, capability::Promise};
+use crate::{
+    asset_hub::AssetHub,
+    capnp_db::{CapnpCursor, Environment, RoTransaction},
+    error::Error,
+};
+use capnp;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{Future, Stream};
+use importer::AssetUUID;
 use owning_ref::OwningHandle;
-use schema::data::imported_metadata;
-use schema::service::asset_hub;
-use std::error;
-use std::fmt;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::thread;
+use schema::{
+    data::imported_metadata,
+    service::{self, asset_hub},
+};
+use std::{
+    collections::{HashMap, HashSet},
+    error, fmt,
+    rc::Rc,
+    sync::Arc,
+    thread,
+};
 use tokio::prelude::*;
 use tokio::runtime::current_thread::Runtime;
+use uuid;
+
+// crate::Error has `impl From<crate::Error> for capnp::Error`
+type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 
 struct ServiceContext {
     hub: Arc<AssetHub>,
@@ -34,11 +46,78 @@ struct AssetHubImpl {
 }
 
 impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
-    fn get_all_assets(
+    fn get_asset_metadata(
         &mut self,
-        _params: asset_hub::snapshot::GetAllAssetsParams,
-        mut results: asset_hub::snapshot::GetAllAssetsResults,
-    ) -> Promise<(), capnp::Error> {
+        params: asset_hub::snapshot::GetAssetMetadataParams,
+        mut results: asset_hub::snapshot::GetAssetMetadataResults,
+    ) -> Promise<()> {
+        let params = params.get()?;
+        let ctx = self.txn.as_owner();
+        let txn = &**self.txn;
+        let mut metadatas = Vec::new();
+        for id in params.get_assets()? {
+            let id = AssetUUID::from_slice(id.get_id()?).map_err(Error::UuidBytesError)?;
+            let value = ctx.hub.get_metadata(txn, &id)?;
+            if let Some(metadata) = value {
+                metadatas.push(metadata);
+            }
+        }
+        let mut results_builder = results.get();
+        let assets = results_builder
+            .reborrow()
+            .init_assets(metadatas.len() as u32);
+        for (idx, metadata) in metadatas.iter().enumerate() {
+            let metadata = metadata.get()?;
+            assets.set_with_caveats(idx as u32, metadata.get_metadata()?)?;
+        }
+        Promise::ok(())
+    }
+    fn get_asset_metadata_with_dependencies(
+        &mut self,
+        params: asset_hub::snapshot::GetAssetMetadataWithDependenciesParams,
+        mut results: asset_hub::snapshot::GetAssetMetadataWithDependenciesResults,
+    ) -> Promise<()> {
+        let params = params.get()?;
+        let ctx = self.txn.as_owner();
+        let txn = &**self.txn;
+        let mut metadatas = HashMap::new();
+        for id in params.get_assets()? {
+            let id = AssetUUID::from_slice(id.get_id()?).map_err(Error::UuidBytesError)?;
+            let value = ctx.hub.get_metadata(txn, &id)?;
+            if let Some(metadata) = value {
+                metadatas.insert(id, metadata);
+            }
+        }
+        let mut missing_metadata = HashSet::new();
+        for metadata in metadatas.values() {
+            for dep in metadata.get()?.get_metadata()?.get_load_deps()? {
+                let dep = AssetUUID::from_slice(dep.get_id()?).map_err(Error::UuidBytesError)?;
+                if !metadatas.contains_key(&dep) {
+                    missing_metadata.insert(dep);
+                }
+            }
+        }
+        for id in missing_metadata {
+            let value = ctx.hub.get_metadata(txn, &id)?;
+            if let Some(metadata) = value {
+                metadatas.insert(id, metadata);
+            }
+        }
+        let mut results_builder = results.get();
+        let assets = results_builder
+            .reborrow()
+            .init_assets(metadatas.len() as u32);
+        for (idx, metadata) in metadatas.values().enumerate() {
+            let metadata = metadata.get()?;
+            assets.set_with_caveats(idx as u32, metadata.get_metadata()?)?;
+        }
+        Promise::ok(())
+    }
+    fn get_all_asset_metadata(
+        &mut self,
+        _params: asset_hub::snapshot::GetAllAssetMetadataParams,
+        mut results: asset_hub::snapshot::GetAllAssetMetadataResults,
+    ) -> Promise<()> {
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
         let mut metadatas = Vec::new();
@@ -57,6 +136,15 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         }
         Promise::ok(())
     }
+    fn get_build_artifacts(
+        &mut self,
+        _params: asset_hub::snapshot::GetBuildArtifactsParams,
+        mut results: asset_hub::snapshot::GetBuildArtifactsResults,
+    ) -> Promise<()> {
+        let ctx = self.txn.as_owner();
+        let txn = &**self.txn;
+        Promise::ok(())
+    }
 }
 
 impl asset_hub::Server for AssetHubImpl {
@@ -64,14 +152,14 @@ impl asset_hub::Server for AssetHubImpl {
         &mut self,
         _params: asset_hub::RegisterListenerParams,
         _results: asset_hub::RegisterListenerResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Promise<()> {
         Promise::ok(())
     }
     fn get_snapshot(
         &mut self,
         _params: asset_hub::GetSnapshotParams,
         mut results: asset_hub::GetSnapshotResults,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Promise<()> {
         let ctx = self.ctx.clone();
         let snapshot = AssetHubSnapshotImpl {
             txn: Rc::new(OwningHandle::new_with_fn(ctx, |t| unsafe {
@@ -137,7 +225,7 @@ impl AssetHubService {
         let ipc = Endpoint::new(endpoint());
 
         let ipc_future = ipc
-            .incoming(&tokio::reactor::Handle::current())
+            .incoming(&tokio::reactor::Handle::default())
             .expect("failed to listen for incoming IPC connections")
             .for_each(move |(stream, _id)| {
                 let (reader, writer) = stream.split();
@@ -147,36 +235,5 @@ impl AssetHubService {
 
         runtime.block_on(tcp_future.join(ipc_future))?;
         Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    IO(::std::io::Error),
-}
-
-impl error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::IO(ref e) => e.description(),
-        }
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
-        match *self {
-            Error::IO(ref e) => Some(e),
-        }
-    }
-}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::IO(ref e) => e.fmt(f),
-        }
-    }
-}
-impl From<::std::io::Error> for Error {
-    fn from(err: ::std::io::Error) -> Error {
-        Error::IO(err)
     }
 }

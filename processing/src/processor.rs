@@ -1,5 +1,5 @@
 
-use serde_dyn::{TypeUuid};
+use serde_dyn::{TypeUuid, TypeUuidDynamic, uuid};
 use std::ops::{DerefMut, Deref};
 use std::sync::Arc;
 use downcast::{Any, Downcast, impl_downcast};
@@ -80,7 +80,7 @@ struct AnyProcessorImpl<T> {
 unsafe impl<T: Processor> Send for AnyProcessorImpl<T> {}
 unsafe impl<T: Processor> Sync for AnyProcessorImpl<T> {}
 
-pub trait AnyProcessor: Send + Sync {
+pub trait AnyProcessor: Send + Sync + TypeUuidDynamic {
     fn name(&self) -> &'static str;
     fn input_names(&self) -> Vec<String>;
     fn output_names(&self) -> Vec<String>;
@@ -88,8 +88,14 @@ pub trait AnyProcessor: Send + Sync {
     fn outputs(&self) -> Vec<TypeId>;
     fn run(&mut self, access: &mut ProcessorValues);
 }
+impl<T> TypeUuidDynamic for AnyProcessorImpl<T> 
+where T: Processor + TypeUuid {
+    fn uuid(&self) -> u128 {
+        T::UUID
+    }
+}
 impl<T> AnyProcessor for AnyProcessorImpl<T>
-where T: Processor
+where T: Processor + TypeUuid
 {
     fn name(&self) -> &'static str {
         T::name()
@@ -110,7 +116,7 @@ where T: Processor
         <T as RunNow>::run_now(access)
     }
 }
-pub fn into_any<T: Processor>() -> impl AnyProcessor {
+pub fn into_any<T: Processor + TypeUuid>() -> impl AnyProcessor {
     AnyProcessorImpl::<T> { _marker: std::marker::PhantomData }
 }
 
@@ -397,6 +403,9 @@ impl IOData {
 pub struct ConstantProcessor {
     outputs: Vec<IOData>,
 }
+uuid!{
+    ConstantProcessor => 14092692613983100637224012401022025107
+}
 impl ConstantProcessor {
     pub fn new(values: Vec<IOData>) -> ConstantProcessor {
         ConstantProcessor { outputs: values }
@@ -421,7 +430,7 @@ mod tests {
      use std::marker::PhantomData;
 
     uuid!{
-        ABC => 14092692613983100637224012401022025107
+        ABC => 14092692613983100637224012401022025108
     }
 
     struct ABC;
