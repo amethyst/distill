@@ -74,20 +74,20 @@ impl Graph {
             for edge in self.graph.edges_directed(*node_id, petgraph::Direction::Incoming)
             {
                 let edge = edge.weight();
-                println!("input edge {:?}", edge);
-                println!("output len {:?}", outputs[&edge.from.0].len());
+                debug!("input edge {:?}", edge);
+                debug!("output len {:?}", outputs[&edge.from.0].len());
                 for (idx, input) in outputs[&edge.from.0].iter().enumerate() {
-                    println!("incoming node's output {:?} at idx {} ", input, idx);
+                    debug!("incoming node's output {:?} at idx {} ", input, idx);
                 }
                 if inputs.len() <= edge.to.1 {
                     inputs.resize_with(edge.to.1 + 1, || None);
                 }
                 inputs[edge.to.1] = outputs[&edge.from.0][edge.from.1 as usize].as_ref().map(|o| o.shallow_clone());
                 for (idx, input) in inputs.iter().enumerate() {
-                    println!("using input {:?} at idx {} ", input, idx);
+                    debug!("using input {:?} at idx {} ", input, idx);
                 }
             }
-            println!("running {:?}", node_id);
+            debug!("running {:?}", node_id);
             let mut values = ProcessorValues::new(inputs);
             let mut node = &mut self.graph[*node_id];
             node.processor.run(&mut values);
@@ -144,11 +144,9 @@ impl GraphBuilder {
             node_refs.insert(node.id, graph.add_node(node));
         }
         for edge in self.edges {
-            println!("adding edge from {:?} to {:?}",edge.from, edge.to);
             graph.add_edge(node_refs[&edge.from.0], node_refs[&edge.to.0], edge);
         }
         let sorted = petgraph::algo::toposort(&graph, None)?;
-            println!("got {} edges and {} nodes", graph.edge_count(), graph.node_count());
         Ok(Graph { graph: graph, nodes: node_refs, execution_order: sorted, })
     }
 }
