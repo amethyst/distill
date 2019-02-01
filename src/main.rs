@@ -2,6 +2,7 @@
 #![allow(unknown_lints)]
 #![warn(clippy::all)]
 #![feature(mpsc_select)]
+#![feature(vec_remove_item)]
 
 pub mod asset_daemon;
 mod asset_hub;

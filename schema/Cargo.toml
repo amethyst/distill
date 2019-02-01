@@ -4,8 +4,7 @@ version = "0.1.0"
 build = "build.rs"
 
 [dependencies]
-# capnp = "0.9.0"
-capnp = { git = "http://github.com/capnproto/capnproto-rust", branch = "master"}
+capnp = "0.9.4"
 
 [build-dependencies]
-capnpc = { git = "http://github.com/capnproto/capnproto-rust", branch = "master"}
+capnpc = "0.9.3"

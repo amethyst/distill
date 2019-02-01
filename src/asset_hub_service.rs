@@ -2,14 +2,15 @@ use crate::{
     asset_hub::AssetHub,
     capnp_db::{CapnpCursor, Environment, RoTransaction},
     error::Error,
+    utils,
 };
-use capnp;
+use capnp::{self};
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{Future, Stream};
 use importer::AssetUUID;
 use owning_ref::OwningHandle;
 use schema::{
-    data::imported_metadata,
+    data::{imported_metadata, asset_change_log_entry},
     service::{self, asset_hub},
 };
 use std::{
@@ -143,6 +144,46 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
     ) -> Promise<()> {
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
+        Promise::ok(())
+    }
+    fn get_latest_asset_change(
+        &mut self,
+        _params: asset_hub::snapshot::GetLatestAssetChangeParams,
+        mut results: asset_hub::snapshot::GetLatestAssetChangeResults,
+    ) -> Promise<()> {
+        let ctx = self.txn.as_owner();
+        let txn = &**self.txn;
+        let change_num = ctx.hub.get_latest_asset_change(txn)?;
+        results.get().set_num(change_num);
+        Promise::ok(())
+    }
+    fn get_asset_changes(
+        &mut self,
+        params: asset_hub::snapshot::GetAssetChangesParams,
+        mut results: asset_hub::snapshot::GetAssetChangesResults,
+    ) -> Promise<()> {
+        let params = params.get()?;
+        let ctx = self.txn.as_owner();
+        let txn = &**self.txn;
+        let mut changes = Vec::new();
+        let iter = ctx.hub.get_asset_changes_iter(txn)?.capnp_iter_from(&params.get_start().to_le_bytes());
+        let mut count = params.get_count() as usize;
+        if count == 0 {
+            count = std::usize::MAX;
+        }
+        for (_, value) in iter.take(count) {
+            let value = value?;
+            let change = value.into_typed::<asset_change_log_entry::Owned>();
+            changes.push(change);
+        }
+        let mut results_builder = results.get();
+        let changes_results = results_builder
+            .reborrow()
+            .init_changes(changes.len() as u32);
+        for (idx, change) in changes.iter().enumerate() {
+            let change = change.get()?;
+            changes_results.set_with_caveats(idx as u32, change)?;
+        }
         Promise::ok(())
     }
 }

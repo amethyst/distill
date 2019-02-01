@@ -15,6 +15,8 @@ interface AssetHub {
         getAssetMetadataWithDependencies @1 (assets :List(Data.AssetUuid)) -> (assets :List(Data.AssetMetadata));
         getAllAssetMetadata @2 () -> (assets :List(Data.AssetMetadata));
         getBuildArtifacts @3 (assets :List(Data.AssetUuid), parameters :Data.BuildParameters) -> (artifacts :List(Data.BuildArtifact));
+        getLatestAssetChange @4 () -> (num :UInt64);
+        getAssetChanges @5 (start :UInt64, count :UInt64) -> (changes :List(Data.AssetChangeLogEntry));
     }
 
     interface Listener {

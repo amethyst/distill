@@ -4,6 +4,10 @@ struct AssetUuid {
     id @0 :Data;
 }
 
+struct AssetUuidList {
+    list @0 :List(AssetUuid);
+}
+
 struct KeyValue {
   key @0 :Data;
   value @1 :Data;
@@ -104,3 +108,26 @@ struct BuildParameters {
 
 }
 
+struct AssetChangeLogEntry {
+  num @0 :UInt64;
+  event @1 :AssetChangeEvent;
+}
+struct AssetChangeEvent {
+  union {
+    contentUpdateEvent @0 :AssetContentUpdateEvent;
+    removeEvent @1 :AssetRemoveEvent;
+  }
+}
+
+struct AssetContentUpdateEvent {
+    id @0 :AssetUuid;
+    importHash @1 :ImportArtifactKey;
+    # `buildDepHash` is the hash of all build dependencies' import hashes sorted by their AssetUUID.
+    # It can be used to determine if a build artifact needs to be invalidated
+    # by hashing (import_hash, build_dep_hash, build_pipeline_hash, build_parameters)
+    buildDepHash @2 :Data;
+}
+
+struct AssetRemoveEvent {
+    id @0 :AssetUuid;
+}
