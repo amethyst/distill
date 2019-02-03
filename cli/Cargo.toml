@@ -1,0 +1,16 @@
+[package]
+name = "atelier-cli"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+capnp = { version = "0.9.4", features = [ "rpc_try" ] }
+capnp-rpc = "0.9.0"
+tokio = "0.1"
+futures = "0.1"
+schema = { path = "../schema" }
+time = "0.1"
+parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
+tokio-stdin-stdout = "0.1.5"
+shrust = { git = "https://github.com/kabergstrom/shrust", branch = "master" }
+uuid = "0.7.1"

@@ -2,10 +2,6 @@
 
 using Data = import "data.capnp";
 
-enum GetMetadataOptions {
-    none @0;
-    includeDependencies @1;
-}
 interface AssetHub {
     registerListener @0 (listener :Listener) -> ();
     getSnapshot @1 () -> (snapshot :Snapshot);

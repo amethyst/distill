@@ -20,7 +20,6 @@ use time::PreciseTime;
 use tokio::runtime::current_thread::Runtime;
 use tokio::prelude::*;
 
-
 fn endpoint() -> String {
     if cfg!(windows) {
         r"\\.\pipe\atelier-assets".to_string()
