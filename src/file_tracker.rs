@@ -320,7 +320,7 @@ impl FileTracker {
                 source_files: db.create_db(Some("source_files"), lmdb::DatabaseFlags::default())?,
                 dirty_files: db.create_db(Some("dirty_files"), lmdb::DatabaseFlags::default())?,
                 rename_file_events: db
-                    .create_db(Some("rename_file_events"), lmdb::DatabaseFlags::default())?,
+                    .create_db(Some("rename_file_events"), lmdb::DatabaseFlags::INTEGER_KEY)?,
             },
             db: db,
             listener_rx: rx,

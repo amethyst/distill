@@ -7,7 +7,7 @@ enum GetMetadataOptions {
     includeDependencies @1;
 }
 interface AssetHub {
-    registerListener @0 (listener :Listener);
+    registerListener @0 (listener :Listener) -> ();
     getSnapshot @1 () -> (snapshot :Snapshot);
 
     interface Snapshot {
@@ -20,9 +20,7 @@ interface AssetHub {
     }
 
     interface Listener {
-        # Called with the initial consistent state 
-        sync @0 (snapshot :Snapshot);
-        # Called when a batch of asset updates have been processed
-        update @1 (updated :List(Data.AssetMetadata), snapshot :Snapshot);
+        # Called on registration and when a batch of asset updates have been processed
+        update @0 (latestChange :UInt64, snapshot :Snapshot);
     }
 }

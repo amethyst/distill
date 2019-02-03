@@ -1,16 +1,16 @@
 use crate::{
-    asset_hub::AssetHub,
+    asset_hub::{AssetBatchEvent, AssetHub},
     capnp_db::{CapnpCursor, Environment, RoTransaction},
-    error::Error,
+    error::{Error, Result},
     utils,
 };
-use capnp::{self};
+use capnp;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
-use futures::{Future, Stream};
+use futures::{future, sync::mpsc, Future, Stream};
 use importer::AssetUUID;
 use owning_ref::OwningHandle;
 use schema::{
-    data::{imported_metadata, asset_change_log_entry},
+    data::{asset_change_log_entry, imported_metadata},
     service::{self, asset_hub},
 };
 use std::{
@@ -21,7 +21,7 @@ use std::{
     thread,
 };
 use tokio::prelude::*;
-use tokio::runtime::current_thread::Runtime;
+use tokio::runtime::current_thread::{Handle, Runtime};
 use uuid;
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
@@ -44,6 +44,7 @@ struct AssetHubSnapshotImpl<'a> {
 
 struct AssetHubImpl {
     ctx: Arc<ServiceContext>,
+    runtime: Handle,
 }
 
 impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
@@ -166,7 +167,10 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
         let mut changes = Vec::new();
-        let iter = ctx.hub.get_asset_changes_iter(txn)?.capnp_iter_from(&params.get_start().to_le_bytes());
+        let iter = ctx
+            .hub
+            .get_asset_changes_iter(txn)?
+            .capnp_iter_from(&params.get_start().to_le_bytes());
         let mut count = params.get_count() as usize;
         if count == 0 {
             count = std::usize::MAX;
@@ -191,9 +195,47 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
 impl asset_hub::Server for AssetHubImpl {
     fn register_listener(
         &mut self,
-        _params: asset_hub::RegisterListenerParams,
+        params: asset_hub::RegisterListenerParams,
         _results: asset_hub::RegisterListenerResults,
     ) -> Promise<()> {
+        let params = params.get()?;
+        let listener = Rc::new(params.get_listener()?);
+        let ctx = self.ctx.clone();
+        let (mut tx, rx) = mpsc::channel(16);
+        tx.try_send(AssetBatchEvent::Commit).unwrap();
+        let tx = self.ctx.hub.register_listener(tx);
+        tokio::runtime::current_thread::TaskExecutor::current()
+            .spawn_local(Box::new(rx.for_each(move |_| {
+                let mut request = listener.update_request();
+                let snapshot = AssetHubSnapshotImpl {
+                    txn: Rc::new(OwningHandle::new_with_fn(ctx.clone(), |t| unsafe {
+                        Rc::new((*t).db.ro_txn().unwrap())
+                    })),
+                };
+                let latest_change = ctx
+                    .hub
+                    .get_latest_asset_change(&**snapshot.txn)
+                    .expect("failed to get latest change");
+                request.get().set_latest_change(latest_change);
+                request.get().set_snapshot(
+                    asset_hub::snapshot::ToClient::new(snapshot)
+                        .into_client::<::capnp_rpc::Server>(),
+                );
+                let ctx = ctx.clone();
+                let _ = tokio::runtime::current_thread::TaskExecutor::current().spawn_local(
+                    Box::new(request.send().promise.then(move |r| {
+                        match r {
+                            Ok(_) => {}
+                            Err(_) => {
+                                ctx.hub.drop_listener(tx);
+                            }
+                        }
+                        Ok(())
+                    })),
+                );
+                Ok(())
+            })))
+            .map_err(Error::TokioSpawnError)?;
         Promise::ok(())
     }
     fn get_snapshot(
@@ -227,9 +269,12 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
     ctx: Arc<ServiceContext>,
 ) {
     thread::spawn(move || {
-        let service_impl = AssetHubImpl { ctx: ctx };
-        let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
         let mut runtime = Runtime::new().unwrap();
+        let service_impl = AssetHubImpl {
+            ctx: ctx,
+            runtime: runtime.handle(),
+        };
+        let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
 
         let network = twoparty::VatNetwork::new(
             reader,
@@ -248,7 +293,7 @@ impl AssetHubService {
             ctx: Arc::new(ServiceContext { hub, db }),
         }
     }
-    pub fn run(&self, addr: std::net::SocketAddr) -> Result<(), Error> {
+    pub fn run(&self, addr: std::net::SocketAddr) -> Result<()> {
         use parity_tokio_ipc::Endpoint;
 
         let mut runtime = Runtime::new().unwrap();

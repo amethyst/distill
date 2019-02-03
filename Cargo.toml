@@ -31,6 +31,7 @@ time = "0.1"
 parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
 uuid = "0.7.1"
 lz4 = "1.23.1"
+slotmap = { version = "0.3.0", features = [ "unstable" ] }
 
 [dev-dependencies]
 tempfile = "3"

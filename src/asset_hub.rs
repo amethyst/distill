@@ -1,23 +1,26 @@
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
 use crate::utils;
+use futures::sync::mpsc::Sender;
 use importer::{AssetMetadata, AssetUUID};
 use log::debug;
-use lz4;
 use schema::data::{
     self, asset_change_log_entry,
     imported_metadata::{self, latest_artifact},
 };
+use slotmap::SlotMap;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{Hash, Hasher},
-    io::Write,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
+
+pub type ListenerID = slotmap::DefaultKey;
 
 pub struct AssetHub {
     // db: Arc<Environment>,
     tables: AssetHubTables,
+    listeners: Mutex<SlotMap<ListenerID, Sender<AssetBatchEvent>>>,
 }
 
 struct AssetContentUpdateEvent {
@@ -29,6 +32,10 @@ struct AssetContentUpdateEvent {
 enum ChangeEvent {
     ContentUpdate(AssetContentUpdateEvent),
     Remove(AssetUUID),
+}
+
+pub enum AssetBatchEvent {
+    Commit,
 }
 
 pub struct ChangeBatch {
@@ -122,7 +129,7 @@ fn build_imported_metadata<K>(
 fn add_asset_changelog_entry(
     tables: &AssetHubTables,
     txn: &mut RwTransaction,
-    change: ChangeEvent,
+    change: &ChangeEvent,
 ) -> Result<()> {
     let mut last_seq: u64 = 0;
     let last_element = txn
@@ -171,8 +178,9 @@ impl AssetHub {
                 build_dep_reverse: db
                     .create_db(Some("build_dep_reverse"), lmdb::DatabaseFlags::default())?,
                 asset_changes: db
-                    .create_db(Some("asset_changes"), lmdb::DatabaseFlags::default())?,
+                    .create_db(Some("asset_changes"), lmdb::DatabaseFlags::INTEGER_KEY)?,
             },
+            listeners: Mutex::new(SlotMap::new()),
         })
     }
 
@@ -329,7 +337,7 @@ impl AssetHub {
         Ok(())
     }
 
-    pub fn add_changes(&self, txn: &mut RwTransaction, change_batch: ChangeBatch) -> Result<()> {
+    pub fn add_changes(&self, txn: &mut RwTransaction, change_batch: ChangeBatch) -> Result<bool> {
         // TODO find the set of all changed assets, check the build dependency index and emit changes for all
         // assets that have changed and all the assets where the build_dep_hash has changed.
         // dedupe change events
@@ -406,12 +414,12 @@ impl AssetHub {
         if events.len() > 0 {
             log::info!("{} asset events generated", events.len());
         }
-        for event in events {
+        for event in events.iter() {
             add_asset_changelog_entry(&self.tables, txn, event)?;
         }
-        Ok(())
+        Ok(!events.is_empty())
     }
-    
+
     pub fn get_latest_asset_change<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
@@ -433,5 +441,29 @@ impl AssetHub {
     ) -> Result<lmdb::RoCursor<'a>> {
         let cursor = txn.open_ro_cursor(self.tables.asset_changes)?;
         Ok(cursor)
+    }
+
+    pub fn notify_listeners(&self) {
+        let listeners = &mut *self.listeners.lock().unwrap();
+        let mut to_remove = Vec::new();
+        for (id, listener) in listeners.iter_mut() {
+            match listener.try_send(AssetBatchEvent::Commit) {
+                Err(ref err) if err.is_disconnected() => {
+                    to_remove.push(id);
+                }
+                _ => {}
+            }
+        }
+        for id in to_remove {
+            listeners.remove(id);
+        }
+    }
+
+    pub fn register_listener(&self, listener: Sender<AssetBatchEvent>) -> ListenerID {
+        self.listeners.lock().unwrap().insert(listener)
+    }
+
+    pub fn drop_listener(&self, listener: ListenerID) -> Option<Sender<AssetBatchEvent>> {
+        self.listeners.lock().unwrap().remove(listener)
     }
 }

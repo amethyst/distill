@@ -8,6 +8,7 @@ use ron;
 use std::error::Error as StdError;
 use std::fmt;
 use std::io;
+use tokio::executor::SpawnError;
 
 #[derive(Debug)]
 pub enum Error {
@@ -25,6 +26,7 @@ pub enum Error {
     RecvError,
     Exit,
     ImporterError(importer::Error),
+    TokioSpawnError(SpawnError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -46,6 +48,7 @@ impl std::error::Error for Error {
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
             Error::ImporterError(ref e) => e.description(),
+            Error::TokioSpawnError(ref e) => e.description(),
         }
     }
 
@@ -65,6 +68,7 @@ impl std::error::Error for Error {
             Error::RecvError => None,
             Error::Exit => None,
             Error::ImporterError(ref e) => Some(e),
+            Error::TokioSpawnError(ref e) => Some(e),
         }
     }
 }
@@ -85,6 +89,7 @@ impl fmt::Display for Error {
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
             Error::ImporterError(ref e) => e.fmt(f),
+            Error::TokioSpawnError(ref e) => e.fmt(f),
         }
     }
 }
@@ -146,5 +151,10 @@ impl From<uuid::BytesError> for Error {
 impl From<importer::Error> for Error {
     fn from(err: importer::Error) -> Error {
         Error::ImporterError(err)
+    }
+}
+impl From<SpawnError> for Error {
+    fn from(err: SpawnError) -> Error {
+        Error::TokioSpawnError(err)
     }
 }

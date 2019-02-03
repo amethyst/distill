@@ -894,6 +894,7 @@ impl FileAssetSource {
         use std::cell::RefCell;
         thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
 
+        let mut asset_metadata_changed = false;
         // Should get rid of this scoped_threadpool madness somehow,
         // but can't use par_iter directly since I need to process the results
         // as soon as they are completed. So essentially I want futures::stream::FuturesUnordered.
@@ -964,11 +965,14 @@ impl FileAssetSource {
             }
             let mut change_batch = asset_hub::ChangeBatch::new();
             self.process_metadata_changes(&mut txn, metadata_changes, &mut change_batch)?;
-            self.hub.add_changes(&mut txn, change_batch)?;
+            asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch)?;
             Ok(())
         })?;
         if txn.dirty {
             txn.commit()?;
+            if asset_metadata_changed {
+                self.hub.notify_listeners();
+            }
         }
         info!(
             "Processing {} pairs in {}",
