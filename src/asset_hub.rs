@@ -81,35 +81,42 @@ fn build_imported_metadata<K>(
         let mut value = value_builder.init_root::<imported_metadata::Builder>();
         {
             let mut m = value.reborrow().init_metadata();
-            {
-                m.reborrow().init_id().set_id(metadata.id.as_bytes());
-                if let Some(pipeline) = metadata.build_pipeline {
-                    m.reborrow()
-                        .init_build_pipeline()
-                        .set_id(pipeline.as_bytes());
+            m.reborrow().init_id().set_id(metadata.id.as_bytes());
+            if let Some(pipeline) = metadata.build_pipeline {
+                m.reborrow()
+                    .init_build_pipeline()
+                    .set_id(pipeline.as_bytes());
+            }
+            set_assetid_list(
+                &metadata.load_deps,
+                &mut m.reborrow().init_load_deps(metadata.load_deps.len() as u32),
+            );
+            set_assetid_list(
+                &metadata.build_deps,
+                &mut m
+                    .reborrow()
+                    .init_build_deps(metadata.build_deps.len() as u32),
+            );
+            set_assetid_list(
+                &metadata.instantiate_deps,
+                &mut m
+                    .reborrow()
+                    .init_instantiate_deps(metadata.instantiate_deps.len() as u32),
+            );
+            let mut search_tags = m
+                .reborrow()
+                .init_search_tags(metadata.search_tags.len() as u32);
+            for (idx, (key, value)) in metadata.search_tags.iter().enumerate() {
+                search_tags
+                    .reborrow()
+                    .get(idx as u32)
+                    .set_key(key.as_bytes());
+                if let Some(value) = value {
+                    search_tags
+                        .reborrow()
+                        .get(idx as u32)
+                        .set_value(value.as_bytes());
                 }
-            }
-            {
-                set_assetid_list(
-                    &metadata.load_deps,
-                    &mut m.reborrow().init_load_deps(metadata.load_deps.len() as u32),
-                );
-            }
-            {
-                set_assetid_list(
-                    &metadata.build_deps,
-                    &mut m
-                        .reborrow()
-                        .init_build_deps(metadata.build_deps.len() as u32),
-                );
-            }
-            {
-                set_assetid_list(
-                    &metadata.instantiate_deps,
-                    &mut m
-                        .reborrow()
-                        .init_instantiate_deps(metadata.instantiate_deps.len() as u32),
-                );
             }
         }
         {

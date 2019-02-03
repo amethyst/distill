@@ -44,7 +44,6 @@ struct AssetHubSnapshotImpl<'a> {
 
 struct AssetHubImpl {
     ctx: Arc<ServiceContext>,
-    runtime: Handle,
 }
 
 impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
@@ -270,10 +269,7 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
 ) {
     thread::spawn(move || {
         let mut runtime = Runtime::new().unwrap();
-        let service_impl = AssetHubImpl {
-            ctx: ctx,
-            runtime: runtime.handle(),
-        };
+        let service_impl = AssetHubImpl { ctx: ctx };
         let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
 
         let network = twoparty::VatNetwork::new(
