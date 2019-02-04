@@ -420,7 +420,7 @@ impl FileAssetSource {
         Ok(())
     }
 
-    fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+    pub fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
         path: &PathBuf,
@@ -448,7 +448,7 @@ impl FileAssetSource {
         Ok(())
     }
 
-    fn get_asset_path<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+    pub fn get_asset_path<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
         asset_id: &AssetUUID,
@@ -861,6 +861,7 @@ impl FileAssetSource {
                         pair.source = self.tracker.get_file_state(&txn, &path)?;
                     }
                 }
+                debug!("Processing {} changed file pairs", source_meta_pairs.len());
             }
             if txn.dirty {
                 txn.commit()?;
@@ -975,7 +976,7 @@ impl FileAssetSource {
             }
         }
         info!(
-            "Processing {} pairs in {}",
+            "Processed {} pairs in {}",
             source_meta_pairs.len(),
             start_time.to(PreciseTime::now())
         );

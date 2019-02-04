@@ -57,9 +57,11 @@ impl AssetDaemon {
 
     pub fn run(self) {
         let _ = fs::create_dir(&self.db_dir);
+        let _ = fs::create_dir_all(&Path::new("assets"));
         let asset_db = Arc::new(Environment::new(&self.db_dir).expect("failed to create asset db"));
-        let tracker =
-            Arc::new(FileTracker::new(asset_db.clone()).expect("failed to create tracker"));
+        let tracker = Arc::new(
+            FileTracker::new(asset_db.clone(), vec!["assets"]).expect("failed to create tracker"),
+        );
 
         let hub = Arc::new(
             asset_hub::AssetHub::new(asset_db.clone()).expect("failed to create asset hub"),
@@ -70,14 +72,18 @@ impl AssetDaemon {
             file_asset_source::FileAssetSource::new(&tracker, &hub, &asset_db, &importers)
                 .expect("failed to create asset source"),
         );
+        let service = asset_hub_service::AssetHubService::new(
+            asset_db.clone(),
+            hub.clone(),
+            asset_source.clone(),
+            tracker.clone(),
+        );
 
         // create the assets folder automatically to make it easier to get started.
         // might want to remove later when watched dirs become configurable?
-        let _ = std::fs::create_dir_all(&Path::new("assets"));
-        let handle = thread::spawn(move || tracker.run(vec!["assets"]));
+        let handle = thread::spawn(move || tracker.run());
         thread::spawn(move || asset_source.run().expect("FileAssetSource.run() failed"));
 
-        let service = asset_hub_service::AssetHubService::new(asset_db.clone(), hub.clone());
         service
             .run(self.address)
             .expect("Assed hub service failed to run");

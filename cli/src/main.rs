@@ -75,7 +75,16 @@ fn print_asset_metadata(io: &mut shrust::ShellIO, asset: &data::asset_metadata::
         uuid::Uuid::from_bytes(make_array(asset.get_id().unwrap().get_id().unwrap()))
     );
     if let Ok(tags) = asset.get_search_tags() {
-        let tags: Vec<String> = tags.iter().map(|t| format!("\"{}\": \"{}\"", std::str::from_utf8(t.get_key().unwrap_or(b"")).unwrap(), std::str::from_utf8(t.get_value().unwrap_or(b"")).unwrap())).collect();
+        let tags: Vec<String> = tags
+            .iter()
+            .map(|t| {
+                format!(
+                    "\"{}\": \"{}\"",
+                    std::str::from_utf8(t.get_key().unwrap_or(b"")).unwrap(),
+                    std::str::from_utf8(t.get_value().unwrap_or(b"")).unwrap()
+                )
+            })
+            .collect();
         if !tags.is_empty() {
             write!(io, ", search_tags: [ {} ]", tags.join(", "));
         }
@@ -114,6 +123,58 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
             Ok(())
         }))
     });
+    shell.new_command("path_for_asset", "Get path from asset uuid", 1, |io, ctx, args| {
+        let id = uuid::Uuid::parse_str(args[0]).unwrap();
+        let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
+        request.get().init_assets(1).get(0).set_id(id.as_bytes());
+        let mut io = io.clone();
+        Box::new(request.send().promise.then(move |result| {
+            let response = result.unwrap();
+            let response = response.get().unwrap();
+            for asset in response.get_paths().unwrap() {
+                let asset_uuid = uuid::Uuid::from_slice(asset.get_id()?.get_id()?).unwrap();
+                write!(io, "{{ asset: {}, path: {} }}",  asset_uuid, std::str::from_utf8(asset.get_path().unwrap()).unwrap());
+            }
+            Ok(())
+        }))
+    });
+    shell.new_command(
+        "assets_for_path",
+        "Get asset metadata from path",
+        1,
+        |io, ctx, args| {
+            let mut request = ctx.snapshot.borrow().get_assets_for_paths_request();
+            request.get().init_paths(1).set(0, args[0].as_bytes());
+            let snapshot = ctx.snapshot.clone();
+            let path_request = request.send().promise.and_then(move |response| {
+                let response = response.get().unwrap();
+                let asset_uuids_to_get: Vec<_> = response
+                    .get_assets()
+                    .unwrap()
+                    .iter()
+                    .flat_map(|a| a.get_assets().unwrap())
+                    .collect();
+                let mut request = snapshot.borrow().get_asset_metadata_request();
+                let mut assets = request.get().init_assets(asset_uuids_to_get.len() as u32);
+                for (idx, asset) in asset_uuids_to_get.iter().enumerate() {
+                    assets
+                        .reborrow()
+                        .get(idx as u32)
+                        .set_id(asset.get_id().unwrap());
+                }
+                Ok(request.send().promise)
+            });
+            let mut io = io.clone();
+            Box::new(path_request.flatten().then(move |result| {
+                let response = result.unwrap();
+                let response = response.get().unwrap();
+                for asset in response.get_assets().unwrap() {
+                    print_asset_metadata(&mut io, &asset);
+                }
+                Ok(())
+            }))
+        },
+    );
 }
 
 fn start_runtime() {

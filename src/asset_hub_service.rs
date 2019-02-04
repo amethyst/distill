@@ -2,6 +2,8 @@ use crate::{
     asset_hub::{AssetBatchEvent, AssetHub},
     capnp_db::{CapnpCursor, Environment, RoTransaction},
     error::{Error, Result},
+    file_asset_source::FileAssetSource,
+    file_tracker::FileTracker,
     utils,
 };
 use capnp;
@@ -10,12 +12,12 @@ use futures::{future, sync::mpsc, Future, Stream};
 use importer::AssetUUID;
 use owning_ref::OwningHandle;
 use schema::{
-    data::{asset_change_log_entry, imported_metadata},
+    data::{asset_change_log_entry, asset_metadata},
     service::{self, asset_hub},
 };
 use std::{
     collections::{HashMap, HashSet},
-    error, fmt,
+    error, fmt, fs, path,
     rc::Rc,
     sync::Arc,
     thread,
@@ -29,6 +31,8 @@ type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 
 struct ServiceContext {
     hub: Arc<AssetHub>,
+    file_source: Arc<FileAssetSource>,
+    file_tracker: Arc<FileTracker>,
     db: Arc<Environment>,
 }
 
@@ -69,7 +73,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             .init_assets(metadatas.len() as u32);
         for (idx, metadata) in metadatas.iter().enumerate() {
             let metadata = metadata.get()?;
-            assets.set_with_caveats(idx as u32, metadata.get_metadata()?)?;
+            assets.set_with_caveats(idx as u32, metadata)?;
         }
         Promise::ok(())
     }
@@ -91,7 +95,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         }
         let mut missing_metadata = HashSet::new();
         for metadata in metadatas.values() {
-            for dep in metadata.get()?.get_metadata()?.get_load_deps()? {
+            for dep in metadata.get()?.get_load_deps()? {
                 let dep = AssetUUID::from_slice(dep.get_id()?).map_err(Error::UuidBytesError)?;
                 if !metadatas.contains_key(&dep) {
                     missing_metadata.insert(dep);
@@ -110,7 +114,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             .init_assets(metadatas.len() as u32);
         for (idx, metadata) in metadatas.values().enumerate() {
             let metadata = metadata.get()?;
-            assets.set_with_caveats(idx as u32, metadata.get_metadata()?)?;
+            assets.set_with_caveats(idx as u32, metadata)?;
         }
         Promise::ok(())
     }
@@ -124,7 +128,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let mut metadatas = Vec::new();
         for (_, value) in ctx.hub.get_metadata_iter(txn)?.capnp_iter_start() {
             let value = value?;
-            let metadata = value.into_typed::<imported_metadata::Owned>();
+            let metadata = value.into_typed::<asset_metadata::Owned>();
             metadatas.push(metadata);
         }
         let mut results_builder = results.get();
@@ -133,7 +137,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             .init_assets(metadatas.len() as u32);
         for (idx, metadata) in metadatas.iter().enumerate() {
             let metadata = metadata.get()?;
-            assets.set_with_caveats(idx as u32, metadata.get_metadata()?)?;
+            assets.set_with_caveats(idx as u32, metadata)?;
         }
         Promise::ok(())
     }
@@ -186,6 +190,83 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         for (idx, change) in changes.iter().enumerate() {
             let change = change.get()?;
             changes_results.set_with_caveats(idx as u32, change)?;
+        }
+        Promise::ok(())
+    }
+    fn get_path_for_assets(
+        &mut self,
+        params: asset_hub::snapshot::GetPathForAssetsParams,
+        mut results: asset_hub::snapshot::GetPathForAssetsResults,
+    ) -> Promise<()> {
+        let params = params.get()?;
+        let ctx = self.txn.as_owner();
+        let txn = &**self.txn;
+        let mut asset_paths = Vec::new();
+        for id in params.get_assets()? {
+            let asset_uuid = AssetUUID::from_slice(id.get_id()?).map_err(Error::UuidBytesError)?;
+            let path = ctx.file_source.get_asset_path(txn, &asset_uuid)?;
+            if let Some(path) = path {
+                asset_paths.push((id, path));
+            }
+        }
+        let mut results_builder = results.get();
+        let mut assets = results_builder
+            .reborrow()
+            .init_paths(asset_paths.len() as u32);
+        for (idx, (asset, path)) in asset_paths.iter().enumerate() {
+            assets.reborrow().get(idx as u32).set_path(path.to_string_lossy().as_bytes());
+            assets.reborrow().get(idx as u32).init_id().set_id(asset.get_id()?);
+        }
+        Promise::ok(())
+    }
+    fn get_assets_for_paths(
+        &mut self,
+        params: asset_hub::snapshot::GetAssetsForPathsParams,
+        mut results: asset_hub::snapshot::GetAssetsForPathsResults,
+    ) -> Promise<()> {
+        let params = params.get()?;
+        let ctx = self.txn.as_owner();
+        let txn = &**self.txn;
+        let mut metadatas = Vec::new();
+        for request_path in params.get_paths()? {
+            let request_path = request_path?;
+            let mut path_str = std::str::from_utf8(request_path)?.to_string();
+            if cfg!(windows) {
+                path_str = path_str.replace("/", "\\"); // fs::canonicalize does not handle forward slashes in paths
+            }
+            let mut path = path::PathBuf::from(path_str);
+            let mut metadata = None;
+            if path.is_relative() {
+                for dir in ctx.file_tracker.get_watch_dirs() {
+                    if let Ok(canonicalized) = fs::canonicalize(dir.join(&path)) {
+                        metadata = ctx.file_source.get_metadata(txn, &canonicalized)?;
+                        if metadata.is_some() {
+                            break;
+                        }
+                    }
+                }
+            } else if let Ok(canonicalized) = fs::canonicalize(&path) {
+                metadata = ctx.file_source.get_metadata(txn, &canonicalized)?
+            }
+            if let Some(metadata) = metadata {
+                metadatas.push((request_path, metadata));
+            }
+        }
+        let mut results_builder = results.get();
+        let mut results = results_builder
+            .reborrow()
+            .init_assets(metadatas.len() as u32);
+        for (idx, (path, assets)) in metadatas.iter().enumerate() {
+            let assets = assets.get()?.get_assets()?;
+            let num_assets = assets.len();
+            let mut asset_results = results.reborrow().get(idx as u32).init_assets(num_assets);
+            for (idx, asset) in assets.iter().enumerate() {
+                asset_results
+                    .reborrow()
+                    .get(idx as u32)
+                    .set_id(asset.get_id()?);
+            }
+            results.reborrow().get(idx as u32).set_path(path);
         }
         Promise::ok(())
     }
@@ -284,9 +365,19 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
     });
 }
 impl AssetHubService {
-    pub fn new(db: Arc<Environment>, hub: Arc<AssetHub>) -> AssetHubService {
+    pub fn new(
+        db: Arc<Environment>,
+        hub: Arc<AssetHub>,
+        file_source: Arc<FileAssetSource>,
+        file_tracker: Arc<FileTracker>,
+    ) -> AssetHubService {
         AssetHubService {
-            ctx: Arc::new(ServiceContext { hub, db }),
+            ctx: Arc::new(ServiceContext {
+                hub,
+                db,
+                file_source,
+                file_tracker,
+            }),
         }
     }
     pub fn run(&self, addr: std::net::SocketAddr) -> Result<()> {

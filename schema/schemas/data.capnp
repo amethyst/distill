@@ -79,17 +79,13 @@ struct AssetMetadata {
   instantiateDeps @3 :List(AssetUuid);
   searchTags @4 :List(KeyValue);
   buildPipeline @5 :AssetUuid;
-}
-
-struct ImportedMetadata {
-  metadata @0 :AssetMetadata;
   # The most recently recorded hash of the input to the import function
   latestArtifact :union {
-    id @1 :ImportArtifactKey;
-    none @2 :Void;
+    id @6 :ImportArtifactKey;
+    none @7 :Void;
   }
   # The source of the imported asset
-  source @3 :AssetSource;
+  source @8 :AssetSource;
 }
 
 # The identifier for a build artifact is the hash of 

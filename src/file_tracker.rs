@@ -45,6 +45,7 @@ pub struct FileTracker {
     listener_rx: Receiver<Sender<FileTrackerEvent>>,
     listener_tx: Sender<Sender<FileTrackerEvent>>,
     is_running: AtomicBool,
+    watch_dirs: Vec<PathBuf>,
 }
 #[derive(Clone, Debug)]
 pub struct FileState {
@@ -313,7 +314,16 @@ fn handle_file_event(
 }
 
 impl FileTracker {
-    pub fn new(db: Arc<Environment>) -> Result<FileTracker> {
+    pub fn new<'a, I, T>(db: Arc<Environment>, to_watch: I) -> Result<FileTracker>
+    where
+        I: IntoIterator<Item = &'a str, IntoIter = T>,
+        T: Iterator<Item = &'a str>,
+    {
+        let mut watch_dirs = Vec::new();
+        for path in to_watch {
+            let path = fs::canonicalize(path)?;
+            watch_dirs.push(path);
+        }
         let (tx, rx) = channel::unbounded();
         Ok(FileTracker {
             tables: FileTrackerTables {
@@ -326,7 +336,12 @@ impl FileTracker {
             listener_rx: rx,
             listener_tx: tx,
             is_running: AtomicBool::new(false),
+            watch_dirs,
         })
+    }
+
+    pub fn get_watch_dirs<'a>(&'a self) -> impl Iterator<Item = &'a PathBuf> {
+        self.watch_dirs.iter()
     }
 
     pub fn get_rw_txn<'a>(&'a self) -> Result<RwTransaction<'a>> {
@@ -521,7 +536,7 @@ impl FileTracker {
         Ok(())
     }
 
-    pub fn run(&self, to_watch: Vec<&str>) -> Result<()> {
+    pub fn run(&self) -> Result<()> {
         if self
             .is_running
             .compare_and_swap(false, true, Ordering::AcqRel)
@@ -529,7 +544,13 @@ impl FileTracker {
             return Ok(());
         }
         let (tx, rx) = channel::unbounded();
-        let mut watcher = watcher::DirWatcher::new(to_watch, tx)?;
+        let dir_strings: Vec<_> = self
+            .watch_dirs
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        let mut watcher =
+            watcher::DirWatcher::from_path_iter(dir_strings.iter().map(|s| s.as_str()), tx)?;
 
         let stop_handle = watcher.stop_handle();
         let handle = thread::spawn(move || watcher.run());
@@ -581,19 +602,20 @@ mod tests {
         let asset_dir = tempfile::tempdir().unwrap();
         {
             let _ = fs::create_dir(db_dir.path());
+            let asset_paths = vec![asset_dir.path().to_str().unwrap()];
             let db =
                 Arc::new(Environment::new(db_dir.path()).expect("failed to create db environment"));
-            let tracker = Arc::new(FileTracker::new(db).expect("failed to create tracker"));
+            let tracker =
+                Arc::new(FileTracker::new(db, asset_paths).expect("failed to create tracker"));
             let (tx, rx) = channel::unbounded();
             tracker.register_listener(tx);
 
-            let asset_path = PathBuf::from(asset_dir.path());
             let handle = {
                 let run_tracker = tracker.clone();
                 thread::spawn(move || {
                     run_tracker
                         .clone()
-                        .run(vec![asset_path.to_str().unwrap()])
+                        .run()
                         .expect("error running file tracker");
                 })
             };

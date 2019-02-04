@@ -1,18 +1,27 @@
 @0x805eb2f9d3deb354;
 
-using Data = import "data.capnp";
-
+using D = import "data.capnp";
+struct AssetPath {
+    id @0 :D.AssetUuid;
+    path @1 :Data;
+}
+struct PathAssets {
+    path @0 :Data;
+    assets @1 :List(D.AssetUuid);
+}
 interface AssetHub {
     registerListener @0 (listener :Listener) -> ();
     getSnapshot @1 () -> (snapshot :Snapshot);
 
     interface Snapshot {
-        getAssetMetadata @0 (assets :List(Data.AssetUuid)) -> (assets :List(Data.AssetMetadata));
-        getAssetMetadataWithDependencies @1 (assets :List(Data.AssetUuid)) -> (assets :List(Data.AssetMetadata));
-        getAllAssetMetadata @2 () -> (assets :List(Data.AssetMetadata));
-        getBuildArtifacts @3 (assets :List(Data.AssetUuid), parameters :Data.BuildParameters) -> (artifacts :List(Data.BuildArtifact));
-        getLatestAssetChange @4 () -> (num :UInt64);
-        getAssetChanges @5 (start :UInt64, count :UInt64) -> (changes :List(Data.AssetChangeLogEntry));
+        getAssetMetadata @0 (assets :List(D.AssetUuid)) -> (assets :List(D.AssetMetadata));
+        getAssetMetadataWithDependencies @1 (assets :List(D.AssetUuid)) -> (assets :List(D.AssetMetadata));
+        getAllAssetMetadata @2 () -> (assets :List(D.AssetMetadata));
+        getLatestAssetChange @3 () -> (num :UInt64);
+        getAssetChanges @4 (start :UInt64, count :UInt64) -> (changes :List(D.AssetChangeLogEntry));
+        getPathForAssets @5 (assets :List(D.AssetUuid)) -> (paths :List(AssetPath));
+        getAssetsForPaths @6 (paths :List(Data)) -> (assets :List(PathAssets));
+        getBuildArtifacts @7 (assets :List(D.AssetUuid), parameters :D.BuildParameters) -> (artifacts :List(D.BuildArtifact));
     }
 
     interface Listener {

@@ -6,7 +6,7 @@ use importer::{AssetMetadata, AssetUUID};
 use log::debug;
 use schema::data::{
     self, asset_change_log_entry,
-    imported_metadata::{self, latest_artifact},
+    asset_metadata::{self, latest_artifact},
 };
 use slotmap::SlotMap;
 use std::{
@@ -71,64 +71,58 @@ fn set_assetid_list(
     }
 }
 
-fn build_imported_metadata<K>(
+fn build_asset_metadata<K>(
     metadata: &AssetMetadata,
     artifact_hash: Option<&[u8]>,
     source: data::AssetSource,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
-        let mut value = value_builder.init_root::<imported_metadata::Builder>();
-        {
-            let mut m = value.reborrow().init_metadata();
-            m.reborrow().init_id().set_id(metadata.id.as_bytes());
-            if let Some(pipeline) = metadata.build_pipeline {
-                m.reborrow()
-                    .init_build_pipeline()
-                    .set_id(pipeline.as_bytes());
-            }
-            set_assetid_list(
-                &metadata.load_deps,
-                &mut m.reborrow().init_load_deps(metadata.load_deps.len() as u32),
-            );
-            set_assetid_list(
-                &metadata.build_deps,
-                &mut m
-                    .reborrow()
-                    .init_build_deps(metadata.build_deps.len() as u32),
-            );
-            set_assetid_list(
-                &metadata.instantiate_deps,
-                &mut m
-                    .reborrow()
-                    .init_instantiate_deps(metadata.instantiate_deps.len() as u32),
-            );
-            let mut search_tags = m
+        let mut m = value_builder.init_root::<asset_metadata::Builder>();
+        m.reborrow().init_id().set_id(metadata.id.as_bytes());
+        if let Some(pipeline) = metadata.build_pipeline {
+            m.reborrow()
+                .init_build_pipeline()
+                .set_id(pipeline.as_bytes());
+        }
+        set_assetid_list(
+            &metadata.load_deps,
+            &mut m.reborrow().init_load_deps(metadata.load_deps.len() as u32),
+        );
+        set_assetid_list(
+            &metadata.build_deps,
+            &mut m
                 .reborrow()
-                .init_search_tags(metadata.search_tags.len() as u32);
-            for (idx, (key, value)) in metadata.search_tags.iter().enumerate() {
+                .init_build_deps(metadata.build_deps.len() as u32),
+        );
+        set_assetid_list(
+            &metadata.instantiate_deps,
+            &mut m
+                .reborrow()
+                .init_instantiate_deps(metadata.instantiate_deps.len() as u32),
+        );
+        let mut search_tags = m
+            .reborrow()
+            .init_search_tags(metadata.search_tags.len() as u32);
+        for (idx, (key, value)) in metadata.search_tags.iter().enumerate() {
+            search_tags
+                .reborrow()
+                .get(idx as u32)
+                .set_key(key.as_bytes());
+            if let Some(value) = value {
                 search_tags
                     .reborrow()
                     .get(idx as u32)
-                    .set_key(key.as_bytes());
-                if let Some(value) = value {
-                    search_tags
-                        .reborrow()
-                        .get(idx as u32)
-                        .set_value(value.as_bytes());
-                }
+                    .set_value(value.as_bytes());
             }
         }
-        {
-            if let Some(artifact_hash) = artifact_hash {
-                value
-                    .reborrow()
-                    .init_latest_artifact()
-                    .init_id()
-                    .set_hash(artifact_hash);
-            }
+        if let Some(artifact_hash) = artifact_hash {
+            m.reborrow()
+                .init_latest_artifact()
+                .init_id()
+                .set_hash(artifact_hash);
         }
-        value.reborrow().set_source(source);
+        m.reborrow().set_source(source);
     }
     value_builder
 }
@@ -203,8 +197,8 @@ impl AssetHub {
         &self,
         txn: &'a V,
         id: &AssetUUID,
-    ) -> Result<Option<MessageReader<'a, imported_metadata::Owned>>> {
-        Ok(txn.get::<imported_metadata::Owned, _>(self.tables.asset_metadata, id.as_bytes())?)
+    ) -> Result<Option<MessageReader<'a, asset_metadata::Owned>>> {
+        Ok(txn.get::<asset_metadata::Owned, _>(self.tables.asset_metadata, id.as_bytes())?)
     }
 
     pub fn get_build_deps_reverse<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -242,10 +236,9 @@ impl AssetHub {
     ) -> Result<()> {
         let hash_bytes = import_hash.to_le_bytes();
         let mut maybe_id = None;
-        let existing_metadata: Option<MessageReader<imported_metadata::Owned>> =
+        let existing_metadata: Option<MessageReader<asset_metadata::Owned>> =
             txn.get(self.tables.asset_metadata, metadata.id.as_bytes())?;
-        let new_metadata =
-            build_imported_metadata::<&[u8; 8]>(&metadata, Some(&hash_bytes), source);
+        let new_metadata = build_asset_metadata::<&[u8; 8]>(&metadata, Some(&hash_bytes), source);
         let mut deps_to_delete = Vec::new();
         let mut deps_to_add = Vec::new();
         if let Some(existing_metadata) = existing_metadata {
@@ -254,7 +247,7 @@ impl AssetHub {
             if let latest_artifact::Id(Ok(id)) = latest_artifact.which()? {
                 maybe_id = Some(Vec::from(id.get_hash()?));
             }
-            for dep in existing_metadata.get_metadata()?.get_build_deps()? {
+            for dep in existing_metadata.get_build_deps()? {
                 let dep = AssetUUID::from_slice(dep.get_id()?)?;
                 if metadata.build_deps.contains(&dep) == false {
                     deps_to_delete.push(dep);
@@ -320,7 +313,7 @@ impl AssetHub {
                     artifact_hash = Some(Vec::from(hash));
                 }
             }
-            for dep in metadata.get_metadata()?.get_build_deps()? {
+            for dep in metadata.get_build_deps()? {
                 deps_to_delete.push(AssetUUID::from_slice(dep.get_id()?)?);
             }
         }
@@ -387,7 +380,7 @@ impl AssetHub {
                         {
                             dependency_graph.insert(asset, Vec::from(id.get_hash()?));
                         }
-                        for dep in metadata.get_metadata()?.get_build_deps()? {
+                        for dep in metadata.get_build_deps()? {
                             to_check.push_back(AssetUUID::from_slice(dep.get_id()?)?);
                         }
                     }
