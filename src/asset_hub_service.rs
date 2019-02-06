@@ -2,29 +2,27 @@ use crate::{
     asset_hub::{AssetBatchEvent, AssetHub},
     capnp_db::{CapnpCursor, Environment, RoTransaction},
     error::{Error, Result},
-    file_asset_source::{FileAssetSource, PairImport},
+    file_asset_source::{FileAssetSource},
     file_tracker::FileTracker,
-    utils,
 };
 use capnp;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
-use futures::{future, sync::mpsc, Future, Stream};
+use futures::{sync::mpsc, Future, Stream};
 use importer::AssetUUID;
 use owning_ref::OwningHandle;
 use schema::{
     data::{asset_change_log_entry, asset_metadata, AssetSource},
-    service::{self, asset_hub},
+    service::{asset_hub},
 };
 use std::{
     collections::{HashMap, HashSet},
-    error, fmt, fs, path,
+    fs, path,
     rc::Rc,
     sync::Arc,
     thread,
 };
 use tokio::prelude::*;
-use tokio::runtime::current_thread::{Handle, Runtime};
-use uuid;
+use tokio::runtime::current_thread::Runtime;
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
@@ -269,11 +267,14 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let mut metadatas = Vec::new();
         for request_path in params.get_paths()? {
             let request_path = request_path?;
-            let mut path_str = std::str::from_utf8(request_path)?.to_string();
+            let path_str;
             if cfg!(windows) {
-                path_str = path_str.replace("/", "\\"); // fs::canonicalize does not handle forward slashes in paths
+                // fs::canonicalize does not handle forward slashes in paths on Windows
+                path_str = std::str::from_utf8(request_path)?.to_string().replace("/", "\\"); 
+            } else {
+                path_str = std::str::from_utf8(request_path)?.to_string();
             }
-            let mut path = path::PathBuf::from(path_str);
+            let path = path::PathBuf::from(path_str);
             let mut metadata = None;
             if path.is_relative() {
                 for dir in ctx.file_tracker.get_watch_dirs() {

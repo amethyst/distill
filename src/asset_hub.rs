@@ -3,7 +3,6 @@ use crate::error::Result;
 use crate::utils;
 use futures::sync::mpsc::Sender;
 use importer::{AssetMetadata, AssetUUID};
-use log::debug;
 use schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
@@ -145,7 +144,7 @@ fn add_asset_changelog_entry(
     let mut value = value_builder.init_root::<asset_change_log_entry::Builder>();
     value.reborrow().set_num(last_seq);
     {
-        let mut value = value.reborrow().init_event();
+        let value = value.reborrow().init_event();
         match change {
             ChangeEvent::ContentUpdate(evt) => {
                 let mut db_evt = value.init_content_update_event();
@@ -302,17 +301,10 @@ impl AssetHub {
         id: &AssetUUID,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
-        let mut artifact_hash = None;
         let metadata = self.get_metadata(txn, id)?;
         let mut deps_to_delete = Vec::new();
         if let Some(metadata) = metadata {
             let metadata = metadata.get()?;
-            if let latest_artifact::Id(Ok(id)) = metadata.get_latest_artifact().which()? {
-                let hash = id.get_hash()?;
-                if !hash.is_empty() {
-                    artifact_hash = Some(Vec::from(hash));
-                }
-            }
             for dep in metadata.get_build_deps()? {
                 deps_to_delete.push(AssetUUID::from_slice(dep.get_id()?)?);
             }
