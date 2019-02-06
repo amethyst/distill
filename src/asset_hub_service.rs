@@ -2,7 +2,7 @@ use crate::{
     asset_hub::{AssetBatchEvent, AssetHub},
     capnp_db::{CapnpCursor, Environment, RoTransaction},
     error::{Error, Result},
-    file_asset_source::FileAssetSource,
+    file_asset_source::{FileAssetSource, PairImport},
     file_tracker::FileTracker,
     utils,
 };
@@ -12,7 +12,7 @@ use futures::{future, sync::mpsc, Future, Stream};
 use importer::AssetUUID;
 use owning_ref::OwningHandle;
 use schema::{
-    data::{asset_change_log_entry, asset_metadata},
+    data::{asset_change_log_entry, asset_metadata, AssetSource},
     service::{self, asset_hub},
 };
 use std::{
@@ -143,11 +143,43 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
     }
     fn get_build_artifacts(
         &mut self,
-        _params: asset_hub::snapshot::GetBuildArtifactsParams,
+        params: asset_hub::snapshot::GetBuildArtifactsParams,
         mut results: asset_hub::snapshot::GetBuildArtifactsResults,
     ) -> Promise<()> {
+        let params = params.get()?;
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
+        let mut artifacts = Vec::new();
+        let mut scratch_buf = Vec::new();
+        for id in params.get_assets()? {
+            let id = AssetUUID::from_slice(id.get_id()?).map_err(Error::UuidBytesError)?;
+            let value = ctx.hub.get_metadata(txn, &id)?;
+            if let Some(metadata) = value {
+                let metadata = metadata.get()?;
+                match metadata.get_source()? {
+                    AssetSource::File => {
+                        // TODO run build pipeline
+                        if let Some((hash, artifact)) = ctx.file_source.regenerate_import_artifact(
+                            txn,
+                            &id,
+                            &mut scratch_buf,
+                        )? {
+                            artifacts.push((id, hash, artifact));
+                        }
+                    }
+                }
+            }
+        }
+        let mut results_builder = results.get();
+        let mut artifact_results = results_builder
+            .reborrow()
+            .init_artifacts(artifacts.len() as u32);
+        for (idx, (id, hash, artifact)) in artifacts.iter().enumerate() {
+            let mut out = artifact_results.reborrow().get(idx as u32);
+            out.reborrow().init_asset_id().set_id(id.as_bytes());
+            out.reborrow().init_key().set_hash(&hash.to_le_bytes());
+            out.reborrow().set_data(artifact);
+        }
         Promise::ok(())
     }
     fn get_latest_asset_change(
@@ -214,8 +246,15 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             .reborrow()
             .init_paths(asset_paths.len() as u32);
         for (idx, (asset, path)) in asset_paths.iter().enumerate() {
-            assets.reborrow().get(idx as u32).set_path(path.to_string_lossy().as_bytes());
-            assets.reborrow().get(idx as u32).init_id().set_id(asset.get_id()?);
+            assets
+                .reborrow()
+                .get(idx as u32)
+                .set_path(path.to_string_lossy().as_bytes());
+            assets
+                .reborrow()
+                .get(idx as u32)
+                .init_id()
+                .set_id(asset.get_id()?);
         }
         Promise::ok(())
     }

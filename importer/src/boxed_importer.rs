@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::collections::HashMap;
 
-#[derive(Clone, Serialize, Deserialize, Hash)]
+#[derive(Clone, Serialize, Deserialize, Hash, Default)]
 pub struct AssetMetadata {
     pub id: AssetUUID,
     pub search_tags: Vec<(String, Option<String>)>,
@@ -20,7 +20,7 @@ pub struct SourceMetadata<Options, State> {
     /// Metadata struct version
     pub version: u32,
     /// Hash of the source file + importer options + importer state this metadata was generated from
-    pub import_hash: u64,
+    pub import_hash: Option<u64>,
     pub importer_version: u32,
     pub importer_options: Options,
     pub importer_state: State,

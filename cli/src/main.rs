@@ -123,6 +123,21 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
             Ok(())
         }))
     });
+    shell.new_command("build", "Get build artifact from uuid", 1, |io, ctx, args| {
+        let id = uuid::Uuid::parse_str(args[0]).unwrap();
+        let mut request = ctx.snapshot.borrow().get_build_artifacts_request();
+        request.get().init_assets(1).get(0).set_id(id.as_bytes());
+        let mut io = io.clone();
+        Box::new(request.send().promise.then(move |result| {
+            let response = result.unwrap();
+            let response = response.get().unwrap();
+            for artifact in response.get_artifacts().unwrap() {
+                let asset_uuid = uuid::Uuid::from_slice(artifact.get_asset_id()?.get_id()?).unwrap();
+                write!(io, "{{ id: {}, hash: {:?}, length: {} }}", asset_uuid, artifact.get_key()?.get_hash()?, artifact.get_data()?.len());
+            }
+            Ok(())
+        }))
+    });
     shell.new_command("path_for_asset", "Get path from asset uuid", 1, |io, ctx, args| {
         let id = uuid::Uuid::parse_str(args[0]).unwrap();
         let mut request = ctx.snapshot.borrow().get_path_for_assets_request();

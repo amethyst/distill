@@ -236,7 +236,7 @@ impl Environment {
         let env = lmdb::Environment::new()
             .set_max_dbs(64)
             .set_map_size(map_size)
-            .set_flags(lmdb::EnvironmentFlags::NO_TLS)
+            .set_flags(lmdb::EnvironmentFlags::NO_TLS | lmdb::EnvironmentFlags::WRITE_MAP)
             .open(path)?;
         Ok(Environment { env })
     }

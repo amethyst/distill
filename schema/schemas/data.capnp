@@ -96,8 +96,9 @@ struct BuildArtifactKey {
 }
 
 struct BuildArtifact {
-    key @0 :BuildArtifactKey;
-    data @1 :Data;
+    assetId @0 :AssetUuid;
+    key @1 :BuildArtifactKey;
+    data @2 :Data;
 }
 
 struct BuildParameters {
