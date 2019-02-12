@@ -4,9 +4,10 @@ use std::collections::{HashMap};
 use std::marker::PhantomData;
 use std::fmt;
 use serde_dyn::{TypeUuid};
+use serde::{Serialize, Deserialize};
 use crate::processor::{self, Processor, AnyProcessor, TypeId, ProcessorObj, ProcessorValues};
 
-#[derive(Copy, Ord, PartialOrd, PartialEq, Eq, Clone, Hash, Debug)]
+#[derive(Copy, Ord, PartialOrd, PartialEq, Eq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct NodeId(u32);
 type ArgIndex = usize;
 type ArgId = (NodeId, ArgIndex);
@@ -14,7 +15,7 @@ type NodeGraph = petgraph::graph::Graph<Node, NodeEdge>;
 type NodeRef = petgraph::graph::NodeIndex;
 type ProcessorId = u128;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct NodeEdge {
     from: ArgId,
     to: ArgId,
@@ -74,20 +75,11 @@ impl Graph {
             for edge in self.graph.edges_directed(*node_id, petgraph::Direction::Incoming)
             {
                 let edge = edge.weight();
-                debug!("input edge {:?}", edge);
-                debug!("output len {:?}", outputs[&edge.from.0].len());
-                for (idx, input) in outputs[&edge.from.0].iter().enumerate() {
-                    debug!("incoming node's output {:?} at idx {} ", input, idx);
-                }
                 if inputs.len() <= edge.to.1 {
                     inputs.resize_with(edge.to.1 + 1, || None);
                 }
                 inputs[edge.to.1] = outputs[&edge.from.0][edge.from.1 as usize].as_ref().map(|o| o.shallow_clone());
-                for (idx, input) in inputs.iter().enumerate() {
-                    debug!("using input {:?} at idx {} ", input, idx);
-                }
             }
-            debug!("running {:?}", node_id);
             let mut values = ProcessorValues::new(inputs);
             let mut node = &mut self.graph[*node_id];
             node.processor.run(&mut values);
@@ -169,20 +161,20 @@ impl ProcessorRegistry {
     }
 }
 
-mod serde {
+pub mod serialized {
     use super::*;
-    //#[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize)]
     struct SerdeNode {
         id: NodeId,
         processor_id: ProcessorId,
     }
-    //#[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize)]
     pub struct SerdeGraph {
         nodes: Vec<SerdeNode>,
         edges: Vec<NodeEdge>,
     }
     impl SerdeGraph {
-        fn instantiate(self, registry: &ProcessorRegistry) -> Result<Graph> {
+        pub fn instantiate(self, registry: &ProcessorRegistry) -> Result<Graph> {
             let mut builder = GraphBuilder::new();
             for node in self.nodes {
                 let processor = registry.get_processor(node.processor_id).ok_or_else(|| Error::ProcessorNotFound(node.processor_id, node.id))?;

@@ -2,8 +2,8 @@ use crate::error::Result;
 use crate::{AssetUUID, Importer, ImporterValue, SerdeObj};
 use ron;
 use serde::{Deserialize, Serialize};
+use serde_dyn::{TypeUuid, TypeUuidDynamic};
 use std::io::Read;
-use std::collections::HashMap;
 
 #[derive(Clone, Serialize, Deserialize, Hash, Default)]
 pub struct AssetMetadata {
@@ -27,7 +27,7 @@ pub struct SourceMetadata<Options, State> {
     pub assets: Vec<AssetMetadata>,
 }
 
-pub trait BoxedImporter: Send + Sync {
+pub trait BoxedImporter: TypeUuidDynamic + Send + Sync {
     fn import_boxed(
         &self,
         source: &mut Read,
@@ -54,7 +54,7 @@ impl<S, O, T> BoxedImporter for T
 where
     O: SerdeObj + Serialize + Default + Send + Sync + Clone + for<'a> Deserialize<'a>,
     S: SerdeObj + Serialize + Default + Send + Sync + for<'a> Deserialize<'a>,
-    T: Importer<State = S, Options = O> + Send + Sync,
+    T: Importer<State = S, Options = O> + TypeUuid + Send + Sync,
 {
     fn import_boxed(
         &self,

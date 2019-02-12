@@ -13,6 +13,7 @@ mod file_asset_source;
 pub mod file_tracker;
 mod utils;
 pub mod watcher;
+mod serialized_asset;
 
 use crate::{asset_daemon::AssetDaemon, error::Result};
 

@@ -2,8 +2,9 @@ use crate::{
     asset_hub::{AssetBatchEvent, AssetHub},
     capnp_db::{CapnpCursor, Environment, RoTransaction},
     error::{Error, Result},
-    file_asset_source::{FileAssetSource},
+    file_asset_source::FileAssetSource,
     file_tracker::FileTracker,
+    serialized_asset::SerializedAsset,
 };
 use capnp;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
@@ -11,8 +12,8 @@ use futures::{sync::mpsc, Future, Stream};
 use importer::AssetUUID;
 use owning_ref::OwningHandle;
 use schema::{
-    data::{asset_change_log_entry, asset_metadata, AssetSource},
-    service::{asset_hub},
+    data::{asset_change_log_entry, asset_metadata, AssetSource, serialized_asset},
+    service::asset_hub,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -46,6 +47,20 @@ struct AssetHubSnapshotImpl<'a> {
 
 struct AssetHubImpl {
     ctx: Arc<ServiceContext>,
+}
+fn build_serialized_asset_message<T: AsRef<[u8]>>(
+    artifact: &SerializedAsset<T>,
+) -> capnp::message::Builder<capnp::message::HeapAllocator> {
+    let mut value_builder = capnp::message::Builder::new_default();
+    {
+        let mut m = value_builder.init_root::<serialized_asset::Builder>();
+        m.reborrow().set_compression(artifact.compression);
+        m.reborrow().set_uncompressed_size(artifact.uncompressed_size as u64);
+        m.reborrow().set_type_uuid(artifact.type_uuid.as_bytes());
+        let slice: &[u8] = artifact.data.as_ref();
+        m.reborrow().set_data(slice);
+    }
+    value_builder
 }
 
 impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
@@ -162,7 +177,8 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
                             &id,
                             &mut scratch_buf,
                         )? {
-                            artifacts.push((id, hash, artifact));
+                            let capnp_artifact = build_serialized_asset_message(&artifact);
+                            artifacts.push((id, hash, capnp_artifact));
                         }
                     }
                 }
@@ -175,8 +191,8 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         for (idx, (id, hash, artifact)) in artifacts.iter().enumerate() {
             let mut out = artifact_results.reborrow().get(idx as u32);
             out.reborrow().init_asset_id().set_id(id.as_bytes());
-            out.reborrow().init_key().set_hash(&hash.to_le_bytes());
-            out.reborrow().set_data(artifact);
+            out.reborrow().set_key(&hash.to_le_bytes());
+            out.reborrow().set_data(artifact.get_root_as_reader::<serialized_asset::Reader>()?)?;
         }
         Promise::ok(())
     }
@@ -270,7 +286,9 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             let path_str;
             if cfg!(windows) {
                 // fs::canonicalize does not handle forward slashes in paths on Windows
-                path_str = std::str::from_utf8(request_path)?.to_string().replace("/", "\\"); 
+                path_str = std::str::from_utf8(request_path)?
+                    .to_string()
+                    .replace("/", "\\");
             } else {
                 path_str = std::str::from_utf8(request_path)?.to_string();
             }

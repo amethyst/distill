@@ -90,15 +90,22 @@ struct AssetMetadata {
 
 # The identifier for a build artifact is the hash of 
 # - Import artifact hash
-# - Build configuration (target platform etc)
-struct BuildArtifactKey {
-    hash @0 :Data;
-}
+# - Build parameters (target platform etc)
+# - Build pipeline hash
 
-struct BuildArtifact {
+# The identifier of an import artifact is the hash of 
+# - Source file
+# - Importer version
+# - Importer TypeUUID
+# - Importer state
+# - Importer state TypeUUID
+# - Importer options
+# - Importer options TypeUUID
+
+struct Artifact {
     assetId @0 :AssetUuid;
-    key @1 :BuildArtifactKey;
-    data @2 :Data;
+    key @1 :Data;
+    data @2 :SerializedAsset;
 }
 
 struct BuildParameters {
@@ -127,4 +134,16 @@ struct AssetContentUpdateEvent {
 
 struct AssetRemoveEvent {
     id @0 :AssetUuid;
+}
+
+enum CompressionType {
+  none @0;
+  lz4 @1;
+}
+
+struct SerializedAsset {
+  compression @0 :CompressionType;
+  uncompressedSize @1 :UInt64;
+  typeUuid @2 :Data;
+  data @3 :Data;
 }

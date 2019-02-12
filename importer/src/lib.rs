@@ -5,7 +5,7 @@ mod serde_obj;
 
 use amethyst::assets::{Asset, SimpleFormat};
 use serde::{Deserialize, Serialize};
-use serde_dyn::uuid;
+use serde_dyn::{TypeUuid, uuid};
 use std::io::Read;
 
 pub use self::error::{Error, Result};
@@ -84,15 +84,21 @@ pub struct SimpleImporterState {
 uuid! { SimpleImporterState => 276663539928909366810068622540168088635 }
 
 /// Wrapper struct to be able to impl Importer for any SimpleFormat
-pub struct SimpleImporter<A: Asset, T: SimpleFormat<A>>(pub T, ::std::marker::PhantomData<A>);
+pub struct SimpleImporter<A: Asset, T: SimpleFormat<A> + TypeUuid>(pub T, ::std::marker::PhantomData<A>);
 
-impl<A: Asset, T: SimpleFormat<A> + 'static> From<T> for SimpleImporter<A, T> {
+impl<A: Asset, T: SimpleFormat<A> + TypeUuid + 'static> From<T> for SimpleImporter<A, T> {
     fn from(fmt: T) -> SimpleImporter<A, T> {
         SimpleImporter(fmt, ::std::marker::PhantomData)
     }
 }
+impl<A: Asset, T: SimpleFormat<A> + TypeUuid + Send + 'static> TypeUuid for SimpleImporter<A, T>
+where
+    <A as Asset>::Data: SerdeObj, 
+{
+    const UUID: u128 = T::UUID;
+}
 
-impl<A: Asset, T: SimpleFormat<A> + Send + 'static> Importer for SimpleImporter<A, T>
+impl<A: Asset, T: SimpleFormat<A> + TypeUuid + Send + 'static> Importer for SimpleImporter<A, T>
 where
     <A as Asset>::Data: SerdeObj,
 {

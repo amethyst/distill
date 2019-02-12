@@ -5,6 +5,7 @@ use crate::error::{Error, Result};
 use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use crate::utils;
 use crate::watcher::file_metadata;
+use crate::serialized_asset::SerializedAsset;
 use bincode;
 use crossbeam_channel::{self as channel, Receiver};
 use importer::{
@@ -14,7 +15,7 @@ use importer::{
 use log::{debug, error, info};
 use rayon::prelude::*;
 use ron;
-use schema::data::{self, source_metadata};
+use schema::data::{self, source_metadata, CompressionType};
 use scoped_threadpool::Pool;
 use std::collections::HashMap;
 use std::{
@@ -63,11 +64,13 @@ struct AssetFilePair {
     meta: Option<FileState>,
 }
 
-struct ImportedAsset {
+struct ImportedAsset<T: AsRef<[u8]>> {
     asset_hash: u64,
     metadata: AssetMetadata,
-    asset: Option<Vec<u8>>,
+    asset: Option<SerializedAsset<T>>,
 }
+type ImportedAssetVec = ImportedAsset<Vec<u8>>;
+type SerializedAssetVec = SerializedAsset<Vec<u8>>;
 
 #[derive(Debug)]
 pub struct SavedImportMetadata<'a> {
@@ -156,10 +159,11 @@ impl<'a> PairImport<'a> {
         self.source_hash
             .expect("cannot calculate import hash without source hash")
             .hash(&mut hasher);
-        self.importer
-            .expect("cannot calculate import hash without importer")
-            .version()
-            .hash(&mut hasher);
+        let importer = self
+            .importer
+            .expect("cannot calculate import hash without importer");
+        importer.version().hash(&mut hasher);
+        importer.uuid().hash(&mut hasher);
         Ok(hasher.finish())
     }
 
@@ -212,7 +216,7 @@ impl<'a> PairImport<'a> {
         Ok(())
     }
 
-    fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<Vec<ImportedAsset>> {
+    fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<Vec<ImportedAssetVec>> {
         let importer = self
             .importer
             .expect("cannot import source without importer");
@@ -240,19 +244,7 @@ impl<'a> PairImport<'a> {
                 ),
             ));
             let asset_data = &asset.asset_data;
-            let size = bincode::serialized_size(asset_data)? as usize;
-            scratch_buf.clear();
-            scratch_buf.resize(size, 0);
-            bincode::serialize_into(scratch_buf.as_mut_slice(), asset_data)?;
-            let asset_buf = {
-                let mut encoder = lz4::EncoderBuilder::new()
-                    .level(9)
-                    .build(Vec::with_capacity(size / 2))?;
-                encoder.write_all(&scratch_buf[..size])?;
-                let (output, result) = encoder.finish();
-                result?;
-                output
-            };
+            let serialized_asset = SerializedAsset::create(asset_data.as_ref(), CompressionType::Lz4, scratch_buf)?;
             let build_pipeline = metadata
                 .assets
                 .iter()
@@ -270,7 +262,7 @@ impl<'a> PairImport<'a> {
                         instantiate_deps: asset.instantiate_deps,
                         build_pipeline,
                     },
-                    asset: Some(asset_buf),
+                    asset: Some(serialized_asset),
                 }
             });
             debug!(
@@ -537,7 +529,7 @@ impl FileAssetSource {
         txn: &'a V,
         id: &AssetUUID,
         scratch_buf: &mut Vec<u8>,
-    ) -> Result<Option<(u64, Vec<u8>)>> {
+    ) -> Result<Option<(u64, SerializedAssetVec)>> {
         let path = self.get_asset_path(txn, id)?;
         if let Some(path) = path {
             let metadata = self.get_metadata(txn, &path)?;
@@ -556,12 +548,19 @@ impl FileAssetSource {
                 .find(|a| a.metadata.id == *id)
                 .map(|a| {
                     a.asset.map(|a| {
-                    (
-                        calc_asset_hash(id, import.source_metadata.map(|m| m.import_hash.unwrap()).unwrap()),
-                        a,
-                    )})
-                }).unwrap_or(None)
-                )
+                        (
+                            calc_asset_hash(
+                                id,
+                                import
+                                    .source_metadata
+                                    .map(|m| m.import_hash.unwrap())
+                                    .unwrap(),
+                            ),
+                            a,
+                        )
+                    })
+                })
+                .unwrap_or(None))
         } else {
             Ok(None)
         }
@@ -572,7 +571,7 @@ impl FileAssetSource {
         txn: &RoTransaction,
         pair: &HashedAssetFilePair,
         scratch_buf: &mut Vec<u8>,
-    ) -> Result<Option<(PairImport, Option<Vec<ImportedAsset>>)>> {
+    ) -> Result<Option<(PairImport, Option<Vec<ImportedAssetVec>>)>> {
         let original_pair = pair.clone();
         let mut pair = pair.clone();
         // When source or meta gets deleted, the FileState has a `state` of `Deleted`.

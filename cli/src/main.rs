@@ -133,7 +133,7 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
             let response = response.get().unwrap();
             for artifact in response.get_artifacts().unwrap() {
                 let asset_uuid = uuid::Uuid::from_slice(artifact.get_asset_id()?.get_id()?).unwrap();
-                write!(io, "{{ id: {}, hash: {:?}, length: {} }}", asset_uuid, artifact.get_key()?.get_hash()?, artifact.get_data()?.len());
+                write!(io, "{{ id: {}, hash: {:?}, length: {} }}", asset_uuid, artifact.get_key()?, artifact.get_data()?.get_data()?.len());
             }
             Ok(())
         }))
