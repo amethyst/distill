@@ -5,9 +5,7 @@ authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-inventory = "0.1"
 serde_dyn = "0.2.2"
-derivative = "1.0"
 
 schema = { path = "../schema", optional = true }
 tokio = { version = "0.1", optional = true }

@@ -1,8 +1,6 @@
 use crate::{
-    handle::Handle,
-    loader::{AssetLoad, AssetType, Loader},
-    AssetUuid,
-    asset_data::AssetDataStorage,
+    loader::{Loader, AssetStorage},
+    AssetUuid, AssetTypeId,
 };
 use capnp::{capability::Response, message::ReaderOptions, Result as CapnpResult};
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
@@ -39,9 +37,10 @@ enum AssetState {
     Unloading,
 }
 
-struct AssetStatus {
+struct AssetStatus<Handle> {
     state: AssetState,
     refs: u32,
+    asset_handle: Option<Handle>,
 }
 struct AssetMetadata {
     load_deps: Vec<AssetUuid>,
@@ -117,10 +116,9 @@ impl Runtime {
     }
 }
 
-pub struct RpcLoader {
-    assets: HashMap<AssetUuid, AssetStatus>,
+pub struct RpcLoader<S: AssetStorage> {
+    assets: HashMap<AssetUuid, AssetStatus<S::HandleType>>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
-    asset_storages: AssetDataStorage,
     runtime: Runtime,
     connect_string: String,
     connection: Option<RpcConnection>,
@@ -133,52 +131,51 @@ pub struct RpcLoader {
 pub struct RpcAssetLoad {
     id: AssetUuid,
 }
-impl AssetLoad for RpcAssetLoad {
-    fn get_asset<T: TypeUuid>() -> Option<Handle<T>> {
-        None
-    }
-}
-impl Loader for RpcLoader {
+impl<S: AssetStorage> Loader for RpcLoader<S> {
     type LoadOp = RpcAssetLoad;
-    fn add_asset_ref(&mut self, id: AssetUuid) -> RpcAssetLoad {
+    type Storage = S;
+    fn add_asset_ref(&mut self, id: AssetUuid) -> Self::LoadOp {
         self.assets
             .entry(id)
             .or_insert(AssetStatus {
                 state: AssetState::None,
                 refs: 0,
+                asset_handle: None,
             })
             .refs += 1;
         RpcAssetLoad { id }
     }
-    fn get_asset_load(&self, id: &AssetUuid) -> Option<RpcAssetLoad> {
+    fn get_asset_load(&self, id: &AssetUuid) -> Option<Self::LoadOp> {
         if self.assets.contains_key(id) {
             Some(RpcAssetLoad { id: *id })
         } else {
             None
         }
     }
+    fn get_asset(&self, load: &Self::LoadOp) -> Option<(AssetTypeId, <Self::Storage as AssetStorage>::HandleType)> {
+        None
+    }
     fn decrease_asset_ref(&mut self, id: AssetUuid) {
         self.assets.entry(id).and_modify(|a| a.refs -= 1);
     }
-    fn process(&mut self) {
-        RpcLoader::process(self);
+    fn process(&mut self, asset_storage: &S) -> Result<(), Box<dyn Error>> {
+        RpcLoader::process(self, asset_storage)
     }
 }
-impl RpcLoader {
-    pub fn new() -> std::io::Result<RpcLoader> {
+impl<S: AssetStorage> RpcLoader<S> {
+    pub fn new() -> std::io::Result<RpcLoader<S>> {
         Ok(RpcLoader {
             runtime: Runtime::new()?,
             connect_string: "".to_string(),
             assets: HashMap::new(),
             metadata: HashMap::new(),
-            asset_storages: AssetDataStorage::new(),
             connection: None,
             pending_connection: None,
             pending_metadata_request: None,
             pending_data_request: None,
         })
     }
-    pub fn process(&mut self) {
+    pub fn process(&mut self, asset_storage: &S) -> Result<(), Box<dyn Error>> {
         if self.pending_connection.is_none() && self.connection.is_none() {
             println!("connect");
             self.pending_connection = Some(self.rpc_connect());
@@ -230,7 +227,8 @@ impl RpcLoader {
             value.state = new_state;
         }
         self.process_metadata_requests();
-        self.process_data_requests();
+        self.process_data_requests(asset_storage);
+        Ok(())
     }
 
     fn update_asset_metadata(
@@ -247,28 +245,23 @@ impl RpcLoader {
         Ok(())
     }
 
-    fn load_data(&mut self, reader: &artifact::Reader) -> Result<(), capnp::Error> {
+    fn load_data(&mut self, reader: &artifact::Reader, storage: &S) -> Result<(), capnp::Error> {
         let uuid: AssetUuid = make_array(reader.get_asset_id()?.get_id()?);
         let serialized_asset = reader.get_data()?;
-        let asset_type = u128::from_le_bytes(make_array(serialized_asset.get_type_uuid()?));
-        let storage = self.asset_storages.storage(asset_type);
-        if let Some(storage) = storage {
-            println!("found storage");
-            let handle = storage.allocate();
-        } else {
-            error!("failed to find asset storage for loaded asset type {:?}, asset_id: {:?}", asset_type, uuid);
-        }
+        let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
+        let handle = storage.allocate(&asset_type, &uuid);
+        storage.update_asset(&asset_type, &handle, &serialized_asset.get_data()?);
         Ok(())
     }
 
-    fn process_data_requests(&mut self) -> Result<(), capnp::Error> {
+    fn process_data_requests(&mut self, storage: &S) -> Result<(), capnp::Error> {
         if let Some(ref mut request) = self.pending_data_request {
             match request.try_recv() {
                 Ok(Some(request_result)) => {
                     match request_result {
                         Ok(response) => {
                             for artifact in response.get()?.get_artifacts()? {
-                                self.load_data(&artifact)?;
+                                self.load_data(&artifact, storage)?;
                             }
                         }
                         Err(err) => error!("error requesting build artifacts {}", err),
@@ -418,8 +411,8 @@ impl RpcLoader {
     }
 }
 
-impl Default for RpcLoader {
-    fn default() -> RpcLoader {
+impl<S: AssetStorage> Default for RpcLoader<S> {
+    fn default() -> RpcLoader<S> {
         RpcLoader::new().unwrap()
     }
 }

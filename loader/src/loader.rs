@@ -1,28 +1,20 @@
-use crate::handle::Handle;
-use crate::AssetUuid;
+use crate::{AssetUuid, AssetTypeId};
 use serde_dyn::TypeUuid;
 use std::error::Error;
 
-pub trait AssetLoad {
-    fn get_asset<T: TypeUuid>() -> Option<Handle<T>>;
-}
-
 pub trait AssetStorage {
-    fn allocate(&self) -> u32;
-    fn update_asset(&self, handle: u32, data: &AsRef<[u8]>) -> Result<(), Box<dyn Error>>;
-    fn free(&self, handle: u32);
+    type HandleType;
+    fn allocate(&self, asset_type: &AssetTypeId, id: &AssetUuid) -> Self::HandleType;
+    fn update_asset(&self, asset_type: &AssetTypeId, handle: &Self::HandleType, data: &AsRef<[u8]>) -> Result<(), Box<dyn Error>>;
+    fn free(&self, asset_type: &AssetTypeId, handle: Self::HandleType);
 }
-
-pub struct AssetType {
-    pub uuid: u128,
-    pub create_storage: fn() -> Box<dyn AssetStorage>,
-}
-inventory::collect!(AssetType);
 
 pub trait Loader {
-    type LoadOp: AssetLoad;
+    type LoadOp;
+    type Storage: AssetStorage;
     fn add_asset_ref(&mut self, id: AssetUuid) -> Self::LoadOp;
     fn get_asset_load(&self, id: &AssetUuid) -> Option<Self::LoadOp>;
     fn decrease_asset_ref(&mut self, id: AssetUuid);
-    fn process(&mut self);
+    fn get_asset(&self, load: &Self::LoadOp) -> Option<(AssetTypeId, <Self::Storage as AssetStorage>::HandleType)>;
+    fn process(&mut self, asset_storage: &Self::Storage) -> Result<(), Box<dyn Error>>;
 }
