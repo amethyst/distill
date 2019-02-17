@@ -116,8 +116,8 @@ impl Runtime {
     }
 }
 
-pub struct RpcLoader<S: AssetStorage> {
-    assets: HashMap<AssetUuid, AssetStatus<S::HandleType>>,
+pub struct RpcLoader<HandleType> {
+    assets: HashMap<AssetUuid, AssetStatus<HandleType>>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
     runtime: Runtime,
     connect_string: String,
@@ -131,9 +131,9 @@ pub struct RpcLoader<S: AssetStorage> {
 pub struct RpcAssetLoad {
     id: AssetUuid,
 }
-impl<S: AssetStorage> Loader for RpcLoader<S> {
+impl<HandleType> Loader for RpcLoader<HandleType> {
     type LoadOp = RpcAssetLoad;
-    type Storage = S;
+    type HandleType = HandleType;
     fn add_asset_ref(&mut self, id: AssetUuid) -> Self::LoadOp {
         self.assets
             .entry(id)
@@ -152,30 +152,13 @@ impl<S: AssetStorage> Loader for RpcLoader<S> {
             None
         }
     }
-    fn get_asset(&self, load: &Self::LoadOp) -> Option<(AssetTypeId, <Self::Storage as AssetStorage>::HandleType)> {
+    fn get_asset(&self, load: &Self::LoadOp) -> Option<(AssetTypeId, Self::HandleType)> {
         None
     }
     fn decrease_asset_ref(&mut self, id: AssetUuid) {
         self.assets.entry(id).and_modify(|a| a.refs -= 1);
     }
-    fn process(&mut self, asset_storage: &S) -> Result<(), Box<dyn Error>> {
-        RpcLoader::process(self, asset_storage)
-    }
-}
-impl<S: AssetStorage> RpcLoader<S> {
-    pub fn new() -> std::io::Result<RpcLoader<S>> {
-        Ok(RpcLoader {
-            runtime: Runtime::new()?,
-            connect_string: "".to_string(),
-            assets: HashMap::new(),
-            metadata: HashMap::new(),
-            connection: None,
-            pending_connection: None,
-            pending_metadata_request: None,
-            pending_data_request: None,
-        })
-    }
-    pub fn process(&mut self, asset_storage: &S) -> Result<(), Box<dyn Error>> {
+    fn process(&mut self, asset_storage: &dyn AssetStorage<HandleType = Self::HandleType>) -> Result<(), Box<dyn Error>> {
         if self.pending_connection.is_none() && self.connection.is_none() {
             println!("connect");
             self.pending_connection = Some(self.rpc_connect());
@@ -230,6 +213,20 @@ impl<S: AssetStorage> RpcLoader<S> {
         self.process_data_requests(asset_storage);
         Ok(())
     }
+}
+impl<HandleType> RpcLoader<HandleType> {
+    pub fn new() -> std::io::Result<RpcLoader<HandleType>> {
+        Ok(RpcLoader {
+            runtime: Runtime::new()?,
+            connect_string: "".to_string(),
+            assets: HashMap::new(),
+            metadata: HashMap::new(),
+            connection: None,
+            pending_connection: None,
+            pending_metadata_request: None,
+            pending_data_request: None,
+        })
+    }
 
     fn update_asset_metadata(
         &mut self,
@@ -245,7 +242,7 @@ impl<S: AssetStorage> RpcLoader<S> {
         Ok(())
     }
 
-    fn load_data(&mut self, reader: &artifact::Reader, storage: &S) -> Result<(), capnp::Error> {
+    fn load_data(&mut self, reader: &artifact::Reader, storage: &dyn AssetStorage<HandleType = HandleType>) -> Result<(), capnp::Error> {
         let uuid: AssetUuid = make_array(reader.get_asset_id()?.get_id()?);
         let serialized_asset = reader.get_data()?;
         let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
@@ -254,7 +251,7 @@ impl<S: AssetStorage> RpcLoader<S> {
         Ok(())
     }
 
-    fn process_data_requests(&mut self, storage: &S) -> Result<(), capnp::Error> {
+    fn process_data_requests(&mut self, storage: &dyn AssetStorage<HandleType = HandleType>) -> Result<(), capnp::Error> {
         if let Some(ref mut request) = self.pending_data_request {
             match request.try_recv() {
                 Ok(Some(request_result)) => {

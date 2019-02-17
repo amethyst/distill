@@ -11,10 +11,10 @@ pub trait AssetStorage {
 
 pub trait Loader {
     type LoadOp;
-    type Storage: AssetStorage;
+    type HandleType;
     fn add_asset_ref(&mut self, id: AssetUuid) -> Self::LoadOp;
     fn get_asset_load(&self, id: &AssetUuid) -> Option<Self::LoadOp>;
     fn decrease_asset_ref(&mut self, id: AssetUuid);
-    fn get_asset(&self, load: &Self::LoadOp) -> Option<(AssetTypeId, <Self::Storage as AssetStorage>::HandleType)>;
-    fn process(&mut self, asset_storage: &Self::Storage) -> Result<(), Box<dyn Error>>;
+    fn get_asset(&self, load: &Self::LoadOp) -> Option<(AssetTypeId, Self::HandleType)>;
+    fn process(&mut self, asset_storage: &dyn AssetStorage<HandleType = Self::HandleType>) -> Result<(), Box<dyn Error>>;
 }
