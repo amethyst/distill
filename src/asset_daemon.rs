@@ -2,7 +2,7 @@ use crate::{
     asset_hub, asset_hub_service, capnp_db::Environment, file_asset_source,
     file_tracker::FileTracker,
 };
-use importer::BoxedImporter;
+use atelier_importer::BoxedImporter;
 use std::{
     collections::HashMap,
     fs,

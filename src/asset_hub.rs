@@ -2,7 +2,7 @@ use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, Rw
 use crate::error::Result;
 use crate::utils;
 use futures::sync::mpsc::Sender;
-use importer::{AssetMetadata, AssetUUID};
+use atelier_importer::{AssetMetadata, AssetUUID};
 use schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
@@ -63,7 +63,7 @@ struct AssetHubTables {
 
 fn set_assetid_list(
     asset_ids: &[AssetUUID],
-    builder: &mut capnp::struct_list::Builder<data::asset_uuid::Owned>,
+    builder: &mut capnp::struct_list::Builder<'_, data::asset_uuid::Owned>,
 ) {
     for (idx, uuid) in asset_ids.iter().enumerate() {
         builder.reborrow().get(idx as u32).set_id(uuid.as_bytes());
@@ -77,7 +77,7 @@ fn build_asset_metadata<K>(
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
-        let mut m = value_builder.init_root::<asset_metadata::Builder>();
+        let mut m = value_builder.init_root::<asset_metadata::Builder<'_>>();
         m.reborrow().init_id().set_id(metadata.id.as_bytes());
         if let Some(pipeline) = metadata.build_pipeline {
             m.reborrow()
@@ -121,6 +121,8 @@ fn build_asset_metadata<K>(
                 .init_id()
                 .set_hash(artifact_hash);
         }
+        m.reborrow().set_imported_asset_type(&metadata.import_asset_type);
+        m.reborrow().set_built_asset_type(&metadata.import_asset_type);
         m.reborrow().set_source(source);
     }
     value_builder
@@ -128,7 +130,7 @@ fn build_asset_metadata<K>(
 
 fn add_asset_changelog_entry(
     tables: &AssetHubTables,
-    txn: &mut RwTransaction,
+    txn: &mut RwTransaction<'_>,
     change: &ChangeEvent,
 ) -> Result<()> {
     let mut last_seq: u64 = 0;
@@ -141,7 +143,7 @@ fn add_asset_changelog_entry(
     }
     last_seq += 1;
     let mut value_builder = capnp::message::Builder::new_default();
-    let mut value = value_builder.init_root::<asset_change_log_entry::Builder>();
+    let mut value = value_builder.init_root::<asset_change_log_entry::Builder<'_>>();
     value.reborrow().set_num(last_seq);
     {
         let value = value.reborrow().init_event();
@@ -211,12 +213,12 @@ impl AssetHub {
 
     fn put_build_deps_reverse(
         &self,
-        txn: &mut RwTransaction,
+        txn: &mut RwTransaction<'_>,
         id: &AssetUUID,
         dependees: Vec<AssetUUID>,
     ) -> Result<()> {
         let mut value_builder = capnp::message::Builder::new_default();
-        let mut value = value_builder.init_root::<data::asset_uuid_list::Builder>();
+        let mut value = value_builder.init_root::<data::asset_uuid_list::Builder<'_>>();
         let mut list = value.reborrow().init_list(dependees.len() as u32);
         for (idx, uuid) in dependees.iter().enumerate() {
             list.reborrow().get(idx as u32).set_id(uuid.as_bytes());
@@ -227,7 +229,7 @@ impl AssetHub {
 
     pub fn update_asset(
         &self,
-        txn: &mut RwTransaction,
+        txn: &mut RwTransaction<'_>,
         import_hash: u64,
         metadata: &AssetMetadata,
         source: data::AssetSource,
@@ -235,7 +237,7 @@ impl AssetHub {
     ) -> Result<()> {
         let hash_bytes = import_hash.to_le_bytes();
         let mut maybe_id = None;
-        let existing_metadata: Option<MessageReader<asset_metadata::Owned>> =
+        let existing_metadata: Option<MessageReader<'_, asset_metadata::Owned>> =
             txn.get(self.tables.asset_metadata, metadata.id.as_bytes())?;
         let new_metadata = build_asset_metadata::<&[u8; 8]>(&metadata, Some(&hash_bytes), source);
         let mut deps_to_delete = Vec::new();
@@ -248,7 +250,7 @@ impl AssetHub {
             }
             for dep in existing_metadata.get_build_deps()? {
                 let dep = AssetUUID::from_slice(dep.get_id()?)?;
-                if metadata.build_deps.contains(&dep) == false {
+                if !metadata.build_deps.contains(&dep) {
                     deps_to_delete.push(dep);
                 }
                 deps_to_add.remove_item(&dep);
@@ -297,7 +299,7 @@ impl AssetHub {
 
     pub fn remove_asset(
         &self,
-        txn: &mut RwTransaction,
+        txn: &mut RwTransaction<'_>,
         id: &AssetUUID,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
@@ -329,7 +331,7 @@ impl AssetHub {
         Ok(())
     }
 
-    pub fn add_changes(&self, txn: &mut RwTransaction, change_batch: ChangeBatch) -> Result<bool> {
+    pub fn add_changes(&self, txn: &mut RwTransaction<'_>, change_batch: ChangeBatch) -> Result<bool> {
         // TODO find the set of all changed assets, check the build dependency index and emit changes for all
         // assets that have changed and all the assets where the build_dep_hash has changed.
         // dedupe change events
@@ -339,7 +341,7 @@ impl AssetHub {
         for id in change_batch.content_changes {
             to_check.push_back(id);
         }
-        if to_check.len() > 0 {
+        if !to_check.is_empty() {
             log::info!("{} assets changed content", to_check.len());
         }
         while !to_check.is_empty() {
@@ -396,14 +398,14 @@ impl AssetHub {
                 };
                 events.push(ChangeEvent::ContentUpdate(AssetContentUpdateEvent {
                     id: asset,
-                    import_hash: Some(Vec::from(import_hash)),
+                    import_hash: Some(import_hash),
                     build_dep_hash: Some(Vec::from(&build_dep_hash.to_le_bytes() as &[u8])),
                 }));
             } else {
                 events.push(ChangeEvent::Remove(asset));
             }
         }
-        if events.len() > 0 {
+        if !events.is_empty() {
             log::info!("{} asset events generated", events.len());
         }
         for event in events.iter() {

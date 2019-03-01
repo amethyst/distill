@@ -3,19 +3,20 @@ mod boxed_importer;
 mod error;
 mod serde_obj;
 
-use amethyst::assets::{Asset, SimpleFormat};
 use serde::{Deserialize, Serialize};
 use serde_dyn::{TypeUuid, uuid};
 use std::io::Read;
 
 pub use self::error::{Error, Result};
-pub use crate::amethyst_formats::amethyst_formats;
+// pub use crate::amethyst_formats::amethyst_formats;
 pub use crate::boxed_importer::{
-    AssetMetadata, BoxedImporter, SourceMetadata, SOURCEMETADATA_VERSION,
+    AssetMetadata, BoxedImporter, SourceMetadata, SOURCEMETADATA_VERSION, SourceFileImporter, get_source_importers,
 };
+pub use inventory;
 pub use crate::serde_obj::SerdeObj;
 
 pub type AssetUUID = ::uuid::Uuid;
+pub type AssetTypeId = [u8; 16];
 
 /// A format, providing a conversion from bytes to asset data, which is then
 /// in turn accepted by `Asset::from_data`. Examples for formats are
@@ -71,72 +72,4 @@ pub struct ImportedAsset {
 pub struct ImporterValue {
     /// All imported assets
     pub assets: Vec<ImportedAsset>,
-}
-
-// TODO: move SimpleImporter back to amethyst
-
-/// A simple state for Importer to retain the same UUID between imports
-/// for all single-asset source files
-#[derive(Default, Serialize, Deserialize)]
-pub struct SimpleImporterState {
-    id: Option<AssetUUID>,
-}
-uuid! { SimpleImporterState => 276663539928909366810068622540168088635 }
-
-/// Wrapper struct to be able to impl Importer for any SimpleFormat
-pub struct SimpleImporter<A: Asset, T: SimpleFormat<A> + TypeUuid>(pub T, ::std::marker::PhantomData<A>);
-
-impl<A: Asset, T: SimpleFormat<A> + TypeUuid + 'static> From<T> for SimpleImporter<A, T> {
-    fn from(fmt: T) -> SimpleImporter<A, T> {
-        SimpleImporter(fmt, ::std::marker::PhantomData)
-    }
-}
-impl<A: Asset, T: SimpleFormat<A> + TypeUuid + Send + 'static> TypeUuid for SimpleImporter<A, T>
-where
-    <A as Asset>::Data: SerdeObj, 
-{
-    const UUID: u128 = T::UUID;
-}
-
-impl<A: Asset, T: SimpleFormat<A> + TypeUuid + Send + 'static> Importer for SimpleImporter<A, T>
-where
-    <A as Asset>::Data: SerdeObj,
-{
-    type State = SimpleImporterState;
-    type Options = T::Options;
-
-    fn version_static() -> u32
-    where
-        Self: Sized,
-    {
-        1
-    }
-    fn version(&self) -> u32 {
-        Self::version_static()
-    }
-
-    fn import(
-        &self,
-        source: &mut dyn Read,
-        options: Self::Options,
-        state: &mut Self::State,
-    ) -> Result<ImporterValue> {
-        if state.id.is_none() {
-            state.id = Some(uuid::Uuid::new_v4());
-        }
-        let mut bytes = Vec::new();
-        source.read_to_end(&mut bytes)?;
-        let import_result = self.0.import(bytes, options)?;
-        Ok(ImporterValue {
-            assets: vec![ImportedAsset {
-                id: state.id.expect("AssetUUID not generated"),
-                search_tags: Vec::new(),
-                build_deps: Vec::new(),
-                load_deps: Vec::new(),
-                instantiate_deps: Vec::new(),
-                asset_data: Box::new(import_result),
-                build_pipeline: None,
-            }],
-        })
-    }
 }

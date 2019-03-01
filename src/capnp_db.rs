@@ -249,11 +249,11 @@ impl Environment {
         Ok(self.env.create_db(name, flags)?)
     }
 
-    pub fn rw_txn(&self) -> Result<RwTransaction> {
+    pub fn rw_txn(&self) -> Result<RwTransaction<'_>> {
         let txn = self.env.begin_rw_txn()?;
         Ok(RwTransaction { txn, dirty: false })
     }
-    pub fn ro_txn(&self) -> Result<RoTransaction> {
+    pub fn ro_txn(&self) -> Result<RoTransaction<'_>> {
         Ok(self.env.begin_ro_txn()?)
     }
 }

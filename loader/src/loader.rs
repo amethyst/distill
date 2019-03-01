@@ -9,6 +9,11 @@ pub trait AssetStorage {
     fn free(&self, asset_type: &AssetTypeId, handle: Self::HandleType);
 }
 
+pub trait ComputedAsset {
+    fn build(&self);
+    fn update(&self);
+}
+
 pub trait Loader {
     type LoadOp;
     type HandleType;

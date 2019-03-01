@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::{AssetUUID, Importer, ImporterValue, SerdeObj};
+use crate::{AssetUUID, AssetTypeId, Importer, ImporterValue, SerdeObj};
 use ron;
 use serde::{Deserialize, Serialize};
 use serde_dyn::{TypeUuid, TypeUuidDynamic};
@@ -13,6 +13,7 @@ pub struct AssetMetadata {
     pub load_deps: Vec<AssetUUID>,
     pub instantiate_deps: Vec<AssetUUID>,
     pub build_pipeline: Option<AssetUUID>,
+    pub import_asset_type: AssetTypeId,
 }
 pub const SOURCEMETADATA_VERSION: u32 = 1;
 #[derive(Serialize, Deserialize)]
@@ -100,4 +101,14 @@ where
     fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Result<Box<SerdeObj>> {
         Ok(Box::new(bincode::deserialize::<S>(&bytes)?))
     }
+}
+
+pub struct SourceFileImporter {
+    pub extension: &'static str,
+    pub instantiator: fn() -> Box<dyn BoxedImporter>,
+}
+inventory::collect!(SourceFileImporter);
+
+pub fn get_source_importers() -> impl Iterator<Item = &'static SourceFileImporter> {
+    inventory::iter::<SourceFileImporter>.into_iter()
 }

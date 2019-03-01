@@ -1,5 +1,5 @@
 use crate::error::Result;
-use importer::SerdeObj;
+use atelier_importer::SerdeObj;
 use schema::data::{CompressionType};
 use uuid::Uuid;
 use bincode;
@@ -12,7 +12,7 @@ pub struct SerializedAsset<T: AsRef<[u8]>> {
 }
 
 impl SerializedAsset<Vec<u8>> {
-    pub fn create(value: &SerdeObj, compression: CompressionType, scratch_buf: &mut Vec<u8>) -> Result<SerializedAsset<Vec<u8>>> {
+    pub fn create(value: &dyn SerdeObj, compression: CompressionType, scratch_buf: &mut Vec<u8>) -> Result<SerializedAsset<Vec<u8>>> {
         let size = bincode::serialized_size(value)? as usize;
         scratch_buf.clear();
         scratch_buf.resize(size, 0);

@@ -1,7 +1,3 @@
-extern crate capnp;
-extern crate lmdb;
-extern crate rayon;
-
 use crate::capnp_db::{
     CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
 };
@@ -86,7 +82,7 @@ fn db_file_type(t: fs::FileType) -> FileType {
 
 fn add_rename_event(
     tables: &FileTrackerTables,
-    txn: &mut RwTransaction,
+    txn: &mut RwTransaction<'_>,
     src: &[u8],
     dst: &[u8],
 ) -> Result<()> {
@@ -100,7 +96,7 @@ fn add_rename_event(
     }
     let mut value_builder = capnp::message::Builder::new_default();
     {
-        let mut value = value_builder.init_root::<rename_file_event::Builder>();
+        let mut value = value_builder.init_root::<rename_file_event::Builder<'_>>();
         value.set_src(src);
         value.set_dst(dst);
     }
@@ -115,11 +111,11 @@ fn add_rename_event(
 
 fn build_dirty_file_info(
     state: data::FileState,
-    source_info: source_file_info::Reader,
+    source_info: source_file_info::Reader<'_>,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
-        let mut value = value_builder.init_root::<dirty_file_info::Builder>();
+        let mut value = value_builder.init_root::<dirty_file_info::Builder<'_>>();
         value.set_state(state);
         value
             .set_source_info(source_info)
@@ -132,7 +128,7 @@ fn build_source_info(
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
-        let mut value = value_builder.init_root::<source_file_info::Builder>();
+        let mut value = value_builder.init_root::<source_file_info::Builder<'_>>();
         value.set_last_modified(metadata.last_modified);
         value.set_length(metadata.length);
         value.set_type(db_file_type(metadata.file_type));
@@ -141,7 +137,7 @@ fn build_source_info(
 }
 
 fn update_deleted_dirty_entry<K>(
-    txn: &mut RwTransaction,
+    txn: &mut RwTransaction<'_>,
     tables: &FileTrackerTables,
     key: &K,
 ) -> Result<()>
@@ -162,7 +158,7 @@ where
 }
 
 fn handle_file_event(
-    txn: &mut RwTransaction,
+    txn: &mut RwTransaction<'_>,
     tables: &FileTrackerTables,
     evt: watcher::FileEvent,
     scan_stack: &mut Vec<ScanContext>,
@@ -173,7 +169,7 @@ fn handle_file_event(
             let key = path_str.as_bytes();
             let mut changed = true;
             {
-                let maybe_msg: Option<MessageReader<source_file_info::Owned>> =
+                let maybe_msg: Option<MessageReader<'_, source_file_info::Owned>> =
                     txn.get(tables.source_files, &key)?;
                 if let Some(msg) = maybe_msg {
                     let info = msg.get()?;
@@ -196,7 +192,7 @@ fn handle_file_event(
                 let value = build_source_info(&metadata);
                 let dirty_value = build_dirty_file_info(
                     data::FileState::Exists,
-                    value.get_root_as_reader::<source_file_info::Reader>()?,
+                    value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
                 );
                 txn.put(tables.source_files, &key, &value)?;
                 txn.put(tables.dirty_files, &key, &dirty_value)?;
@@ -219,11 +215,11 @@ fn handle_file_event(
             txn.put(tables.source_files, &dst_key, &value)?;
             let dirty_value_new = build_dirty_file_info(
                 data::FileState::Exists,
-                value.get_root_as_reader::<source_file_info::Reader>()?,
+                value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
             );
             let dirty_value_old = build_dirty_file_info(
                 data::FileState::Deleted,
-                value.get_root_as_reader::<source_file_info::Reader>()?,
+                value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
             );
             txn.put(tables.dirty_files, &src_key, &dirty_value_old)?;
             txn.put(tables.dirty_files, &dst_key, &dirty_value_new)?;
@@ -380,7 +376,7 @@ impl FileTracker {
         Ok(rename_events)
     }
 
-    pub fn clear_rename_events(&self, txn: &mut RwTransaction) -> Result<()> {
+    pub fn clear_rename_events(&self, txn: &mut RwTransaction<'_>) -> Result<()> {
         txn.clear_db(self.tables.rename_file_events)?;
         Ok(())
     }
@@ -395,7 +391,7 @@ impl FileTracker {
             for (key_result, value_result) in cursor.capnp_iter_start() {
                 let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
                 let value_result = value_result?;
-                let info = value_result.get_root::<dirty_file_info::Reader>()?;
+                let info = value_result.get_root::<dirty_file_info::Reader<'_>>()?;
                 let source_info = info.get_source_info()?;
                 file_states.push(FileState {
                     path: PathBuf::from(key),
@@ -408,14 +404,14 @@ impl FileTracker {
         Ok(file_states)
     }
 
-    pub fn read_all_files(&self, iter_txn: &RoTransaction) -> Result<Vec<FileState>> {
+    pub fn read_all_files(&self, iter_txn: &RoTransaction<'_>) -> Result<Vec<FileState>> {
         let mut file_states = Vec::new();
         {
             let mut cursor = iter_txn.open_ro_cursor(self.tables.source_files)?;
             for (key_result, value_result) in cursor.capnp_iter_start() {
                 let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
                 let value_result = value_result?;
-                let info = value_result.get_root::<source_file_info::Reader>()?;
+                let info = value_result.get_root::<source_file_info::Reader<'_>>()?;
                 file_states.push(FileState {
                     path: PathBuf::from(key),
                     state: data::FileState::Exists,
@@ -429,7 +425,7 @@ impl FileTracker {
 
     pub fn delete_dirty_file_state<'a>(
         &self,
-        txn: &'a mut RwTransaction,
+        txn: &'a mut RwTransaction<'_>,
         path: &PathBuf,
     ) -> Result<bool> {
         let key_str = path.to_string_lossy();

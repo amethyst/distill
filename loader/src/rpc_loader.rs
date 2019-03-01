@@ -246,8 +246,12 @@ impl<HandleType> RpcLoader<HandleType> {
         let uuid: AssetUuid = make_array(reader.get_asset_id()?.get_id()?);
         let serialized_asset = reader.get_data()?;
         let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
-        let handle = storage.allocate(&asset_type, &uuid);
-        storage.update_asset(&asset_type, &handle, &serialized_asset.get_data()?);
+        println!("loaded data of size {}", serialized_asset.get_data()?.len());
+        // let mut metadata = self.metadata.get_mut(uuid).unwrap();
+        // if metadata.handle.is_none() {
+        //     metadata.handle.replace(storage.allocate(&asset_type, &uuid));
+        // }
+        // storage.update_asset(&asset_type, &metadata.handle.unwrap(), &serialized_asset.get_data()?);
         Ok(())
     }
 
@@ -408,7 +412,7 @@ impl<HandleType> RpcLoader<HandleType> {
     }
 }
 
-impl<S: AssetStorage> Default for RpcLoader<S> {
+impl<S> Default for RpcLoader<S> {
     fn default() -> RpcLoader<S> {
         RpcLoader::new().unwrap()
     }

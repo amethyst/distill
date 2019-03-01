@@ -89,7 +89,7 @@ fn print_asset_metadata(io: &mut shrust::ShellIO, asset: &data::asset_metadata::
             write!(io, ", search_tags: [ {} ]", tags.join(", "));
         }
     }
-    write!(io, "}}");
+    writeln!(io, "}}");
 }
 fn register_commands(shell: &mut shrust::Shell<Context>) {
     shell.new_command("show_all", "Get all asset metadata", 0, |io, ctx, _| {
@@ -114,12 +114,16 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
         let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
         let mut io = io.clone();
+        let start = PreciseTime::now();
         Box::new(request.send().promise.then(move |result| {
+            let total_time = start.to(PreciseTime::now());
             let response = result.unwrap();
             let response = response.get().unwrap();
-            for asset in response.get_assets().unwrap() {
+            let assets = response.get_assets().unwrap();
+            for asset in assets {
                 print_asset_metadata(&mut io, &asset);
             }
+            writeln!(io, "got {} assets in {}", assets.len(), total_time);
             Ok(())
         }))
     });
@@ -128,13 +132,17 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
         let mut request = ctx.snapshot.borrow().get_build_artifacts_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
         let mut io = io.clone();
+        let start = PreciseTime::now();
         Box::new(request.send().promise.then(move |result| {
+            let total_time = start.to(PreciseTime::now());
             let response = result.unwrap();
             let response = response.get().unwrap();
-            for artifact in response.get_artifacts().unwrap() {
+            let artifacts = response.get_artifacts().unwrap();
+            for artifact in artifacts {
                 let asset_uuid = uuid::Uuid::from_slice(artifact.get_asset_id()?.get_id()?).unwrap();
-                write!(io, "{{ id: {}, hash: {:?}, length: {} }}", asset_uuid, artifact.get_key()?, artifact.get_data()?.get_data()?.len());
+                writeln!(io, "{{ id: {}, hash: {:?}, length: {} }}", asset_uuid, artifact.get_key()?, artifact.get_data()?.get_data()?.len());
             }
+            writeln!(io, "got {} artifacts in {}", artifacts.len(), total_time);
             Ok(())
         }))
     });

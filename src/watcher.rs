@@ -1,7 +1,5 @@
-extern crate notify;
-
-use self::notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use crate::error::{Error, Result};
+use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use crossbeam_channel::Sender as cbSender;
 use std::collections::HashMap;
 use std::fs;

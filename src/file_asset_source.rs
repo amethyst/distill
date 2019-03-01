@@ -8,7 +8,7 @@ use crate::watcher::file_metadata;
 use crate::serialized_asset::SerializedAsset;
 use bincode;
 use crossbeam_channel::{self as channel, Receiver};
-use importer::{
+use atelier_importer::{
     AssetMetadata, AssetUUID, BoxedImporter, SerdeObj, SourceMetadata as ImporterSourceMetadata,
     SOURCEMETADATA_VERSION,
 };
@@ -181,7 +181,7 @@ impl<'a> PairImport<'a> {
 
     pub fn default_or_saved_metadata(
         &mut self,
-        saved_metadata: Option<SavedImportMetadata>,
+        saved_metadata: Option<SavedImportMetadata<'_>>,
     ) -> Result<()> {
         let importer = self
             .importer
@@ -244,7 +244,7 @@ impl<'a> PairImport<'a> {
                 ),
             ));
             let asset_data = &asset.asset_data;
-            let serialized_asset = SerializedAsset::create(asset_data.as_ref(), CompressionType::Lz4, scratch_buf)?;
+            let serialized_asset = SerializedAsset::create(asset_data.as_ref(), CompressionType::None, scratch_buf)?;
             let build_pipeline = metadata
                 .assets
                 .iter()
@@ -261,6 +261,7 @@ impl<'a> PairImport<'a> {
                         load_deps: asset.load_deps,
                         instantiate_deps: asset.instantiate_deps,
                         build_pipeline,
+                        import_asset_type: asset_data.uuid().to_le_bytes(),
                     },
                     asset: Some(serialized_asset),
                 }
@@ -427,13 +428,13 @@ impl FileAssetSource {
 
     fn put_metadata<'a>(
         &self,
-        txn: &'a mut RwTransaction,
+        txn: &'a mut RwTransaction<'_>,
         path: &PathBuf,
         metadata: &SourceMetadata,
     ) -> Result<()> {
         let mut value_builder = capnp::message::Builder::new_default();
         {
-            let mut value = value_builder.init_root::<source_metadata::Builder>();
+            let mut value = value_builder.init_root::<source_metadata::Builder<'_>>();
             {
                 value.set_importer_version(metadata.importer_version);
                 value.set_importer_state_type(&metadata.importer_state.uuid().to_le_bytes());
@@ -489,7 +490,7 @@ impl FileAssetSource {
         Ok(txn.get::<source_metadata::Owned, &[u8]>(self.tables.path_to_metadata, &key)?)
     }
 
-    fn delete_metadata(&self, txn: &mut RwTransaction, path: &PathBuf) -> Result<bool> {
+    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Result<bool> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         Ok(txn.delete(self.tables.path_to_metadata, &key)?)
@@ -497,7 +498,7 @@ impl FileAssetSource {
 
     fn put_asset_path<'a>(
         &self,
-        txn: &'a mut RwTransaction,
+        txn: &'a mut RwTransaction<'_>,
         asset_id: &AssetUUID,
         path: &PathBuf,
     ) -> Result<()> {
@@ -520,7 +521,7 @@ impl FileAssetSource {
         }
     }
 
-    fn delete_asset_path(&self, txn: &mut RwTransaction, asset_id: &AssetUUID) -> Result<bool> {
+    fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUUID) -> Result<bool> {
         Ok(txn.delete(self.tables.asset_id_to_path, asset_id.as_bytes())?)
     }
 
@@ -568,10 +569,10 @@ impl FileAssetSource {
 
     fn process_pair_cases(
         &self,
-        txn: &RoTransaction,
+        txn: &RoTransaction<'_>,
         pair: &HashedAssetFilePair,
         scratch_buf: &mut Vec<u8>,
-    ) -> Result<Option<(PairImport, Option<Vec<ImportedAssetVec>>)>> {
+    ) -> Result<Option<(PairImport<'_>, Option<Vec<ImportedAssetVec>>)>> {
         let original_pair = pair.clone();
         let mut pair = pair.clone();
         // When source or meta gets deleted, the FileState has a `state` of `Deleted`.
@@ -736,7 +737,7 @@ impl FileAssetSource {
 
     fn process_metadata_changes(
         &self,
-        txn: &mut RwTransaction,
+        txn: &mut RwTransaction<'_>,
         changes: HashMap<PathBuf, Option<SourceMetadata>>,
         change_batch: &mut asset_hub::ChangeBatch,
     ) -> Result<()> {
@@ -827,7 +828,7 @@ impl FileAssetSource {
 
     fn ack_dirty_file_states(
         &self,
-        txn: &mut RwTransaction,
+        txn: &mut RwTransaction<'_>,
         pair: &HashedAssetFilePair,
     ) -> Result<()> {
         let mut skip_ack_dirty = false;
@@ -857,7 +858,7 @@ impl FileAssetSource {
         Ok(())
     }
 
-    fn handle_rename_events(&self, txn: &mut RwTransaction) -> Result<()> {
+    fn handle_rename_events(&self, txn: &mut RwTransaction<'_>) -> Result<()> {
         let rename_events = self.tracker.read_rename_events(txn)?;
         debug!("rename events");
         for (_, evt) in rename_events.iter() {

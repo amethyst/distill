@@ -1,5 +1,3 @@
-extern crate notify;
-
 use bincode;
 use capnp;
 use lmdb;
@@ -9,6 +7,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 use tokio::executor::SpawnError;
+use notify;
 
 #[derive(Debug)]
 pub enum Error {
@@ -25,7 +24,7 @@ pub enum Error {
     UuidBytesError(uuid::BytesError),
     RecvError,
     Exit,
-    ImporterError(importer::Error),
+    ImporterError(atelier_importer::Error),
     TokioSpawnError(SpawnError),
 }
 
@@ -52,7 +51,7 @@ impl std::error::Error for Error {
         }
     }
 
-    fn cause(&self) -> Option<&std::error::Error> {
+    fn cause(&self) -> Option<&dyn std::error::Error> {
         match *self {
             Error::Notify(ref e) => Some(e),
             Error::IO(ref e) => Some(e),
@@ -73,7 +72,7 @@ impl std::error::Error for Error {
     }
 }
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Error::Notify(ref e) => e.fmt(f),
             Error::IO(ref e) => e.fmt(f),
@@ -148,8 +147,8 @@ impl From<uuid::BytesError> for Error {
         Error::UuidBytesError(err)
     }
 }
-impl From<importer::Error> for Error {
-    fn from(err: importer::Error) -> Error {
+impl From<atelier_importer::Error> for Error {
+    fn from(err: atelier_importer::Error) -> Error {
         Error::ImporterError(err)
     }
 }

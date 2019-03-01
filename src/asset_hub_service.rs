@@ -9,7 +9,7 @@ use crate::{
 use capnp;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{sync::mpsc, Future, Stream};
-use importer::AssetUUID;
+use atelier_importer::AssetUUID;
 use owning_ref::OwningHandle;
 use schema::{
     data::{asset_change_log_entry, asset_metadata, AssetSource, serialized_asset},
@@ -53,7 +53,7 @@ fn build_serialized_asset_message<T: AsRef<[u8]>>(
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
-        let mut m = value_builder.init_root::<serialized_asset::Builder>();
+        let mut m = value_builder.init_root::<serialized_asset::Builder<'_>>();
         m.reborrow().set_compression(artifact.compression);
         m.reborrow().set_uncompressed_size(artifact.uncompressed_size as u64);
         m.reborrow().set_type_uuid(artifact.type_uuid.as_bytes());
@@ -192,7 +192,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             let mut out = artifact_results.reborrow().get(idx as u32);
             out.reborrow().init_asset_id().set_id(id.as_bytes());
             out.reborrow().set_key(&hash.to_le_bytes());
-            out.reborrow().set_data(artifact.get_root_as_reader::<serialized_asset::Reader>()?)?;
+            out.reborrow().set_data(artifact.get_root_as_reader::<serialized_asset::Reader<'_>>()?)?;
         }
         Promise::ok(())
     }
@@ -283,15 +283,14 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let mut metadatas = Vec::new();
         for request_path in params.get_paths()? {
             let request_path = request_path?;
-            let path_str;
-            if cfg!(windows) {
+            let path_str = if cfg!(windows) {
                 // fs::canonicalize does not handle forward slashes in paths on Windows
-                path_str = std::str::from_utf8(request_path)?
+                std::str::from_utf8(request_path)?
                     .to_string()
-                    .replace("/", "\\");
+                    .replace("/", "\\")
             } else {
-                path_str = std::str::from_utf8(request_path)?.to_string();
-            }
+                std::str::from_utf8(request_path)?.to_string()
+            };
             let path = path::PathBuf::from(path_str);
             let mut metadata = None;
             if path.is_relative() {
@@ -341,6 +340,7 @@ impl asset_hub::Server for AssetHubImpl {
         let ctx = self.ctx.clone();
         let (mut tx, rx) = mpsc::channel(16);
         tx.try_send(AssetBatchEvent::Commit).unwrap();
+
         let tx = self.ctx.hub.register_listener(tx);
         tokio::runtime::current_thread::TaskExecutor::current()
             .spawn_local(Box::new(rx.for_each(move |_| {
@@ -376,6 +376,7 @@ impl asset_hub::Server for AssetHubImpl {
             .map_err(Error::TokioSpawnError)?;
         Promise::ok(())
     }
+
     fn get_snapshot(
         &mut self,
         _params: asset_hub::GetSnapshotParams,
