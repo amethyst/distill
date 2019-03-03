@@ -200,7 +200,13 @@ impl<HandleType> Loader for RpcLoader<HandleType> {
                     }
                 }
                 AssetState::RequestedMetadata => AssetState::RequestedMetadata,
-                AssetState::WaitingForData => AssetState::WaitingForData,
+                AssetState::WaitingForData => {
+                    if value.asset_handle.is_some() {
+                        AssetState::LoadingAsset
+                    } else {
+                        AssetState::WaitingForData
+                    }
+                },
                 AssetState::LoadingData => AssetState::LoadingData,
                 AssetState::LoadingAsset => AssetState::LoadingAsset,
                 AssetState::Loaded => AssetState::Loaded,
@@ -247,11 +253,11 @@ impl<HandleType> RpcLoader<HandleType> {
         let serialized_asset = reader.get_data()?;
         let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
         println!("loaded data of size {}", serialized_asset.get_data()?.len());
-        // let mut metadata = self.metadata.get_mut(uuid).unwrap();
-        // if metadata.handle.is_none() {
-        //     metadata.handle.replace(storage.allocate(&asset_type, &uuid));
-        // }
-        // storage.update_asset(&asset_type, &metadata.handle.unwrap(), &serialized_asset.get_data()?);
+        let mut asset = self.assets.get_mut(&uuid).unwrap();
+        if asset.asset_handle.is_none() {
+            asset.asset_handle.replace(storage.allocate(&asset_type, &uuid));
+        }
+        storage.update_asset(&asset_type, &asset.asset_handle.as_ref().unwrap(), &serialized_asset.get_data()?);
         Ok(())
     }
 
