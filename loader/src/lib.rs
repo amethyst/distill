@@ -5,6 +5,6 @@ pub mod loader;
 #[cfg(feature = "rpc_loader")]
 pub mod rpc_loader;
 
-pub use crate::loader::{Loader, AssetStorage};
+pub use crate::loader::{AssetStorage, Loader};
 pub type AssetUuid = [u8; 16];
 pub type AssetTypeId = [u8; 16];

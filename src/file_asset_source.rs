@@ -217,6 +217,7 @@ impl<'a> PairImport<'a> {
     }
 
     fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<Vec<ImportedAssetVec>> {
+        let start_time = PreciseTime::now();
         let importer = self
             .importer
             .expect("cannot import source without importer");
@@ -272,6 +273,10 @@ impl<'a> PairImport<'a> {
                 scratch_buf.len(),
             );
         }
+        info!(
+            "Imported pair in {}",
+            start_time.to(PreciseTime::now())
+        );
         self.source_metadata = Some(SourceMetadata {
             version: SOURCEMETADATA_VERSION,
             import_hash: Some(import_hash),

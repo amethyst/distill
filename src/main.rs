@@ -43,10 +43,6 @@ fn init_logging() -> Result<()> {
 
 fn main() {
     init_logging().expect("failed to init logging");
-    println!("listing importers");
-    for i in atelier_importer::get_source_importers() {
-        println!("got importer {}", i.extension);
-    }
 amethyst::renderer::Pipeline::build();
 
     AssetDaemon::default()
