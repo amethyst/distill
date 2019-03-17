@@ -1,17 +1,21 @@
 use crate::{AssetTypeId, AssetUuid};
 use std::error::Error;
 
+#[derive(Copy, Clone, PartialEq)]
+pub struct LoaderHandle(pub(crate) u64);
+
 pub trait AssetStorage {
     type HandleType;
-    fn allocate(&self, asset_type: &AssetTypeId, id: &AssetUuid) -> Self::HandleType;
+    fn allocate(&self, asset_type: &AssetTypeId, id: &AssetUuid, loader_handle: LoaderHandle) -> Self::HandleType;
     fn update_asset(
         &self,
         asset_type: &AssetTypeId,
-        handle: &Self::HandleType,
+        storage_handle: &Self::HandleType,
         data: &dyn AsRef<[u8]>,
+        loader_handle: LoaderHandle,
     ) -> Result<(), Box<dyn Error>>;
-    fn is_loaded(&self, asset_type: &AssetTypeId, handle: &Self::HandleType) -> bool;
-    fn free(&self, asset_type: &AssetTypeId, handle: Self::HandleType);
+    fn is_loaded(&self, asset_type: &AssetTypeId, storage_handle: &Self::HandleType, loader_handle: LoaderHandle) -> bool;
+    fn free(&self, asset_type: &AssetTypeId, storage_handle: Self::HandleType, loader_handle: LoaderHandle);
 }
 
 pub trait ComputedAsset {
@@ -20,12 +24,10 @@ pub trait ComputedAsset {
 }
 
 pub trait Loader {
-    type LoadOp;
     type HandleType;
-    fn add_asset_ref(&mut self, id: AssetUuid) -> Self::LoadOp;
-    fn get_asset_load(&self, id: &AssetUuid) -> Option<Self::LoadOp>;
+    fn add_asset_ref(&mut self, id: AssetUuid);
     fn decrease_asset_ref(&mut self, id: AssetUuid);
-    fn get_asset(&self, load: &Self::LoadOp) -> Option<(AssetTypeId, Self::HandleType)>;
+    fn get_asset(&self, id: AssetUuid) -> Option<(AssetTypeId, Self::HandleType, LoaderHandle)>;
     fn process(
         &mut self,
         asset_storage: &dyn AssetStorage<HandleType = Self::HandleType>,

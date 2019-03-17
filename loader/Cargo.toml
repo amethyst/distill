@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 serde_dyn = "0.2.2"
+slotmap = { version = "0.3", features = ["unstable"] }
 
 schema = { path = "../schema", optional = true }
 tokio = { version = "0.1", optional = true }

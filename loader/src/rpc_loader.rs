@@ -1,5 +1,5 @@
 use crate::{
-    loader::{AssetStorage, Loader},
+    loader::{AssetStorage, Loader, LoaderHandle},
     AssetTypeId, AssetUuid,
 };
 use capnp::{capability::Response, message::ReaderOptions, Result as CapnpResult};
@@ -8,6 +8,7 @@ use futures::{
     sync::oneshot::{channel, Receiver},
     Future,
 };
+use slotmap::{SlotMap, SecondaryMap, KeyData, Key};
 use log::error;
 use schema::{
     data::{artifact, asset_metadata},
@@ -26,6 +27,21 @@ use std::{
 };
 use tokio::prelude::*;
 use tokio_current_thread::CurrentThread;
+
+impl From<KeyData> for LoaderHandle {
+    fn from(key: KeyData) -> Self {
+        Self(key.as_ffi())
+    }
+}
+impl Into<KeyData> for LoaderHandle {
+    fn into(self) -> KeyData {
+        KeyData::from_ffi(self.0)
+    }
+}
+impl Key for LoaderHandle {
+
+}
+struct AssetUuidKey(AssetUuid);
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 
@@ -130,19 +146,16 @@ struct RpcState {
 unsafe impl Send for RpcState {}
 
 pub struct RpcLoader<HandleType> {
-    assets: HashMap<AssetUuid, AssetStatus<HandleType>>,
+    load_states: SlotMap<LoaderHandle, AssetStatus<HandleType>>,
+    uuid_to_load: HashMap<AssetUuid, LoaderHandle>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
     connect_string: String,
     rpc: Arc<Mutex<RpcState>>,
 }
 
-pub struct RpcAssetLoad {
-    id: AssetUuid,
-}
 impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
-    type LoadOp = RpcAssetLoad;
     type HandleType = HandleType;
-    fn add_asset_ref(&mut self, id: AssetUuid) -> Self::LoadOp {
+    fn add_asset_ref(&mut self, id: AssetUuid) {
         self.assets
             .entry(id)
             .or_insert(AssetStatus {
@@ -151,18 +164,11 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
                 asset_handle: None,
             })
             .refs += 1;
-        RpcAssetLoad { id }
     }
-    fn get_asset_load(&self, id: &AssetUuid) -> Option<Self::LoadOp> {
-        if self.assets.contains_key(id) {
-            Some(RpcAssetLoad { id: *id })
-        } else {
-            None
-        }
-    }
-    fn get_asset(&self, load: &Self::LoadOp) -> Option<(AssetTypeId, Self::HandleType)> {
+    fn get_asset(&self, id: AssetUuid) -> Option<(AssetTypeId, Self::HandleType, LoaderHandle)> {
         self.assets
-            .get(&load.id)
+            .get(&id)
+            .filter(|a| if let AssetState::Loaded = a.state { true } else { false })
             .map(|a| a.asset_handle.clone())
             .unwrap_or(None)
     }
