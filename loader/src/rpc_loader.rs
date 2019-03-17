@@ -1,5 +1,5 @@
 use crate::{
-    loader::{AssetStorage, Loader, LoaderHandle},
+    loader::{AssetStorage, Loader, LoaderHandle, LoadInfo},
     AssetTypeId, AssetUuid,
 };
 use capnp::{capability::Response, message::ReaderOptions, Result as CapnpResult};
@@ -8,7 +8,7 @@ use futures::{
     sync::oneshot::{channel, Receiver},
     Future,
 };
-use slotmap::{SlotMap, SecondaryMap, KeyData, Key};
+use slotmap::{SlotMap, KeyData, Key};
 use log::error;
 use schema::{
     data::{artifact, asset_metadata},
@@ -38,9 +38,7 @@ impl Into<KeyData> for LoaderHandle {
         KeyData::from_ffi(self.0)
     }
 }
-impl Key for LoaderHandle {
-
-}
+impl Key for LoaderHandle { }
 struct AssetUuidKey(AssetUuid);
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
@@ -57,6 +55,7 @@ enum AssetState {
 }
 
 struct AssetStatus<Handle> {
+    asset_id: AssetUuid,
     state: AssetState,
     refs: u32,
     asset_handle: Option<(AssetTypeId, Handle)>,
@@ -145,35 +144,65 @@ struct RpcState {
 }
 unsafe impl Send for RpcState {}
 
-pub struct RpcLoader<HandleType> {
+struct LoaderData<HandleType> {
     load_states: SlotMap<LoaderHandle, AssetStatus<HandleType>>,
     uuid_to_load: HashMap<AssetUuid, LoaderHandle>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
+}
+
+impl<HandleType: Clone> LoaderData<HandleType> {
+    fn load(&mut self, id: AssetUuid) -> LoaderHandle {
+        let load_states = &mut self.load_states;
+        let handle = self.uuid_to_load
+            .entry(id)
+            .or_insert_with(|| {
+                load_states.insert(AssetStatus {
+                    asset_id: id,
+                    state: AssetState::None,
+                    refs: 0,
+                    asset_handle: None,
+                })
+            });
+        self.load_states.get_mut(*handle).map(|h| h.refs += 1);
+        *handle
+    }
+    fn get_asset(&self, load: LoaderHandle) -> Option<(AssetTypeId, HandleType, LoaderHandle)> {
+        self.load_states
+            .get(load)
+            .filter(|a| if let AssetState::Loaded = a.state { true } else { false })
+            .map(|a| a.asset_handle.clone().map(|(t, a)| (t, a, load)))
+            .unwrap_or(None)
+    }
+    fn unload(&mut self, handle: LoaderHandle) {
+        self.load_states.get_mut(handle).map(|h| h.refs -= 1);
+    }
+}
+
+pub struct RpcLoader<HandleType> {
     connect_string: String,
     rpc: Arc<Mutex<RpcState>>,
+    data: LoaderData<HandleType>,
 }
 
 impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
     type HandleType = HandleType;
-    fn add_asset_ref(&mut self, id: AssetUuid) {
-        self.assets
-            .entry(id)
-            .or_insert(AssetStatus {
-                state: AssetState::None,
-                refs: 0,
-                asset_handle: None,
-            })
-            .refs += 1;
+    fn get_load(&self, id: AssetUuid) -> Option<LoaderHandle> {
+        self.data.uuid_to_load.get(&id).map(|l| *l)
     }
-    fn get_asset(&self, id: AssetUuid) -> Option<(AssetTypeId, Self::HandleType, LoaderHandle)> {
-        self.assets
-            .get(&id)
-            .filter(|a| if let AssetState::Loaded = a.state { true } else { false })
-            .map(|a| a.asset_handle.clone())
-            .unwrap_or(None)
+    fn get_load_info(&self, load: LoaderHandle) -> Option<LoadInfo> {
+        self.data.load_states.get(load).map(|s| LoadInfo {
+            asset_id: s.asset_id,
+            refs: s.refs,
+        })
     }
-    fn decrease_asset_ref(&mut self, id: AssetUuid) {
-        self.assets.entry(id).and_modify(|a| a.refs -= 1);
+    fn load(&mut self, id: AssetUuid) -> LoaderHandle {
+        self.data.load(id)
+    }
+    fn get_asset(&self, load: LoaderHandle) -> Option<(AssetTypeId, Self::HandleType, LoaderHandle)> {
+        self.data.get_asset(load)
+    }
+    fn unload(&mut self, load: LoaderHandle) {
+        self.data.unload(load)
     }
     fn process(
         &mut self,
@@ -200,10 +229,10 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
             }
         }
         rpc.runtime.poll();
-        for (key, mut value) in self.assets.iter_mut() {
+        for (key, mut value) in self.data.load_states.iter_mut() {
             let new_state = match value.state {
                 AssetState::None if value.refs > 0 => {
-                    if self.metadata.contains_key(key) {
+                    if self.data.metadata.contains_key(&value.asset_id) {
                         AssetState::WaitingForData
                     } else {
                         AssetState::WaitingForMetadata
@@ -215,7 +244,7 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
                 }
                 AssetState::WaitingForMetadata => {
                     log::info!("waiting for metadata");
-                    if self.metadata.contains_key(key) {
+                    if self.data.metadata.contains_key(&value.asset_id) {
                         AssetState::WaitingForData
                     } else {
                         AssetState::WaitingForMetadata
@@ -233,8 +262,8 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
                 AssetState::LoadingAsset => {
                     log::info!("loading asset");
                     if let Some((ref asset_type, ref asset_handle)) = value.asset_handle {
-                        if asset_storage.is_loaded(asset_type, asset_handle) {
-                            log::info!("loaded asset {:?}", key);
+                        if asset_storage.is_loaded(asset_type, asset_handle, key) {
+                            log::info!("loaded asset {:?}", value.asset_id);
                             AssetState::Loaded
                         } else {
                             AssetState::LoadingAsset
@@ -249,8 +278,8 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
             };
             value.state = new_state;
         }
-        process_metadata_requests(&self.assets, &mut self.metadata, &mut rpc)?;
-        process_data_requests(&mut self.assets, asset_storage, &mut rpc)?;
+        process_metadata_requests(&mut self.data, &mut rpc)?;
+        process_data_requests(&mut self.data, asset_storage, &mut rpc)?;
         Ok(())
     }
 }
@@ -258,8 +287,11 @@ impl<HandleType> RpcLoader<HandleType> {
     pub fn new() -> std::io::Result<RpcLoader<HandleType>> {
         Ok(RpcLoader {
             connect_string: "".to_string(),
-            assets: HashMap::new(),
-            metadata: HashMap::new(),
+            data: LoaderData {
+                load_states: SlotMap::with_key(),
+                uuid_to_load: HashMap::new(),
+                metadata: HashMap::new(),
+            },
             rpc: Arc::new(Mutex::new(RpcState {
                 runtime: Runtime::new()?,
                 connection: None,
@@ -270,8 +302,8 @@ impl<HandleType> RpcLoader<HandleType> {
         })
     }
 }
-fn update_asset_metadata(
-    metadata: &mut HashMap<AssetUuid, AssetMetadata>,
+fn update_asset_metadata<HandleType>(
+    data: &mut LoaderData<HandleType>,
     reader: &asset_metadata::Reader<'_>,
 ) -> Result<(), capnp::Error> {
     let mut load_deps = Vec::new();
@@ -280,12 +312,12 @@ fn update_asset_metadata(
     }
     let uuid: AssetUuid = make_array(reader.get_id()?.get_id()?);
     println!("updated metadata for {:?}", uuid);
-    metadata.insert(uuid, AssetMetadata { load_deps });
+    data.metadata.insert(uuid, AssetMetadata { load_deps });
     Ok(())
 }
 
 fn load_data<HandleType>(
-    assets: &mut HashMap<AssetUuid, AssetStatus<HandleType>>,
+    data: &mut LoaderData<HandleType>,
     reader: &artifact::Reader<'_>,
     storage: &dyn AssetStorage<HandleType = HandleType>,
 ) -> Result<(), Box<dyn Error>> {
@@ -293,22 +325,32 @@ fn load_data<HandleType>(
     let serialized_asset = reader.get_data()?;
     let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
     println!("loaded data of size {}", serialized_asset.get_data()?.len());
-    let asset = assets.get_mut(&uuid).unwrap();
-    if asset.asset_handle.is_none() {
-        asset
-            .asset_handle
-            .replace((asset_type, storage.allocate(&asset_type, &uuid)));
+    let load = data.uuid_to_load.get(&uuid);
+    match load {
+        None => {        
+            log::warn!("Loaded data with asset ID {:?} for nonexistant load", uuid);
+            Ok(())
+        },
+        Some(load) => {
+        let state = data.load_states.get_mut(*load).expect("asset in uuid_to_load but not load_states");
+        if state.asset_handle.is_none() {
+            state
+                .asset_handle
+                .replace((asset_type, storage.allocate(&asset_type, &uuid, *load)));
+        }
+        storage.update_asset(
+            &asset_type,
+            &state.asset_handle.as_ref().unwrap().1,
+            &serialized_asset.get_data()?,
+            *load,
+        )?;
+        Ok(())
+        }
     }
-    storage.update_asset(
-        &asset_type,
-        &asset.asset_handle.as_ref().unwrap().1,
-        &serialized_asset.get_data()?,
-    )?;
-    Ok(())
 }
 
 fn process_data_requests<HandleType>(
-    assets: &mut HashMap<AssetUuid, AssetStatus<HandleType>>,
+    data: &mut LoaderData<HandleType>,
     storage: &dyn AssetStorage<HandleType = HandleType>,
     rpc: &mut RpcState,
 ) -> Result<(), Box<dyn Error>> {
@@ -318,7 +360,7 @@ fn process_data_requests<HandleType>(
                 match request_result {
                     Ok(response) => {
                         for artifact in response.get()?.get_artifacts()? {
-                            load_data(assets, &artifact, storage)?;
+                            load_data(data, &artifact, storage)?;
                         }
                     }
                     Err(err) => error!("error requesting build artifacts {}", err),
@@ -329,7 +371,7 @@ fn process_data_requests<HandleType>(
             _ => {}
         }
     } else if let Some(ref conn) = rpc.connection {
-        let assets_to_request: Vec<_> = assets
+        let assets_to_request: Vec<_> = data.load_states
             .iter()
             .filter(|(_, v)| {
                 if let AssetState::WaitingForData = v.state {
@@ -338,12 +380,12 @@ fn process_data_requests<HandleType>(
                     false
                 }
             })
-            .map(|(k, _)| k)
+            .map(|(_, v)| v.asset_id)
             .collect();
         let mut request = conn.snapshot.borrow().get_build_artifacts_request();
         let mut assets = request.get().init_assets(assets_to_request.len() as u32);
         for (idx, asset) in assets_to_request.iter().enumerate() {
-            assets.reborrow().get(idx as u32).set_id(*asset);
+            assets.reborrow().get(idx as u32).set_id(asset);
         }
         let (tx, rx) = channel();
         rpc.runtime
@@ -358,8 +400,7 @@ fn process_data_requests<HandleType>(
 }
 
 fn process_metadata_requests<HandleType>(
-    assets: &HashMap<AssetUuid, AssetStatus<HandleType>>,
-    metadata: &mut HashMap<AssetUuid, AssetMetadata>,
+    data: &mut LoaderData<HandleType>,
     rpc: &mut RpcState,
 ) -> Result<(), capnp::Error> {
     if let Some(ref mut request) = rpc.pending_metadata_request {
@@ -368,7 +409,7 @@ fn process_metadata_requests<HandleType>(
                 match request_result {
                     Ok(response) => {
                         for m in response.get()?.get_assets()? {
-                            update_asset_metadata(metadata, &m)?;
+                            update_asset_metadata(data, &m)?;
                         }
                     }
                     Err(err) => error!("error requesting metadata {}", err),
@@ -379,7 +420,7 @@ fn process_metadata_requests<HandleType>(
             _ => {}
         }
     } else if let Some(ref conn) = rpc.connection {
-        let assets_to_request: Vec<_> = assets
+        let assets_to_request: Vec<_> = data.load_states
             .iter()
             .filter(|(_, v)| {
                 if let AssetState::WaitingForMetadata = v.state {
@@ -388,7 +429,7 @@ fn process_metadata_requests<HandleType>(
                     false
                 }
             })
-            .map(|(k, _)| k)
+            .map(|(_, v)| v.asset_id)
             .collect();
         let mut request = conn
             .snapshot
@@ -396,7 +437,7 @@ fn process_metadata_requests<HandleType>(
             .get_asset_metadata_with_dependencies_request();
         let mut assets = request.get().init_assets(assets_to_request.len() as u32);
         for (idx, asset) in assets_to_request.iter().enumerate() {
-            assets.reborrow().get(idx as u32).set_id(*asset);
+            assets.reborrow().get(idx as u32).set_id(asset);
         }
         let (tx, rx) = channel();
         rpc.runtime
