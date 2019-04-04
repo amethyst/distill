@@ -1,15 +1,13 @@
 use crate::{
-    loader::{AssetStorage, Loader, LoaderHandle, LoadInfo},
+    loader::{AssetLoadOp, AssetStorage, HandleOp, LoadHandle, LoadInfo, LoadStatus, Loader},
+    rpc_state::{ConnectionState, ResponsePromise, RpcState},
     AssetTypeId, AssetUuid,
 };
 use capnp::{capability::Response, message::ReaderOptions, Result as CapnpResult};
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
-use futures::{
-    sync::oneshot::{channel, Receiver},
-    Future,
-};
-use slotmap::{SlotMap, KeyData, Key};
-use log::error;
+use crossbeam_channel::{unbounded, Receiver, Sender};
+use futures::Future;
+use log::{error, warn};
 use schema::{
     data::{artifact, asset_metadata},
     service::asset_hub::{
@@ -18,35 +16,40 @@ use schema::{
         snapshot::get_build_artifacts_results::Owned as GetBuildArtifactsResults,
     },
 };
+use slotmap::{Key, KeyData, SlotMap};
 use std::{
     cell::RefCell,
     collections::HashMap,
     error::Error,
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex, RwLock,
+    },
 };
 use tokio::prelude::*;
 use tokio_current_thread::CurrentThread;
 
-impl From<KeyData> for LoaderHandle {
+impl From<KeyData> for LoadHandle {
     fn from(key: KeyData) -> Self {
         Self(key.as_ffi())
     }
 }
-impl Into<KeyData> for LoaderHandle {
+impl Into<KeyData> for LoadHandle {
     fn into(self) -> KeyData {
         KeyData::from_ffi(self.0)
     }
 }
-impl Key for LoaderHandle { }
+impl Key for LoadHandle {}
 struct AssetUuidKey(AssetUuid);
 
-type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
-
+#[derive(Copy, Clone, PartialEq)]
 enum AssetState {
     None,
     WaitingForMetadata,
+    RequestingMetadata,
     WaitingForData,
+    RequestingData,
     LoadingData,
     LoadingAsset,
     Loaded,
@@ -57,124 +60,72 @@ enum AssetState {
 struct AssetStatus<Handle> {
     asset_id: AssetUuid,
     state: AssetState,
-    refs: u32,
+    refs: AtomicUsize,
     asset_handle: Option<(AssetTypeId, Handle)>,
 }
 struct AssetMetadata {
     load_deps: Vec<AssetUuid>,
 }
 
-struct RpcConnection {
-    asset_hub: asset_hub::Client,
-    snapshot: Rc<RefCell<asset_hub::snapshot::Client>>,
-}
-
-struct Runtime {
-    reactor_handle: tokio_reactor::Handle,
-    timer_handle: tokio_timer::timer::Handle,
-    clock: tokio_timer::clock::Clock,
-    executor:
-        tokio_current_thread::CurrentThread<tokio_timer::timer::Timer<tokio_reactor::Reactor>>,
-}
-
-impl Runtime {
-    /// Create the configured `Runtime`.
-    pub fn new() -> std::io::Result<Runtime> {
-        use tokio_current_thread::CurrentThread;
-        use tokio_reactor::Reactor;
-        use tokio_timer::{clock::Clock, timer::Timer};
-        // We need a reactor to receive events about IO objects from kernel
-        let reactor = Reactor::new()?;
-        let reactor_handle = reactor.handle();
-
-        let clock = Clock::new();
-        // Place a timer wheel on top of the reactor. If there are no timeouts to fire, it'll let the
-        // reactor pick up some new external events.
-        let timer = Timer::new_with_now(reactor, clock.clone());
-        let timer_handle = timer.handle();
-
-        // And now put a single-threaded executor on top of the timer. When there are no futures ready
-        // to do something, it'll let the timer or the reactor to generate some new stimuli for the
-        // futures to continue in their life.
-        let executor = CurrentThread::new_with_park(timer);
-
-        Ok(Runtime {
-            reactor_handle,
-            timer_handle,
-            clock,
-            executor,
-        })
-    }
-    pub fn executor(
-        &mut self,
-    ) -> &mut CurrentThread<tokio_timer::timer::Timer<tokio_reactor::Reactor>> {
-        &mut self.executor
-    }
-    pub fn poll(&mut self) {
-        let Runtime {
-            ref reactor_handle,
-            ref timer_handle,
-            ref clock,
-            ref mut executor,
-            ..
-        } = *self;
-
-        let mut enter = tokio_executor::enter().expect("Multiple executors at once");
-        tokio_reactor::with_default(&reactor_handle, &mut enter, |enter| {
-            tokio_timer::clock::with_default(&clock, enter, |enter| {
-                tokio_timer::with_default(&timer_handle, enter, |enter| {
-                    let mut default_executor = tokio_current_thread::TaskExecutor::current();
-                    tokio_executor::with_default(&mut default_executor, enter, |enter| {
-                        let mut executor = executor.enter(enter);
-                        executor.run_timeout(std::time::Duration::from_secs(0));
-                    })
-                });
-            });
-        });
-    }
-}
-
-struct RpcState {
-    runtime: Runtime,
-    connection: Option<RpcConnection>,
-    pending_connection: Option<Receiver<Result<RpcConnection, Box<dyn Error>>>>,
-    pending_metadata_request:
-        Option<Receiver<CapnpResult<Response<GetAssetMetadataWithDependenciesResults>>>>,
-    pending_data_request: Option<Receiver<CapnpResult<Response<GetBuildArtifactsResults>>>>,
-}
-unsafe impl Send for RpcState {}
-
 struct LoaderData<HandleType> {
-    load_states: SlotMap<LoaderHandle, AssetStatus<HandleType>>,
-    uuid_to_load: HashMap<AssetUuid, LoaderHandle>,
+    load_states: RwLock<SlotMap<LoadHandle, AssetStatus<HandleType>>>,
+    uuid_to_load: RwLock<HashMap<AssetUuid, LoadHandle>>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
+    pending_data_requests: Vec<ResponsePromise<GetBuildArtifactsResults, LoadHandle>>,
+    pending_metadata_requests:
+        Vec<ResponsePromise<GetAssetMetadataWithDependenciesResults, Vec<(AssetUuid, LoadHandle)>>>,
+    op_tx: Sender<HandleOp>,
+    op_rx: Receiver<HandleOp>,
 }
 
 impl<HandleType: Clone> LoaderData<HandleType> {
-    fn load(&mut self, id: AssetUuid) -> LoaderHandle {
-        let load_states = &mut self.load_states;
-        let handle = self.uuid_to_load
-            .entry(id)
-            .or_insert_with(|| {
-                load_states.insert(AssetStatus {
-                    asset_id: id,
-                    state: AssetState::None,
-                    refs: 0,
-                    asset_handle: None,
+    fn add_ref(&self, id: AssetUuid) -> LoadHandle {
+        let handle = self.uuid_to_load.read().unwrap().get(&id).map(|h| *h);
+        let handle = if let Some(handle) = handle {
+            handle
+        } else {
+            let mut load_states = self.load_states.write().unwrap();
+            *self
+                .uuid_to_load
+                .write()
+                .unwrap()
+                .entry(id)
+                .or_insert_with(|| {
+                    load_states.insert(AssetStatus {
+                        asset_id: id,
+                        state: AssetState::None,
+                        refs: AtomicUsize::new(0),
+                        asset_handle: None,
+                    })
                 })
-            });
-        self.load_states.get_mut(*handle).map(|h| h.refs += 1);
-        *handle
+        };
+        let load_states = self.load_states.read().unwrap();
+        load_states
+            .get(handle)
+            .map(|h| h.refs.fetch_add(1, Ordering::Relaxed));
+        handle
     }
-    fn get_asset(&self, load: LoaderHandle) -> Option<(AssetTypeId, HandleType, LoaderHandle)> {
+    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, HandleType, LoadHandle)> {
         self.load_states
-            .get(load)
-            .filter(|a| if let AssetState::Loaded = a.state { true } else { false })
-            .map(|a| a.asset_handle.clone().map(|(t, a)| (t, a, load)))
+            .read()
+            .unwrap()
+            .get(*load)
+            .filter(|a| {
+                if let AssetState::Loaded = a.state {
+                    true
+                } else {
+                    false
+                }
+            })
+            .map(|a| a.asset_handle.clone().map(|(t, a)| (t, a, *load)))
             .unwrap_or(None)
     }
-    fn unload(&mut self, handle: LoaderHandle) {
-        self.load_states.get_mut(handle).map(|h| h.refs -= 1);
+    fn remove_ref(&self, load: &LoadHandle) {
+        self.load_states
+            .write()
+            .unwrap()
+            .get_mut(*load)
+            .map(|h| h.refs.fetch_sub(1, Ordering::Relaxed));
     }
 }
 
@@ -186,52 +137,62 @@ pub struct RpcLoader<HandleType> {
 
 impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
     type HandleType = HandleType;
-    fn get_load(&self, id: AssetUuid) -> Option<LoaderHandle> {
-        self.data.uuid_to_load.get(&id).map(|l| *l)
+    fn get_load(&self, id: AssetUuid) -> Option<LoadHandle> {
+        self.data.uuid_to_load.read().unwrap().get(&id).map(|l| *l)
     }
-    fn get_load_info(&self, load: LoaderHandle) -> Option<LoadInfo> {
-        self.data.load_states.get(load).map(|s| LoadInfo {
-            asset_id: s.asset_id,
-            refs: s.refs,
-        })
+    fn get_load_info(&self, load: &LoadHandle) -> Option<LoadInfo> {
+        self.data
+            .load_states
+            .read()
+            .unwrap()
+            .get(*load)
+            .map(|s| LoadInfo {
+                asset_id: s.asset_id,
+                refs: s.refs.load(Ordering::Relaxed) as u32,
+            })
     }
-    fn load(&mut self, id: AssetUuid) -> LoaderHandle {
-        self.data.load(id)
+    fn get_load_status(&self, load: &LoadHandle) -> LoadStatus {
+        use AssetState::*;
+        self.data
+            .load_states
+            .read()
+            .unwrap()
+            .get(*load)
+            .map(|s| match s.state {
+                None => LoadStatus::NotRequested,
+                WaitingForMetadata | RequestingMetadata | WaitingForData | RequestingData
+                | LoadingData | LoadingAsset => LoadStatus::Loading,
+                Loaded => LoadStatus::Loaded,
+                UnloadRequested | Unloading => LoadStatus::Unloading,
+            })
+            .unwrap_or(LoadStatus::NotRequested)
     }
-    fn get_asset(&self, load: LoaderHandle) -> Option<(AssetTypeId, Self::HandleType, LoaderHandle)> {
+    fn add_ref(&self, id: AssetUuid) -> LoadHandle {
+        self.data.add_ref(id)
+    }
+    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, Self::HandleType, LoadHandle)> {
         self.data.get_asset(load)
     }
-    fn unload(&mut self, load: LoaderHandle) {
-        self.data.unload(load)
+    fn remove_ref(&self, load: &LoadHandle) {
+        self.data.remove_ref(load)
     }
     fn process(
         &mut self,
         asset_storage: &dyn AssetStorage<HandleType = Self::HandleType>,
     ) -> Result<(), Box<dyn Error>> {
         let mut rpc = self.rpc.lock().expect("rpc mutex poisoned");
-        if rpc.pending_connection.is_none() && rpc.connection.is_none() {
-            println!("connect");
-            rpc.pending_connection = Some(rpc_connect(&mut rpc));
-        }
-        if let Some(ref mut pending_connection) = rpc.pending_connection {
-            println!("waiting");
-            match pending_connection.try_recv() {
-                Ok(Some(connection_result)) => {
-                    println!("{:?}", connection_result.is_ok());
-                    match connection_result {
-                        Ok(conn) => rpc.connection = Some(conn),
-                        Err(err) => error!("error connecting RpcLoader {}", err),
-                    }
-                    rpc.pending_connection = None;
-                }
-                Err(e) => panic!("failed to receive result for rpc connection: {:?}", e),
-                _ => {}
+        match rpc.connection_state() {
+            ConnectionState::Error(err) => {
+                error!("Error connecting RPC: {}", err);
+                rpc.connect(&self.connect_string);
             }
-        }
-        rpc.runtime.poll();
-        for (key, mut value) in self.data.load_states.iter_mut() {
+            ConnectionState::None => rpc.connect(&self.connect_string),
+            _ => {}
+        };
+        rpc.poll();
+        for (key, mut value) in self.data.load_states.write().unwrap().iter_mut() {
             let new_state = match value.state {
-                AssetState::None if value.refs > 0 => {
+                AssetState::None if value.refs.load(Ordering::Relaxed) > 0 => {
                     if self.data.metadata.contains_key(&value.asset_id) {
                         AssetState::WaitingForData
                     } else {
@@ -250,6 +211,7 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
                         AssetState::WaitingForMetadata
                     }
                 }
+                AssetState::RequestingMetadata => AssetState::RequestingMetadata,
                 AssetState::WaitingForData => {
                     log::info!("waiting for data");
                     if value.asset_handle.is_some() {
@@ -258,11 +220,12 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
                         AssetState::WaitingForData
                     }
                 }
+                AssetState::RequestingData => AssetState::RequestingData,
                 AssetState::LoadingData => AssetState::LoadingData,
                 AssetState::LoadingAsset => {
                     log::info!("loading asset");
                     if let Some((ref asset_type, ref asset_handle)) = value.asset_handle {
-                        if asset_storage.is_loaded(asset_type, asset_handle, key) {
+                        if asset_storage.is_loaded(asset_type, asset_handle, &key) {
                             log::info!("loaded asset {:?}", value.asset_id);
                             AssetState::Loaded
                         } else {
@@ -278,73 +241,101 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
             };
             value.state = new_state;
         }
-        process_metadata_requests(&mut self.data, &mut rpc)?;
+        // process_metadata_requests(&mut self.data, &mut rpc)?;
         process_data_requests(&mut self.data, asset_storage, &mut rpc)?;
         Ok(())
     }
 }
 impl<HandleType> RpcLoader<HandleType> {
     pub fn new() -> std::io::Result<RpcLoader<HandleType>> {
+        let (tx, rx) = unbounded();
         Ok(RpcLoader {
             connect_string: "".to_string(),
             data: LoaderData {
-                load_states: SlotMap::with_key(),
-                uuid_to_load: HashMap::new(),
+                load_states: RwLock::new(SlotMap::with_key()),
+                uuid_to_load: RwLock::new(HashMap::new()),
                 metadata: HashMap::new(),
+                pending_data_requests: Vec::new(),
+                pending_metadata_requests: Vec::new(),
+                op_rx: rx,
+                op_tx: tx,
             },
-            rpc: Arc::new(Mutex::new(RpcState {
-                runtime: Runtime::new()?,
-                connection: None,
-                pending_connection: None,
-                pending_metadata_request: None,
-                pending_data_request: None,
-            })),
+            rpc: Arc::new(Mutex::new(RpcState::new()?)),
         })
     }
 }
-fn update_asset_metadata<HandleType>(
-    data: &mut LoaderData<HandleType>,
+fn update_asset_metadata(
+    metadata: &mut HashMap<AssetUuid, AssetMetadata>,
+    uuid: &AssetUuid,
     reader: &asset_metadata::Reader<'_>,
 ) -> Result<(), capnp::Error> {
     let mut load_deps = Vec::new();
     for dep in reader.get_load_deps()? {
         load_deps.push(make_array(dep.get_id()?));
     }
-    let uuid: AssetUuid = make_array(reader.get_id()?.get_id()?);
     println!("updated metadata for {:?}", uuid);
-    data.metadata.insert(uuid, AssetMetadata { load_deps });
+    metadata.insert(*uuid, AssetMetadata { load_deps });
     Ok(())
 }
 
 fn load_data<HandleType>(
-    data: &mut LoaderData<HandleType>,
+    handle: &LoadHandle,
+    state: &mut AssetStatus<HandleType>,
     reader: &artifact::Reader<'_>,
     storage: &dyn AssetStorage<HandleType = HandleType>,
-) -> Result<(), Box<dyn Error>> {
-    let uuid: AssetUuid = make_array(reader.get_asset_id()?.get_id()?);
+) -> Result<AssetState, Box<dyn Error>> {
+    assert!(AssetState::RequestingData != state.state && AssetState::Loaded != state.state);
     let serialized_asset = reader.get_data()?;
     let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
     println!("loaded data of size {}", serialized_asset.get_data()?.len());
-    let load = data.uuid_to_load.get(&uuid);
-    match load {
-        None => {        
-            log::warn!("Loaded data with asset ID {:?} for nonexistant load", uuid);
-            Ok(())
-        },
-        Some(load) => {
-        let state = data.load_states.get_mut(*load).expect("asset in uuid_to_load but not load_states");
-        if state.asset_handle.is_none() {
-            state
-                .asset_handle
-                .replace((asset_type, storage.allocate(&asset_type, &uuid, *load)));
-        }
-        storage.update_asset(
-            &asset_type,
-            &state.asset_handle.as_ref().unwrap().1,
-            &serialized_asset.get_data()?,
-            *load,
-        )?;
-        Ok(())
+    if state.asset_handle.is_none() {
+        state.asset_handle.replace((
+            asset_type,
+            storage.allocate(&asset_type, &state.asset_id, handle),
+        ));
+    }
+    storage.update_asset(
+        &asset_type,
+        &state.asset_handle.as_ref().unwrap().1,
+        &serialized_asset.get_data()?,
+        handle,
+    )?;
+    Ok(AssetState::LoadingData)
+}
+
+fn process_pending_requests<T, U, ProcessFunc>(
+    requests: &mut Vec<ResponsePromise<T, U>>,
+    mut process_request_func: ProcessFunc,
+) where
+    ProcessFunc: for<'a> FnMut(
+        Result<<T as capnp::traits::Owned<'a>>::Reader, Box<dyn Error>>,
+        &mut U,
+    ) -> Result<(), Box<dyn Error>>,
+    T: capnp::traits::Pipelined + for<'a> capnp::traits::Owned<'a> + 'static,
+{
+    // reverse range so we can remove inside the loop without consequence
+    for i in (0..requests.len()).rev() {
+        let mut request = requests
+            .get_mut(i)
+            .expect("invalid iteration logic when processing RPC requests");
+        let result: Result<Async<()>, Box<dyn Error>> = match request.poll() {
+            Ok(Async::Ready(response)) => match response.get() {
+                Ok(response) => process_request_func(Ok(response), request.get_user_data())
+                    .map(|r| Async::Ready(r)),
+                Err(err) => Err(Box::new(err)),
+            },
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(err) => Err(err),
+        };
+        match result {
+            Err(err) => {
+                let _ = process_request_func(Err(err), request.get_user_data());
+                requests.swap_remove(i);
+            }
+            Ok(Async::Ready(_)) => {
+                requests.swap_remove(i);
+            }
+            Ok(Async::NotReady) => {}
         }
     }
 }
@@ -354,47 +345,58 @@ fn process_data_requests<HandleType>(
     storage: &dyn AssetStorage<HandleType = HandleType>,
     rpc: &mut RpcState,
 ) -> Result<(), Box<dyn Error>> {
-    if let Some(ref mut request) = rpc.pending_data_request {
-        match request.try_recv() {
-            Ok(Some(request_result)) => {
-                match request_result {
-                    Ok(response) => {
-                        for artifact in response.get()?.get_artifacts()? {
-                            load_data(data, &artifact, storage)?;
-                        }
-                    }
-                    Err(err) => error!("error requesting build artifacts {}", err),
-                }
-                rpc.pending_data_request = None;
-            }
-            Err(e) => panic!("failed to receive result for build artifacts: {:?}", e),
-            _ => {}
-        }
-    } else if let Some(ref conn) = rpc.connection {
-        let assets_to_request: Vec<_> = data.load_states
-            .iter()
-            .filter(|(_, v)| {
-                if let AssetState::WaitingForData = v.state {
-                    true
+    let mut load_states = data.load_states.get_mut().unwrap();
+    process_pending_requests(&mut data.pending_data_requests, |result, handle| {
+        let load = load_states
+            .get_mut(*handle)
+            .expect("load did not exist when data request completed");
+        load.state = match result {
+            Ok(reader) => {
+                let artifacts = reader.get_artifacts()?;
+                if artifacts.len() == 0 {
+                    warn!(
+                        "asset data request did not return any data for asset {:?}",
+                        load.asset_id
+                    );
+                    AssetState::WaitingForData
                 } else {
-                    false
+                    load_data(&handle, load, &artifacts.get(0), storage)?
                 }
-            })
-            .map(|(_, v)| v.asset_id)
-            .collect();
-        let mut request = conn.snapshot.borrow().get_build_artifacts_request();
-        let mut assets = request.get().init_assets(assets_to_request.len() as u32);
-        for (idx, asset) in assets_to_request.iter().enumerate() {
-            assets.reborrow().get(idx as u32).set_id(asset);
+            }
+            Err(err) => {
+                error!(
+                    "asset data request failed for asset {:?}: {}",
+                    load.asset_id, err
+                );
+                AssetState::WaitingForData
+            }
+        };
+        Ok(())
+    });
+    let assets_to_request: Vec<_> = load_states
+        .iter_mut()
+        .filter(|(_, v)| {
+            if let AssetState::WaitingForData = v.state {
+                true
+            } else {
+                false
+            }
+        })
+        .map(|(k, v)| {
+            v.state = AssetState::RequestingData;
+            (v.asset_id, k)
+        })
+        .collect();
+    if assets_to_request.len() > 0 {
+        for (asset, handle) in assets_to_request {
+            let response = rpc.request(move |conn, snapshot| {
+                let mut request = snapshot.get_build_artifacts_request();
+                let mut assets = request.get().init_assets(1);
+                assets.reborrow().get(0).set_id(&asset);
+                (request, handle)
+            });
+            data.pending_data_requests.push(response);
         }
-        let (tx, rx) = channel();
-        rpc.runtime
-            .executor()
-            .spawn(request.send().promise.then(|response| {
-                let _ = tx.send(response);
-                Ok(())
-            }));
-        rpc.pending_data_request = Some(rx);
     }
     Ok(())
 }
@@ -403,130 +405,77 @@ fn process_metadata_requests<HandleType>(
     data: &mut LoaderData<HandleType>,
     rpc: &mut RpcState,
 ) -> Result<(), capnp::Error> {
-    if let Some(ref mut request) = rpc.pending_metadata_request {
-        match request.try_recv() {
-            Ok(Some(request_result)) => {
-                match request_result {
-                    Ok(response) => {
-                        for m in response.get()?.get_assets()? {
-                            update_asset_metadata(data, &m)?;
+    let mut load_states = data.load_states.get_mut().unwrap();
+    let mut uuid_to_load = data.uuid_to_load.get_mut().unwrap();
+    let metadata = &mut data.metadata;
+    process_pending_requests(&mut data.pending_metadata_requests, |result, requested_assets| {
+        match result {
+            Ok(reader) => {
+                let assets = reader.get_assets()?;
+                for asset in assets {
+                    let asset_uuid: AssetUuid = make_array(asset.get_id()?.get_id()?);
+                    update_asset_metadata(metadata, &asset_uuid, &asset)?;
+                    if let Some(load_handle) = uuid_to_load.get(&asset_uuid) {
+                        let state = load_states.get_mut(*load_handle).expect("uuid in uuid_to_load but not in load_states");
+                        if let AssetState::RequestingMetadata = state.state {
+                            state.state = AssetState::WaitingForData
                         }
                     }
-                    Err(err) => error!("error requesting metadata {}", err),
                 }
-                rpc.pending_metadata_request = None;
+                for (_, load_handle) in requested_assets {
+                    let state = load_states.get_mut(*load_handle).expect("uuid in uuid_to_load but not in load_states");
+                    if let AssetState::RequestingMetadata = state.state {
+                        state.state = AssetState::WaitingForMetadata
+                    }
+                }
             }
-            Err(e) => panic!("failed to receive result for metadata request: {:?}", e),
-            _ => {}
-        }
-    } else if let Some(ref conn) = rpc.connection {
-        let assets_to_request: Vec<_> = data.load_states
-            .iter()
-            .filter(|(_, v)| {
-                if let AssetState::WaitingForMetadata = v.state {
-                    true
-                } else {
-                    false
+            Err(err) => {
+                error!(
+                    "metadata request failed: {}",
+                    err
+                );
+                for (_, load_handle) in requested_assets {
+                    let state = load_states.get_mut(*load_handle).expect("uuid in uuid_to_load but not in load_states");
+                    if let AssetState::RequestingMetadata = state.state {
+                        state.state = AssetState::WaitingForMetadata
+                    }
                 }
-            })
-            .map(|(_, v)| v.asset_id)
-            .collect();
-        let mut request = conn
-            .snapshot
-            .borrow()
-            .get_asset_metadata_with_dependencies_request();
-        let mut assets = request.get().init_assets(assets_to_request.len() as u32);
-        for (idx, asset) in assets_to_request.iter().enumerate() {
-            assets.reborrow().get(idx as u32).set_id(asset);
-        }
-        let (tx, rx) = channel();
-        rpc.runtime
-            .executor()
-            .spawn(request.send().promise.then(|response| {
-                let _ = tx.send(response);
-                Ok(())
-            }));
-        rpc.pending_metadata_request = Some(rx);
+            }
+        };
+        Ok(())
+    });
+    let mut load_states = data.load_states.get_mut().unwrap();
+    let assets_to_request: Vec<_> = load_states
+        .iter_mut()
+        .filter(|(_, v)| {
+            if let AssetState::WaitingForMetadata = v.state {
+                true
+            } else {
+                false
+            }
+        })
+        .map(|(k, v)| {
+            v.state = AssetState::RequestingMetadata;
+            (v.asset_id, k)
+        })
+        .collect();
+    if assets_to_request.len() > 0 {
+        let response = rpc.request(move |conn, snapshot| {
+            let mut request = snapshot.get_asset_metadata_with_dependencies_request();
+            let mut assets = request.get().init_assets(assets_to_request.len() as u32);
+            for (idx, (asset, _)) in assets_to_request.iter().enumerate() {
+                assets.reborrow().get(idx as u32).set_id(asset);
+            }
+            (request, assets_to_request)
+        });
+        data.pending_metadata_requests.push(response);
     }
     Ok(())
-}
-
-fn rpc_connect(rpc: &mut RpcState) -> Receiver<Result<RpcConnection, Box<dyn Error>>> {
-    use std::net::ToSocketAddrs;
-    let addr = "127.0.0.1:9999".to_socket_addrs().unwrap().next().unwrap();
-    let (tx, rx) = channel();
-    rpc.runtime.executor().spawn(
-        ::tokio::net::TcpStream::connect(&addr)
-            .map_err(|e| -> Box<dyn Error> { Box::new(e) })
-            .and_then(move |stream| {
-                stream.set_nodelay(true)?;
-                let (reader, writer) = stream.split();
-                let rpc_network = Box::new(twoparty::VatNetwork::new(
-                    reader,
-                    writer,
-                    rpc_twoparty_capnp::Side::Client,
-                    *ReaderOptions::new()
-                        .nesting_limit(64)
-                        .traversal_limit_in_words(64 * 1024 * 1024),
-                ));
-
-                let mut rpc_system = RpcSystem::new(rpc_network, None);
-                let hub: asset_hub::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
-                let disconnector = rpc_system.get_disconnector();
-                tokio_current_thread::TaskExecutor::current()
-                    .spawn_local(Box::new(rpc_system.map_err(|_| ())))?;
-                let request = hub.get_snapshot_request();
-                Ok(request
-                    .send()
-                    .promise
-                    .map(move |response| (disconnector, hub, response))
-                    .map_err(|e| -> Box<dyn Error> { Box::new(e) }))
-            })
-            .flatten()
-            .and_then(|(disconnector, hub, response)| {
-                let snapshot = Rc::new(RefCell::new(response.get()?.get_snapshot()?));
-                let listener = asset_hub::listener::ToClient::new(ListenerImpl {
-                    snapshot: snapshot.clone(),
-                })
-                .into_client::<::capnp_rpc::Server>();
-                let mut request = hub.register_listener_request();
-                request.get().set_listener(listener);
-                Ok(request
-                    .send()
-                    .promise
-                    .map(|_| RpcConnection {
-                        asset_hub: hub,
-                        snapshot,
-                    })
-                    .map_err(|e| -> Box<dyn Error> { Box::new(e) }))
-            })
-            .flatten()
-            .then(|result| {
-                let _ = tx.send(result);
-                Ok(())
-            }),
-    );
-    rx
 }
 
 impl<S> Default for RpcLoader<S> {
     fn default() -> RpcLoader<S> {
         RpcLoader::new().unwrap()
-    }
-}
-
-struct ListenerImpl {
-    snapshot: Rc<RefCell<asset_hub::snapshot::Client>>,
-}
-impl asset_hub::listener::Server for ListenerImpl {
-    fn update(
-        &mut self,
-        params: asset_hub::listener::UpdateParams,
-        _results: asset_hub::listener::UpdateResults,
-    ) -> Promise<()> {
-        let snapshot = params.get()?.get_snapshot()?;
-        self.snapshot.replace(snapshot);
-        Promise::ok(())
     }
 }
 
