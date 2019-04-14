@@ -1,8 +1,8 @@
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
 use crate::utils;
-use futures::sync::mpsc::Sender;
 use atelier_importer::{AssetMetadata, AssetUUID};
+use futures::sync::mpsc::Sender;
 use schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
@@ -121,8 +121,10 @@ fn build_asset_metadata<K>(
                 .init_id()
                 .set_hash(artifact_hash);
         }
-        m.reborrow().set_imported_asset_type(&metadata.import_asset_type);
-        m.reborrow().set_built_asset_type(&metadata.import_asset_type);
+        m.reborrow()
+            .set_imported_asset_type(&metadata.import_asset_type);
+        m.reborrow()
+            .set_built_asset_type(&metadata.import_asset_type);
         m.reborrow().set_source(source);
     }
     value_builder
@@ -331,7 +333,11 @@ impl AssetHub {
         Ok(())
     }
 
-    pub fn add_changes(&self, txn: &mut RwTransaction<'_>, change_batch: ChangeBatch) -> Result<bool> {
+    pub fn add_changes(
+        &self,
+        txn: &mut RwTransaction<'_>,
+        change_batch: ChangeBatch,
+    ) -> Result<bool> {
         // TODO find the set of all changed assets, check the build dependency index and emit changes for all
         // assets that have changed and all the assets where the build_dep_hash has changed.
         // dedupe change events

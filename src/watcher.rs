@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
-use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use crossbeam_channel::Sender as cbSender;
+use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::fs;
 use std::io;

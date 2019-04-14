@@ -31,7 +31,7 @@ struct FileTrackerTables {
     /// Contains SequenceNum -> DirtyFileInfo
     rename_file_events: lmdb::Database,
 }
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum FileTrackerEvent {
     Updated,
 }
@@ -492,8 +492,7 @@ impl FileTracker {
         is_running: &mut bool,
         rx: &Receiver<FileEvent>,
         scan_stack: &mut Vec<ScanContext>,
-        listeners: &[Sender<FileTrackerEvent>],
-    ) -> Result<()> {
+    ) -> Result<Option<FileTrackerEvent>> {
         let mut txn = None;
         while *is_running {
             let timeout = Duration::from_millis(100);
@@ -520,16 +519,13 @@ impl FileTracker {
             if txn.dirty {
                 txn.commit()?;
                 debug!("Commit");
-                for listener in listeners {
-                    debug!("Sent to listener");
-                    select! {
-                        send(listener, FileTrackerEvent::Updated) -> _ => {}
-                        default => {}
-                    }
-                }
+                Ok(Some(FileTrackerEvent::Updated))
+            } else {
+                Ok(None)
             }
+        } else {
+            Ok(None)
         }
-        Ok(())
     }
 
     pub fn run(&self) -> Result<()> {
@@ -552,6 +548,9 @@ impl FileTracker {
         let handle = thread::spawn(move || watcher.run());
         let mut listeners = vec![];
         while self.is_running.load(Ordering::Acquire) {
+            let mut scan_stack = Vec::new();
+            let mut is_running = true;
+            let event = self.read_file_events(&mut is_running, &rx, &mut scan_stack)?;
             select! {
                 recv(self.listener_rx) -> listener => {
                     if let Ok(listener) = listener {
@@ -560,14 +559,18 @@ impl FileTracker {
                 },
                 default => {}
             }
-            {
-                let mut scan_stack = Vec::new();
-                let mut is_running = true;
-                self.read_file_events(&mut is_running, &rx, &mut scan_stack, &listeners)?;
-                assert!(scan_stack.is_empty());
-                if !is_running {
-                    self.is_running.store(false, Ordering::Release);
+            if let Some(event) = event {
+                for listener in listeners.iter() {
+                    debug!("Sent to listener");
+                    select! {
+                        send(listener, event) -> _ => {}
+                        default => {}
+                    }
                 }
+            }
+            assert!(scan_stack.is_empty());
+            if !is_running {
+                self.is_running.store(false, Ordering::Release);
             }
         }
         stop_handle.stop();
@@ -577,7 +580,7 @@ impl FileTracker {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use crate::capnp_db::Environment;
     use crate::file_tracker::{FileTracker, FileTrackerEvent};
     use crossbeam_channel::{self as channel, select, Receiver};
@@ -590,7 +593,7 @@ mod tests {
     };
     use tempfile;
 
-    fn with_tracker<F>(f: F)
+    pub fn with_tracker<F>(f: F)
     where
         F: FnOnce(Arc<FileTracker>, Receiver<FileTrackerEvent>, &Path),
     {
@@ -599,8 +602,15 @@ mod tests {
         {
             let _ = fs::create_dir(db_dir.path());
             let asset_paths = vec![asset_dir.path().to_str().unwrap()];
-            let db =
-                Arc::new(Environment::new(db_dir.path()).expect("failed to create db environment"));
+            let db = Arc::new(
+                Environment::with_map_size(db_dir.path(), 1 << 21).expect(
+                    format!(
+                        "failed to create db environment {}",
+                        db_dir.path().to_string_lossy()
+                    )
+                    .as_str(),
+                ),
+            );
             let tracker =
                 Arc::new(FileTracker::new(db, asset_paths).expect("failed to create tracker"));
             let (tx, rx) = channel::unbounded();
@@ -685,13 +695,13 @@ mod tests {
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
 
-    fn add_test_dir(asset_dir: &Path, name: &str) -> PathBuf {
+    pub fn add_test_dir(asset_dir: &Path, name: &str) -> PathBuf {
         let path = PathBuf::from(asset_dir).join(name);
         fs::create_dir(&path).expect("create dir");
         path
     }
 
-    fn add_test_file(asset_dir: &Path, name: &str) {
+    pub fn add_test_file(asset_dir: &Path, name: &str) {
         fs::copy(
             PathBuf::from("tests/file_tracker/").join(name),
             asset_dir.join(name),
@@ -699,10 +709,10 @@ mod tests {
         .expect("copy test file");
     }
 
-    fn delete_test_file(asset_dir: &Path, name: &str) {
+    pub fn delete_test_file(asset_dir: &Path, name: &str) {
         fs::remove_file(asset_dir.join(name)).expect("delete test file");
     }
-    fn truncate_test_file(asset_dir: &Path, name: &str) {
+    pub fn truncate_test_file(asset_dir: &Path, name: &str) {
         fs::File::create(asset_dir.join(name)).expect("truncate test file");
     }
 

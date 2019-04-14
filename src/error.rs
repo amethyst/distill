@@ -2,12 +2,12 @@ use bincode;
 use capnp;
 use lmdb;
 use log;
+use notify;
 use ron;
 use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 use tokio::executor::SpawnError;
-use notify;
 
 #[derive(Debug)]
 pub enum Error {

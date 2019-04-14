@@ -11,9 +11,9 @@ pub mod capnp_db;
 pub mod error;
 mod file_asset_source;
 pub mod file_tracker;
+mod serialized_asset;
 mod utils;
 pub mod watcher;
-mod serialized_asset;
 
 use crate::{asset_daemon::AssetDaemon, error::Result};
 
@@ -41,11 +41,18 @@ fn init_logging() -> Result<()> {
     Ok(())
 }
 
+fn init_modules() {
+    #[cfg(feature = "amethyst")]
+    amethyst::renderer::Pipeline::build();
+}
+
 fn main() {
     init_logging().expect("failed to init logging");
-amethyst::renderer::Pipeline::build();
+    init_modules();
 
     AssetDaemon::default()
-        .with_importers(atelier_importer::get_source_importers().map(|i| (i.extension, (i.instantiator)())))
+        .with_importers(
+            atelier_importer::get_source_importers().map(|i| (i.extension, (i.instantiator)())),
+        )
         .run();
 }

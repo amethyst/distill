@@ -6,13 +6,13 @@ use crate::{
     file_tracker::FileTracker,
     serialized_asset::SerializedAsset,
 };
+use atelier_importer::AssetUUID;
 use capnp;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{sync::mpsc, Future, Stream};
-use atelier_importer::AssetUUID;
 use owning_ref::OwningHandle;
 use schema::{
-    data::{asset_change_log_entry, asset_metadata, AssetSource, serialized_asset},
+    data::{asset_change_log_entry, asset_metadata, serialized_asset, AssetSource},
     service::asset_hub,
 };
 use std::{
@@ -55,7 +55,8 @@ fn build_serialized_asset_message<T: AsRef<[u8]>>(
     {
         let mut m = value_builder.init_root::<serialized_asset::Builder<'_>>();
         m.reborrow().set_compression(artifact.compression);
-        m.reborrow().set_uncompressed_size(artifact.uncompressed_size as u64);
+        m.reborrow()
+            .set_uncompressed_size(artifact.uncompressed_size as u64);
         m.reborrow().set_type_uuid(artifact.type_uuid.as_bytes());
         let slice: &[u8] = artifact.data.as_ref();
         m.reborrow().set_data(slice);
@@ -192,7 +193,8 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             let mut out = artifact_results.reborrow().get(idx as u32);
             out.reborrow().init_asset_id().set_id(id.as_bytes());
             out.reborrow().set_key(&hash.to_le_bytes());
-            out.reborrow().set_data(artifact.get_root_as_reader::<serialized_asset::Reader<'_>>()?)?;
+            out.reborrow()
+                .set_data(artifact.get_root_as_reader::<serialized_asset::Reader<'_>>()?)?;
         }
         Promise::ok(())
     }

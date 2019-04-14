@@ -3,15 +3,15 @@ use crate::asset_hub::{self, AssetHub};
 use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
 use crate::error::{Error, Result};
 use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
+use crate::serialized_asset::SerializedAsset;
 use crate::utils;
 use crate::watcher::file_metadata;
-use crate::serialized_asset::SerializedAsset;
-use bincode;
-use crossbeam_channel::{self as channel, Receiver};
 use atelier_importer::{
     AssetMetadata, AssetUUID, BoxedImporter, SerdeObj, SourceMetadata as ImporterSourceMetadata,
     SOURCEMETADATA_VERSION,
 };
+use bincode;
+use crossbeam_channel::{self as channel, Receiver};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use ron;
@@ -245,7 +245,8 @@ impl<'a> PairImport<'a> {
                 ),
             ));
             let asset_data = &asset.asset_data;
-            let serialized_asset = SerializedAsset::create(asset_data.as_ref(), CompressionType::None, scratch_buf)?;
+            let serialized_asset =
+                SerializedAsset::create(asset_data.as_ref(), CompressionType::None, scratch_buf)?;
             let build_pipeline = metadata
                 .assets
                 .iter()
@@ -273,10 +274,7 @@ impl<'a> PairImport<'a> {
                 scratch_buf.len(),
             );
         }
-        info!(
-            "Imported pair in {}",
-            start_time.to(PreciseTime::now())
-        );
+        info!("Imported pair in {}", start_time.to(PreciseTime::now()));
         self.source_metadata = Some(SourceMetadata {
             version: SOURCEMETADATA_VERSION,
             import_hash: Some(import_hash),

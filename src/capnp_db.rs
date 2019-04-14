@@ -241,6 +241,15 @@ impl Environment {
         Ok(Environment { env })
     }
 
+    pub fn with_map_size(path: &Path, map_size: usize) -> Result<Environment> {
+        let env = lmdb::Environment::new()
+            .set_max_dbs(64)
+            .set_map_size(map_size)
+            .set_flags(lmdb::EnvironmentFlags::NO_TLS | lmdb::EnvironmentFlags::WRITE_MAP)
+            .open(path)?;
+        Ok(Environment { env })
+    }
+
     pub fn create_db(
         &self,
         name: Option<&str>,
