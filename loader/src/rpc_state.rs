@@ -117,7 +117,7 @@ enum InternalConnectionState {
     Error(Box<dyn Error>),
 }
 
-pub struct ResponsePromise<T: for<'a> capnp::traits::Owned<'a>, U> {
+pub(crate) struct ResponsePromise<T: for<'a> capnp::traits::Owned<'a>, U> {
     rx: Receiver<CapnpResult<Response<T>>>,
     user_data: U,
 }
@@ -145,6 +145,9 @@ pub struct RpcState {
     runtime: Runtime,
     connection: InternalConnectionState,
 }
+// While capnp_rpc does not impl Send or Sync, in our usage of the API there can only be one thread
+// accessing the internal state at any time, and *this is safe* since we using a single-threaded tokio runtime.
+unsafe impl Send for RpcState {}
 impl RpcState {
     pub fn new() -> std::io::Result<RpcState> {
         Ok(RpcState {
@@ -161,7 +164,10 @@ impl RpcState {
             InternalConnectionState::None => ConnectionState::None,
         }
     }
-    pub fn request<F: 'static, Params, Results, U>(&mut self, f: F) -> ResponsePromise<Results, U>
+    pub(crate) fn request<F: 'static, Params, Results, U>(
+        &mut self,
+        f: F,
+    ) -> ResponsePromise<Results, U>
     where
         F: FnOnce(
             &asset_hub::Client,

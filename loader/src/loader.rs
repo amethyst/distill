@@ -6,7 +6,7 @@ use std::{error::Error, sync::Arc};
 pub struct LoadHandle(pub(crate) u64);
 
 pub(crate) enum HandleOp {
-    LoadError(LoadHandle, Box<dyn Error>),
+    LoadError(LoadHandle, Box<dyn Error + Send>),
     LoadComplete(LoadHandle),
     LoadDrop(LoadHandle),
 }
@@ -22,7 +22,7 @@ impl AssetLoadOp {
     pub fn complete(self) {
         let _ = self.sender.send(HandleOp::LoadComplete(self.handle));
     }
-    pub fn error<E: Error + 'static>(self, error: E) {
+    pub fn error<E: Error + 'static + Send>(self, error: E) {
         let _ = self
             .sender
             .send(HandleOp::LoadError(self.handle, Box::new(error)));

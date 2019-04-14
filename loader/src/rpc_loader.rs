@@ -71,12 +71,18 @@ struct LoaderData<HandleType> {
     load_states: RwLock<SlotMap<LoadHandle, AssetStatus<HandleType>>>,
     uuid_to_load: RwLock<HashMap<AssetUuid, LoadHandle>>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
-    pending_data_requests: Vec<ResponsePromise<GetBuildArtifactsResults, LoadHandle>>,
-    pending_metadata_requests:
-        Vec<ResponsePromise<GetAssetMetadataWithDependenciesResults, Vec<(AssetUuid, LoadHandle)>>>,
     op_tx: Sender<HandleOp>,
     op_rx: Receiver<HandleOp>,
 }
+struct RpcRequests {
+    pending_data_requests: Vec<ResponsePromise<GetBuildArtifactsResults, LoadHandle>>,
+    pending_metadata_requests:
+        Vec<ResponsePromise<GetAssetMetadataWithDependenciesResults, Vec<(AssetUuid, LoadHandle)>>>,
+}
+// Capnp responses are not Send because they may contain pointers into various buffers.
+// The RpcRequests must be Send so that the external interface is Send,
+// but internally it is only used within the single-threaded polling API which takes a &mut self.
+unsafe impl Send for RpcRequests {}
 
 impl<HandleType: Clone> LoaderData<HandleType> {
     fn add_ref(&self, id: AssetUuid) -> LoadHandle {
@@ -133,6 +139,7 @@ pub struct RpcLoader<HandleType> {
     connect_string: String,
     rpc: Arc<Mutex<RpcState>>,
     data: LoaderData<HandleType>,
+    requests: Mutex<RpcRequests>,
 }
 
 impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
@@ -181,6 +188,7 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
         asset_storage: &dyn AssetStorage<HandleType = Self::HandleType>,
     ) -> Result<(), Box<dyn Error>> {
         let mut rpc = self.rpc.lock().expect("rpc mutex poisoned");
+        let mut requests = self.requests.lock().expect("rpc requests mutex poisoned");
         match rpc.connection_state() {
             ConnectionState::Error(err) => {
                 error!("Error connecting RPC: {}", err);
@@ -241,8 +249,8 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
             };
             value.state = new_state;
         }
-        // process_metadata_requests(&mut self.data, &mut rpc)?;
-        process_data_requests(&mut self.data, asset_storage, &mut rpc)?;
+        process_metadata_requests(&mut requests, &mut self.data, &mut rpc)?;
+        process_data_requests(&mut requests, &mut self.data, asset_storage, &mut rpc)?;
         Ok(())
     }
 }
@@ -255,12 +263,14 @@ impl<HandleType> RpcLoader<HandleType> {
                 load_states: RwLock::new(SlotMap::with_key()),
                 uuid_to_load: RwLock::new(HashMap::new()),
                 metadata: HashMap::new(),
-                pending_data_requests: Vec::new(),
-                pending_metadata_requests: Vec::new(),
                 op_rx: rx,
                 op_tx: tx,
             },
             rpc: Arc::new(Mutex::new(RpcState::new()?)),
+            requests: Mutex::new(RpcRequests {
+                pending_metadata_requests: Vec::new(),
+                pending_data_requests: Vec::new(),
+            }),
         })
     }
 }
@@ -341,12 +351,13 @@ fn process_pending_requests<T, U, ProcessFunc>(
 }
 
 fn process_data_requests<HandleType>(
+    requests: &mut RpcRequests,
     data: &mut LoaderData<HandleType>,
     storage: &dyn AssetStorage<HandleType = HandleType>,
     rpc: &mut RpcState,
 ) -> Result<(), Box<dyn Error>> {
     let mut load_states = data.load_states.get_mut().unwrap();
-    process_pending_requests(&mut data.pending_data_requests, |result, handle| {
+    process_pending_requests(&mut requests.pending_data_requests, |result, handle| {
         let load = load_states
             .get_mut(*handle)
             .expect("load did not exist when data request completed");
@@ -395,55 +406,62 @@ fn process_data_requests<HandleType>(
                 assets.reborrow().get(0).set_id(&asset);
                 (request, handle)
             });
-            data.pending_data_requests.push(response);
+            requests.pending_data_requests.push(response);
         }
     }
     Ok(())
 }
 
 fn process_metadata_requests<HandleType>(
+    requests: &mut RpcRequests,
     data: &mut LoaderData<HandleType>,
     rpc: &mut RpcState,
 ) -> Result<(), capnp::Error> {
     let mut load_states = data.load_states.get_mut().unwrap();
     let mut uuid_to_load = data.uuid_to_load.get_mut().unwrap();
     let metadata = &mut data.metadata;
-    process_pending_requests(&mut data.pending_metadata_requests, |result, requested_assets| {
-        match result {
-            Ok(reader) => {
-                let assets = reader.get_assets()?;
-                for asset in assets {
-                    let asset_uuid: AssetUuid = make_array(asset.get_id()?.get_id()?);
-                    update_asset_metadata(metadata, &asset_uuid, &asset)?;
-                    if let Some(load_handle) = uuid_to_load.get(&asset_uuid) {
-                        let state = load_states.get_mut(*load_handle).expect("uuid in uuid_to_load but not in load_states");
+    process_pending_requests(
+        &mut requests.pending_metadata_requests,
+        |result, requested_assets| {
+            match result {
+                Ok(reader) => {
+                    let assets = reader.get_assets()?;
+                    for asset in assets {
+                        let asset_uuid: AssetUuid = make_array(asset.get_id()?.get_id()?);
+                        update_asset_metadata(metadata, &asset_uuid, &asset)?;
+                        if let Some(load_handle) = uuid_to_load.get(&asset_uuid) {
+                            let state = load_states
+                                .get_mut(*load_handle)
+                                .expect("uuid in uuid_to_load but not in load_states");
+                            if let AssetState::RequestingMetadata = state.state {
+                                state.state = AssetState::WaitingForData
+                            }
+                        }
+                    }
+                    for (_, load_handle) in requested_assets {
+                        let state = load_states
+                            .get_mut(*load_handle)
+                            .expect("uuid in uuid_to_load but not in load_states");
                         if let AssetState::RequestingMetadata = state.state {
-                            state.state = AssetState::WaitingForData
+                            state.state = AssetState::WaitingForMetadata
                         }
                     }
                 }
-                for (_, load_handle) in requested_assets {
-                    let state = load_states.get_mut(*load_handle).expect("uuid in uuid_to_load but not in load_states");
-                    if let AssetState::RequestingMetadata = state.state {
-                        state.state = AssetState::WaitingForMetadata
+                Err(err) => {
+                    error!("metadata request failed: {}", err);
+                    for (_, load_handle) in requested_assets {
+                        let state = load_states
+                            .get_mut(*load_handle)
+                            .expect("uuid in uuid_to_load but not in load_states");
+                        if let AssetState::RequestingMetadata = state.state {
+                            state.state = AssetState::WaitingForMetadata
+                        }
                     }
                 }
-            }
-            Err(err) => {
-                error!(
-                    "metadata request failed: {}",
-                    err
-                );
-                for (_, load_handle) in requested_assets {
-                    let state = load_states.get_mut(*load_handle).expect("uuid in uuid_to_load but not in load_states");
-                    if let AssetState::RequestingMetadata = state.state {
-                        state.state = AssetState::WaitingForMetadata
-                    }
-                }
-            }
-        };
-        Ok(())
-    });
+            };
+            Ok(())
+        },
+    );
     let mut load_states = data.load_states.get_mut().unwrap();
     let assets_to_request: Vec<_> = load_states
         .iter_mut()
@@ -468,7 +486,7 @@ fn process_metadata_requests<HandleType>(
             }
             (request, assets_to_request)
         });
-        data.pending_metadata_requests.push(response);
+        requests.pending_metadata_requests.push(response);
     }
     Ok(())
 }
