@@ -4,6 +4,9 @@ A "compiler framework for data" aimed at efficiently processing assets for game 
 # Motivation
 Popular commercially available game engines struggle to provide a good user experience for game projects with a large volume of content. Game projects are continuously increasing in size with many AAA projects exceeding hundreds of gigabytes in source assets that are being concurrently produced by hundreds of content creators. The time spent by developers waiting on processing or building of content costs the industry immensely every year. This project aims to provide a collection of libraries, tools and services that can be integrated into a game engine to minimize redundant processing and scale builds to the capabilities your hardware. 
 
+# Vision
+To create a solid default alternative for asset management and build pipelines with mid-to-large sized game development teams as the primary users.
+
 # Features
 The project contains a number of components that can be used to achieve the following features,
 - **Source file change detection**: A background process ensures source files are only parsed when they change. Metadata and hashes are indexed locally in LMDB and version controlled in .meta files, reducing redundant imports across your whole team.
