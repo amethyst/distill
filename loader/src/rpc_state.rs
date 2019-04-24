@@ -1,34 +1,11 @@
-use crate::{
-    loader::{AssetStorage, LoadHandle, LoadInfo, LoadStatus, Loader},
-    AssetTypeId, AssetUuid,
-};
-use capnp::{capability::Response, message::ReaderOptions, Result as CapnpResult};
+use capnp::{message::ReaderOptions, Result as CapnpResult};
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{
     sync::oneshot::{channel, Receiver},
     Future,
 };
-use log::error;
-use schema::{
-    data::{artifact, asset_metadata},
-    service::asset_hub::{
-        self,
-        snapshot::get_asset_metadata_with_dependencies_results::Owned as GetAssetMetadataWithDependenciesResults,
-        snapshot::get_build_artifacts_results::Owned as GetBuildArtifactsResults,
-    },
-};
-use slotmap::{Key, KeyData, SlotMap};
-use std::{
-    boxed::FnBox,
-    cell::RefCell,
-    collections::HashMap,
-    error::Error,
-    rc::Rc,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, RwLock,
-    },
-};
+use schema::service::asset_hub;
+use std::{cell::RefCell, error::Error, rc::Rc};
 use tokio::prelude::*;
 use tokio_current_thread::CurrentThread;
 
@@ -96,13 +73,14 @@ impl Runtime {
                     let mut default_executor = tokio_current_thread::TaskExecutor::current();
                     tokio_executor::with_default(&mut default_executor, enter, |enter| {
                         let mut executor = executor.enter(enter);
-                        executor.run_timeout(std::time::Duration::from_secs(0));
+                        let _ = executor.run_timeout(std::time::Duration::from_secs(0));
                     })
                 });
             });
         });
     }
 }
+#[derive(Debug)]
 pub enum ConnectionState<'a> {
     None,
     Connecting,
@@ -118,7 +96,11 @@ enum InternalConnectionState {
 }
 
 pub(crate) struct ResponsePromise<T: for<'a> capnp::traits::Owned<'a>, U> {
-    rx: Receiver<CapnpResult<Response<T>>>,
+    rx: Receiver<
+        CapnpResult<
+            capnp::message::TypedReader<capnp::message::Builder<capnp::message::HeapAllocator>, T>,
+        >,
+    >,
     user_data: U,
 }
 impl<T: for<'a> capnp::traits::Owned<'a>, U> ResponsePromise<T, U> {
@@ -127,7 +109,8 @@ impl<T: for<'a> capnp::traits::Owned<'a>, U> ResponsePromise<T, U> {
     }
 }
 impl<T: for<'a> capnp::traits::Owned<'a>, U> Future for ResponsePromise<T, U> {
-    type Item = Response<T>;
+    type Item =
+        capnp::message::TypedReader<capnp::message::Builder<capnp::message::HeapAllocator>, T>;
     type Error = Box<dyn Error>;
     fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
         match self.rx.try_recv() {
@@ -146,7 +129,7 @@ pub struct RpcState {
     connection: InternalConnectionState,
 }
 // While capnp_rpc does not impl Send or Sync, in our usage of the API there can only be one thread
-// accessing the internal state at any time, and *this is safe* since we using a single-threaded tokio runtime.
+// accessing the internal state at any time, and this is safe since we are using a single-threaded tokio runtime.
 unsafe impl Send for RpcState {}
 impl RpcState {
     pub fn new() -> std::io::Result<RpcState> {
@@ -180,12 +163,20 @@ impl RpcState {
         if let InternalConnectionState::Connected(ref conn) = self.connection {
             let (req, user_data) = f(&conn.asset_hub, &*conn.snapshot.borrow());
             let (tx, rx) = channel();
-            self.runtime
-                .executor()
-                .spawn(req.send().promise.then(|response| {
-                    let _ = tx.send(response);
-                    Ok(())
-                }));
+            self.runtime.executor().spawn(
+                req.send()
+                    .promise
+                    .and_then(|response| {
+                        let r = response.get()?;
+                        let mut m = capnp::message::Builder::new_default();
+                        m.set_root(r)?;
+                        Ok(capnp::message::TypedReader::new(m.into_reader()))
+                    })
+                    .then(|r| {
+                        let _ = tx.send(r);
+                        Ok(())
+                    }),
+            );
             ResponsePromise { rx, user_data }
         } else {
             panic!("Need to be connected to send requests")

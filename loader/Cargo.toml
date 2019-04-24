@@ -20,6 +20,10 @@ capnp-rpc = { version = "0.9.0", optional = true }
 futures = { version = "0.1", optional = true }
 log = { version = "0.4", optional = true }
 
+[dev-dependencies]
+uuid = {version = "0.7", features = ["v4"] }
+atelier_assets = {path = "../", default-features = false }
+
 [features]
 default = ["rpc_loader"]
 rpc_loader = ["schema", "tokio", "tokio-current-thread", "tokio-executor", "tokio-reactor", "tokio-timer", "capnp", "capnp-rpc", "futures", "log"]

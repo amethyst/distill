@@ -8,7 +8,7 @@ pub mod rpc_loader;
 #[cfg(feature = "rpc_loader")]
 mod rpc_state;
 
-pub use crate::loader::{AssetStorage, LoadHandle, LoadStatus, Loader};
+pub use crate::loader::{AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader};
 pub use slotmap;
 pub type AssetUuid = [u8; 16];
 pub type AssetTypeId = [u8; 16];

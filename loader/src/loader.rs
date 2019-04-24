@@ -2,7 +2,7 @@ use crate::{AssetTypeId, AssetUuid};
 use crossbeam_channel::Sender;
 use std::{error::Error, sync::Arc};
 
-#[derive(Copy, Clone, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct LoadHandle(pub(crate) u64);
 
 pub(crate) enum HandleOp {
@@ -48,13 +48,16 @@ pub trait AssetStorage {
         storage_handle: &Self::HandleType,
         data: &dyn AsRef<[u8]>,
         loader_handle: &LoadHandle,
+        load_op: AssetLoadOp,
+        version: u32,
     ) -> Result<(), Box<dyn Error>>;
-    fn is_loaded(
+    fn commit_asset_version(
         &self,
         asset_type: &AssetTypeId,
         storage_handle: &Self::HandleType,
         loader_handle: &LoadHandle,
-    ) -> bool;
+        version: u32,
+    ) -> Result<(), Box<dyn Error>>;
     fn free(
         &self,
         asset_type: &AssetTypeId,
@@ -63,6 +66,7 @@ pub trait AssetStorage {
     );
 }
 
+#[derive(Debug)]
 pub enum LoadStatus {
     NotRequested,
     Loading,
