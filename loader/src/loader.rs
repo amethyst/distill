@@ -12,25 +12,38 @@ pub(crate) enum HandleOp {
 }
 
 pub struct AssetLoadOp {
-    sender: Arc<Sender<HandleOp>>,
+    sender: Option<Arc<Sender<HandleOp>>>,
     handle: LoadHandle,
 }
 impl AssetLoadOp {
     pub(crate) fn new(sender: Arc<Sender<HandleOp>>, handle: LoadHandle) -> Self {
-        Self { sender, handle }
+        Self {
+            sender: Some(sender),
+            handle,
+        }
     }
-    pub fn complete(self) {
-        let _ = self.sender.send(HandleOp::LoadComplete(self.handle));
-    }
-    pub fn error<E: Error + 'static + Send>(self, error: E) {
+    pub fn complete(mut self) {
         let _ = self
             .sender
+            .as_ref()
+            .unwrap()
+            .send(HandleOp::LoadComplete(self.handle));
+        self.sender = None;
+    }
+    pub fn error<E: Error + 'static + Send>(mut self, error: E) {
+        let _ = self
+            .sender
+            .as_ref()
+            .unwrap()
             .send(HandleOp::LoadError(self.handle, Box::new(error)));
+        self.sender = None;
     }
 }
 impl Drop for AssetLoadOp {
     fn drop(&mut self) {
-        let _ = self.sender.send(HandleOp::LoadDrop(self.handle));
+        if let Some(ref sender) = self.sender {
+            let _ = sender.send(HandleOp::LoadDrop(self.handle));
+        }
     }
 }
 
@@ -57,7 +70,7 @@ pub trait AssetStorage {
         storage_handle: &Self::HandleType,
         loader_handle: &LoadHandle,
         version: u32,
-    ) -> Result<(), Box<dyn Error>>;
+    );
     fn free(
         &self,
         asset_type: &AssetTypeId,
