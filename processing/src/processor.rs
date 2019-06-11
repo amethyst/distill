@@ -1,5 +1,5 @@
 
-use serde_dyn::{TypeUuid, TypeUuidDynamic, uuid};
+use type_uuid::{TypeUuid, TypeUuidDynamic, uuid};
 use std::ops::{DerefMut, Deref};
 use std::sync::Arc;
 use downcast::{Any, Downcast, impl_downcast};
@@ -426,7 +426,7 @@ impl AnyProcessor for ConstantProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_dyn::uuid;
+    use type_uuid::uuid;
      use std::marker::PhantomData;
 
     uuid!{

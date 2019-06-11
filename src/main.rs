@@ -43,7 +43,10 @@ fn init_logging() -> Result<()> {
 
 fn init_modules() {
     #[cfg(feature = "amethyst")]
-    amethyst::renderer::Pipeline::build();
+    {
+        use amethyst::assets::Asset;
+        amethyst::renderer::types::Texture::name();
+    }
 }
 
 fn main() {
@@ -52,7 +55,7 @@ fn main() {
 
     AssetDaemon::default()
         .with_importers(
-            atelier_importer::get_source_importers().map(|i| (i.extension, (i.instantiator)())),
+            atelier_importer::get_source_importers().map(|i| { dbg!(&i); (i.extension, (i.instantiator)()) }),
         )
         .run();
 }

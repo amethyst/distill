@@ -5,7 +5,7 @@ authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-serde_dyn = "0.2.2"
+type-uuid = "0.1"
 slotmap = { version = "0.3", features = ["unstable"] }
 crossbeam-channel = "0.3"
 

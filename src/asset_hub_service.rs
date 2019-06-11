@@ -5,6 +5,7 @@ use crate::{
     file_asset_source::FileAssetSource,
     file_tracker::FileTracker,
     serialized_asset::SerializedAsset,
+    utils,
 };
 use atelier_importer::AssetUUID;
 use capnp;
@@ -57,7 +58,7 @@ fn build_serialized_asset_message<T: AsRef<[u8]>>(
         m.reborrow().set_compression(artifact.compression);
         m.reborrow()
             .set_uncompressed_size(artifact.uncompressed_size as u64);
-        m.reborrow().set_type_uuid(artifact.type_uuid.as_bytes());
+        m.reborrow().set_type_uuid(&artifact.type_uuid);
         let slice: &[u8] = artifact.data.as_ref();
         m.reborrow().set_data(slice);
     }
@@ -75,7 +76,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let txn = &**self.txn;
         let mut metadatas = Vec::new();
         for id in params.get_assets()? {
-            let id = AssetUUID::from_slice(id.get_id()?).map_err(Error::UuidBytesError)?;
+            let id = utils::uuid_from_slice(id.get_id()?)?;
             let value = ctx.hub.get_metadata(txn, &id)?;
             if let Some(metadata) = value {
                 metadatas.push(metadata);
@@ -101,7 +102,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let txn = &**self.txn;
         let mut metadatas = HashMap::new();
         for id in params.get_assets()? {
-            let id = AssetUUID::from_slice(id.get_id()?).map_err(Error::UuidBytesError)?;
+            let id = utils::uuid_from_slice(id.get_id()?)?;
             let value = ctx.hub.get_metadata(txn, &id)?;
             if let Some(metadata) = value {
                 metadatas.insert(id, metadata);
@@ -110,7 +111,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let mut missing_metadata = HashSet::new();
         for metadata in metadatas.values() {
             for dep in metadata.get()?.get_load_deps()? {
-                let dep = AssetUUID::from_slice(dep.get_id()?).map_err(Error::UuidBytesError)?;
+                let dep = utils::uuid_from_slice(dep.get_id()?)?;
                 if !metadatas.contains_key(&dep) {
                     missing_metadata.insert(dep);
                 }
@@ -166,7 +167,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let mut artifacts = Vec::new();
         let mut scratch_buf = Vec::new();
         for id in params.get_assets()? {
-            let id = AssetUUID::from_slice(id.get_id()?).map_err(Error::UuidBytesError)?;
+            let id = utils::uuid_from_slice(id.get_id()?)?;
             let value = ctx.hub.get_metadata(txn, &id)?;
             if let Some(metadata) = value {
                 let metadata = metadata.get()?;
@@ -191,7 +192,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             .init_artifacts(artifacts.len() as u32);
         for (idx, (id, hash, artifact)) in artifacts.iter().enumerate() {
             let mut out = artifact_results.reborrow().get(idx as u32);
-            out.reborrow().init_asset_id().set_id(id.as_bytes());
+            out.reborrow().init_asset_id().set_id(id);
             out.reborrow().set_key(&hash.to_le_bytes());
             out.reborrow()
                 .set_data(artifact.get_root_as_reader::<serialized_asset::Reader<'_>>()?)?;
@@ -251,7 +252,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         let txn = &**self.txn;
         let mut asset_paths = Vec::new();
         for id in params.get_assets()? {
-            let asset_uuid = AssetUUID::from_slice(id.get_id()?).map_err(Error::UuidBytesError)?;
+            let asset_uuid = utils::uuid_from_slice(id.get_id()?)?;
             let path = ctx.file_source.get_asset_path(txn, &asset_uuid)?;
             if let Some(path) = path {
                 asset_paths.push((id, path));

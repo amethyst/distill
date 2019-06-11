@@ -2,7 +2,7 @@ use crate::error::Result;
 use crate::{AssetUUID, AssetTypeId, Importer, ImporterValue, SerdeObj};
 use ron;
 use serde::{Deserialize, Serialize};
-use serde_dyn::{TypeUuid, TypeUuidDynamic};
+use type_uuid::{TypeUuid, TypeUuidDynamic};
 use std::io::Read;
 
 #[derive(Clone, Serialize, Deserialize, Hash, Default)]
@@ -103,6 +103,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct SourceFileImporter {
     pub extension: &'static str,
     pub instantiator: fn() -> Box<dyn BoxedImporter>,

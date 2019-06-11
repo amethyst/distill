@@ -1,5 +1,4 @@
 #![warn(rust_2018_idioms, rust_2018_compatibility)]
-#![feature(fnbox)]
 
 mod asset_data;
 pub mod loader;
@@ -9,6 +8,7 @@ pub mod rpc_loader;
 mod rpc_state;
 
 pub use crate::loader::{AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader};
+pub use type_uuid::{TypeUuid, TypeUuidDynamic};
 pub use slotmap;
 pub type AssetUuid = [u8; 16];
 pub type AssetTypeId = [u8; 16];

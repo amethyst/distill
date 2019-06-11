@@ -1,6 +1,6 @@
 use downcast::*;
 use erased_serde::*;
-use serde_dyn::TypeUuidDynamic;
+use type_uuid::TypeUuidDynamic;
 
 /// A trait for serializing any struct with a TypeUuid
 pub trait SerdeObj: Any + Serialize + TypeUuidDynamic + Send {}

@@ -2,12 +2,11 @@ use crate::error::Result;
 use atelier_importer::SerdeObj;
 use bincode;
 use schema::data::CompressionType;
-use uuid::Uuid;
 
 pub struct SerializedAsset<T: AsRef<[u8]>> {
     pub compression: CompressionType,
     pub uncompressed_size: usize,
-    pub type_uuid: Uuid,
+    pub type_uuid: uuid::Bytes,
     pub data: T,
 }
 
@@ -33,7 +32,7 @@ impl SerializedAsset<Vec<u8>> {
         Ok(SerializedAsset {
             compression,
             uncompressed_size: size,
-            type_uuid: Uuid::from_bytes(value.uuid().to_le_bytes()),
+            type_uuid: value.uuid(),
             data: asset_buf,
         })
     }

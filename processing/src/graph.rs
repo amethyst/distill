@@ -3,7 +3,7 @@ use petgraph;
 use std::collections::{HashMap};
 use std::marker::PhantomData;
 use std::fmt;
-use serde_dyn::{TypeUuid};
+use type_uuid::{TypeUuid};
 use serde::{Serialize, Deserialize};
 use crate::processor::{self, Processor, AnyProcessor, TypeId, ProcessorObj, ProcessorValues};
 
@@ -191,7 +191,7 @@ pub mod serialized {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_dyn::uuid;
+    use type_uuid::uuid;
     use crate::processor::{self, Arg, Val, Processor, ProcessorValues, RunNow};
     use downcast::Downcast;
 

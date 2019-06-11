@@ -4,7 +4,7 @@ mod error;
 mod serde_obj;
 
 use serde::{Deserialize, Serialize};
-use serde_dyn::{TypeUuid, uuid};
+use type_uuid::{TypeUuid};
 use std::io::Read;
 
 pub use self::error::{Error, Result};
@@ -15,7 +15,7 @@ pub use crate::boxed_importer::{
 pub use inventory;
 pub use crate::serde_obj::SerdeObj;
 
-pub type AssetUUID = ::uuid::Uuid;
+pub type AssetUUID = ::uuid::Bytes;
 pub type AssetTypeId = [u8; 16];
 
 /// A format, providing a conversion from bytes to asset data, which is then

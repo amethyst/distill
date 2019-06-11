@@ -66,7 +66,7 @@ fn set_assetid_list(
     builder: &mut capnp::struct_list::Builder<'_, data::asset_uuid::Owned>,
 ) {
     for (idx, uuid) in asset_ids.iter().enumerate() {
-        builder.reborrow().get(idx as u32).set_id(uuid.as_bytes());
+        builder.reborrow().get(idx as u32).set_id(uuid);
     }
 }
 
@@ -78,11 +78,11 @@ fn build_asset_metadata<K>(
     let mut value_builder = capnp::message::Builder::new_default();
     {
         let mut m = value_builder.init_root::<asset_metadata::Builder<'_>>();
-        m.reborrow().init_id().set_id(metadata.id.as_bytes());
+        m.reborrow().init_id().set_id(&metadata.id);
         if let Some(pipeline) = metadata.build_pipeline {
             m.reborrow()
                 .init_build_pipeline()
-                .set_id(pipeline.as_bytes());
+                .set_id(&pipeline);
         }
         set_assetid_list(
             &metadata.load_deps,
@@ -152,7 +152,7 @@ fn add_asset_changelog_entry(
         match change {
             ChangeEvent::ContentUpdate(evt) => {
                 let mut db_evt = value.init_content_update_event();
-                db_evt.reborrow().init_id().set_id(evt.id.as_bytes());
+                db_evt.reborrow().init_id().set_id(&evt.id);
                 if let Some(ref import_hash) = evt.import_hash {
                     db_evt.reborrow().init_import_hash().set_hash(import_hash);
                 }
@@ -161,7 +161,7 @@ fn add_asset_changelog_entry(
                 }
             }
             ChangeEvent::Remove(id) => {
-                value.init_remove_event().init_id().set_id(id.as_bytes());
+                value.init_remove_event().init_id().set_id(id);
             }
         }
     }
@@ -201,7 +201,7 @@ impl AssetHub {
         txn: &'a V,
         id: &AssetUUID,
     ) -> Result<Option<MessageReader<'a, asset_metadata::Owned>>> {
-        Ok(txn.get::<asset_metadata::Owned, _>(self.tables.asset_metadata, id.as_bytes())?)
+        Ok(txn.get::<asset_metadata::Owned, _>(self.tables.asset_metadata, &id)?)
     }
 
     pub fn get_build_deps_reverse<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -210,7 +210,7 @@ impl AssetHub {
         id: &AssetUUID,
     ) -> Result<Option<MessageReader<'a, data::asset_uuid_list::Owned>>> {
         Ok(txn
-            .get::<data::asset_uuid_list::Owned, _>(self.tables.build_dep_reverse, id.as_bytes())?)
+            .get::<data::asset_uuid_list::Owned, _>(self.tables.build_dep_reverse, &id)?)
     }
 
     fn put_build_deps_reverse(
@@ -223,9 +223,9 @@ impl AssetHub {
         let mut value = value_builder.init_root::<data::asset_uuid_list::Builder<'_>>();
         let mut list = value.reborrow().init_list(dependees.len() as u32);
         for (idx, uuid) in dependees.iter().enumerate() {
-            list.reborrow().get(idx as u32).set_id(uuid.as_bytes());
+            list.reborrow().get(idx as u32).set_id(uuid);
         }
-        txn.put(self.tables.build_dep_reverse, id.as_bytes(), &value_builder)?;
+        txn.put(self.tables.build_dep_reverse, &id, &value_builder)?;
         Ok(())
     }
 
@@ -240,7 +240,7 @@ impl AssetHub {
         let hash_bytes = import_hash.to_le_bytes();
         let mut maybe_id = None;
         let existing_metadata: Option<MessageReader<'_, asset_metadata::Owned>> =
-            txn.get(self.tables.asset_metadata, metadata.id.as_bytes())?;
+            txn.get(self.tables.asset_metadata, &metadata.id)?;
         let new_metadata = build_asset_metadata::<&[u8; 8]>(&metadata, Some(&hash_bytes), source);
         let mut deps_to_delete = Vec::new();
         let mut deps_to_add = Vec::new();
@@ -251,7 +251,7 @@ impl AssetHub {
                 maybe_id = Some(Vec::from(id.get_hash()?));
             }
             for dep in existing_metadata.get_build_deps()? {
-                let dep = AssetUUID::from_slice(dep.get_id()?)?;
+                let dep = utils::uuid_from_slice(dep.get_id()?)?;
                 if !metadata.build_deps.contains(&dep) {
                     deps_to_delete.push(dep);
                 }
@@ -268,7 +268,7 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    dependees.push(AssetUUID::from_slice(uuid.get_id()?)?);
+                    dependees.push(utils::uuid_from_slice(uuid.get_id()?)?);
                 }
             }
             dependees.push(metadata.id);
@@ -278,19 +278,19 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    dependees.push(AssetUUID::from_slice(uuid.get_id()?)?);
+                    dependees.push(utils::uuid_from_slice(uuid.get_id()?)?);
                 }
             }
             dependees.remove_item(&metadata.id);
             if dependees.is_empty() {
-                txn.delete(self.tables.build_dep_reverse, &dep.as_bytes())?;
+                txn.delete(self.tables.build_dep_reverse, &dep)?;
             } else {
                 self.put_build_deps_reverse(txn, &dep, dependees)?;
             }
         }
         txn.put(
             self.tables.asset_metadata,
-            metadata.id.as_bytes(),
+            &metadata.id,
             &new_metadata,
         )?;
         if artifact_changed {
@@ -310,22 +310,22 @@ impl AssetHub {
         if let Some(metadata) = metadata {
             let metadata = metadata.get()?;
             for dep in metadata.get_build_deps()? {
-                deps_to_delete.push(AssetUUID::from_slice(dep.get_id()?)?);
+                deps_to_delete.push(utils::uuid_from_slice(dep.get_id()?)?);
             }
         }
-        if txn.delete(self.tables.asset_metadata, id.as_bytes())? {
+        if txn.delete(self.tables.asset_metadata, &id)? {
             change_batch.content_changes.push(*id);
         }
         for dep in deps_to_delete {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    dependees.push(AssetUUID::from_slice(uuid.get_id()?)?);
+                    dependees.push(utils::uuid_from_slice(uuid.get_id()?)?);
                 }
             }
             dependees.remove_item(&id);
             if dependees.is_empty() {
-                txn.delete(self.tables.build_dep_reverse, &dep.as_bytes())?;
+                txn.delete(self.tables.build_dep_reverse, &dep)?;
             } else {
                 self.put_build_deps_reverse(txn, &dep, dependees)?;
             }
@@ -355,7 +355,7 @@ impl AssetHub {
             if affected_assets.insert(id) {
                 if let Some(dependees) = self.get_build_deps_reverse(txn, &id)? {
                     for dependee in dependees.get()?.get_list()? {
-                        to_check.push_back(AssetUUID::from_slice(dependee.get_id()?)?);
+                        to_check.push_back(utils::uuid_from_slice(dependee.get_id()?)?);
                     }
                 }
             }
@@ -381,7 +381,7 @@ impl AssetHub {
                             dependency_graph.insert(asset, Vec::from(id.get_hash()?));
                         }
                         for dep in metadata.get_build_deps()? {
-                            to_check.push_back(AssetUUID::from_slice(dep.get_id()?)?);
+                            to_check.push_back(utils::uuid_from_slice(dep.get_id()?)?);
                         }
                     }
                 }

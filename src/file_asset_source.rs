@@ -75,9 +75,9 @@ type SerializedAssetVec = SerializedAsset<Vec<u8>>;
 #[derive(Debug)]
 pub struct SavedImportMetadata<'a> {
     importer_version: u32,
-    options_type: u128,
+    options_type: uuid::Bytes,
     options: &'a [u8],
-    state_type: u128,
+    state_type: uuid::Bytes,
     state: &'a [u8],
     build_pipelines: HashMap<AssetUUID, AssetUUID>,
 }
@@ -263,7 +263,7 @@ impl<'a> PairImport<'a> {
                         load_deps: asset.load_deps,
                         instantiate_deps: asset.instantiate_deps,
                         build_pipeline,
-                        import_asset_type: asset_data.uuid().to_le_bytes(),
+                        import_asset_type: asset_data.uuid(),
                     },
                     asset: Some(serialized_asset),
                 }
@@ -391,15 +391,15 @@ pub fn get_saved_import_metadata<'a>(
     let mut build_pipelines = HashMap::new();
     for pair in metadata.get_build_pipelines()?.iter() {
         build_pipelines.insert(
-            AssetUUID::from_bytes(utils::make_array(&pair.get_key()?.get_id()?)),
-            AssetUUID::from_bytes(utils::make_array(&pair.get_value()?.get_id()?)),
+            utils::uuid_from_slice(&pair.get_key()?.get_id()?)?,
+            utils::uuid_from_slice(&pair.get_value()?.get_id()?)?,
         );
     }
     Ok(SavedImportMetadata {
         importer_version: metadata.get_importer_version(),
-        options_type: u128::from_le_bytes(utils::make_array(metadata.get_importer_options_type()?)),
+        options_type: utils::uuid_from_slice(metadata.get_importer_options_type()?)?,
         options: metadata.get_importer_options()?,
-        state_type: u128::from_le_bytes(utils::make_array(metadata.get_importer_state_type()?)),
+        state_type: utils::uuid_from_slice(metadata.get_importer_state_type()?)?,
         state: metadata.get_importer_state()?,
         build_pipelines: build_pipelines,
     })
@@ -440,11 +440,11 @@ impl FileAssetSource {
             let mut value = value_builder.init_root::<source_metadata::Builder<'_>>();
             {
                 value.set_importer_version(metadata.importer_version);
-                value.set_importer_state_type(&metadata.importer_state.uuid().to_le_bytes());
+                value.set_importer_state_type(&metadata.importer_state.uuid());
                 let mut state_buf = Vec::new();
                 bincode::serialize_into(&mut state_buf, &metadata.importer_state)?;
                 value.set_importer_state(&state_buf);
-                value.set_importer_options_type(&metadata.importer_options.uuid().to_le_bytes());
+                value.set_importer_options_type(&metadata.importer_options.uuid());
                 let mut options_buf = Vec::new();
                 bincode::serialize_into(&mut options_buf, &metadata.importer_options)?;
                 value.set_importer_options(&options_buf);
@@ -454,7 +454,7 @@ impl FileAssetSource {
                 assets
                     .reborrow()
                     .get(idx as u32)
-                    .set_id(asset.id.as_bytes());
+                    .set_id(&asset.id);
             }
             let assets_with_pipelines: Vec<&AssetMetadata> = metadata
                 .assets
@@ -469,12 +469,12 @@ impl FileAssetSource {
                     .reborrow()
                     .get(idx as u32)
                     .init_key()
-                    .set_id(asset.id.as_bytes());
+                    .set_id(&asset.id);
                 build_pipelines
                     .reborrow()
                     .get(idx as u32)
                     .init_value()
-                    .set_id(asset.build_pipeline.unwrap().as_bytes());
+                    .set_id(&asset.build_pipeline.unwrap());
             }
         }
         let key_str = path.to_string_lossy();
@@ -507,7 +507,7 @@ impl FileAssetSource {
     ) -> Result<()> {
         let path_str = path.to_string_lossy();
         let path = path_str.as_bytes();
-        txn.put_bytes(self.tables.asset_id_to_path, asset_id.as_bytes(), &path)?;
+        txn.put_bytes(self.tables.asset_id_to_path, asset_id, &path)?;
         Ok(())
     }
 
@@ -516,7 +516,7 @@ impl FileAssetSource {
         txn: &'a V,
         asset_id: &AssetUUID,
     ) -> Result<Option<PathBuf>> {
-        match txn.get_as_bytes(self.tables.asset_id_to_path, asset_id.as_bytes())? {
+        match txn.get_as_bytes(self.tables.asset_id_to_path, asset_id)? {
             Some(p) => Ok(Some(PathBuf::from(
                 str::from_utf8(p).expect("Encoded key was invalid utf8"),
             ))),
@@ -525,7 +525,7 @@ impl FileAssetSource {
     }
 
     fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUUID) -> Result<bool> {
-        Ok(txn.delete(self.tables.asset_id_to_path, asset_id.as_bytes())?)
+        Ok(txn.delete(self.tables.asset_id_to_path, asset_id)?)
     }
 
     pub fn regenerate_import_artifact<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -752,7 +752,7 @@ impl FileAssetSource {
                 let existing_metadata = self.get_metadata(txn, path)?;
                 if let Some(ref existing_metadata) = existing_metadata {
                     for asset in existing_metadata.get()?.get_assets()? {
-                        to_remove.push(AssetUUID::from_slice(asset.get_id()?)?);
+                        to_remove.push(utils::uuid_from_slice(asset.get_id()?)?);
                     }
                 }
             }
@@ -769,7 +769,7 @@ impl FileAssetSource {
             let mut to_remove = Vec::new();
             if let Some(existing_metadata) = self.get_metadata(txn, path)? {
                 for asset in existing_metadata.get()?.get_assets()? {
-                    let id = AssetUUID::from_slice(asset.get_id()?)?;
+                    let id = utils::uuid_from_slice(asset.get_id()?)?;
                     debug!("asset {:?}", asset.get_id()?);
                     if metadata.assets.iter().all(|a| a.id != id) {
                         to_remove.push(id);

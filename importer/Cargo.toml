@@ -7,7 +7,7 @@ edition = "2018"
 uuid = { version = "0.7", features = ["v4", "serde"] }
 downcast = "0.10"
 serde = "1.0"
-serde_dyn = "0.2.2"
+type-uuid = "0.1"
 erased-serde = "0.3.6"
 ron = "0.4.0"
 bincode = "1.0.1"
