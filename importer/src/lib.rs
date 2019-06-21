@@ -1,4 +1,3 @@
-mod amethyst_formats;
 mod boxed_importer;
 mod error;
 mod serde_obj;
