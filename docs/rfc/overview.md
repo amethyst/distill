@@ -38,7 +38,7 @@ The required changes to Amethyst as an engine are comprehensive but finite. To m
 RFCs
 - AssetID - unified system of referencing any individual asset that is loaded from a source file
 - Format rework - new traits to replace assets::Format: Importer and Builder that generate metadata and enable deterministic builds and caching of build artifacts
-- TypeUUID and type registry - dynamic serialization and deserialization using serde_dyn and a type registry
+- TypeUUID and type registry - dynamic serialization and deserialization using type_uuid and a type registry
 - Reflection - runtime fixup of AssetID -> Handle at deserialize time
 - AssetHub - daemon/service that runs on development machines and watches project directories for changes, performs imports and maintains metadata
 - RPC - protocol for communication between tooling (AssetHub primarily) and engine

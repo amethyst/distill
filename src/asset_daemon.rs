@@ -18,6 +18,7 @@ pub struct AssetDaemon {
     db_dir: PathBuf,
     address: SocketAddr,
     importers: ImporterMap,
+    asset_dirs: Vec<PathBuf>,
 }
 
 impl Default for AssetDaemon {
@@ -26,6 +27,7 @@ impl Default for AssetDaemon {
             db_dir: PathBuf::from(".amethyst"),
             address: "127.0.0.1:9999".parse().unwrap(),
             importers: Default::default(),
+            asset_dirs: vec![PathBuf::from("assets")],
         }
     }
 }
@@ -55,12 +57,19 @@ impl AssetDaemon {
         })
     }
 
+    pub fn with_asset_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
+        self.asset_dirs = dirs;
+        self
+    }
+
     pub fn run(self) {
         let _ = fs::create_dir(&self.db_dir);
-        let _ = fs::create_dir_all(&Path::new("assets"));
+        for dir in self.asset_dirs.iter() {
+            let _ = fs::create_dir_all(dir);
+        }
         let asset_db = Arc::new(Environment::new(&self.db_dir).expect("failed to create asset db"));
         let tracker = Arc::new(
-            FileTracker::new(asset_db.clone(), vec!["assets"]).expect("failed to create tracker"),
+            FileTracker::new(asset_db.clone(), self.asset_dirs.iter().map(|p| p.to_str().unwrap())).expect("failed to create tracker"),
         );
 
         let hub = Arc::new(

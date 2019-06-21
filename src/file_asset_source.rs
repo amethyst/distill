@@ -451,10 +451,7 @@ impl FileAssetSource {
             }
             let mut assets = value.reborrow().init_assets(metadata.assets.len() as u32);
             for (idx, asset) in metadata.assets.iter().enumerate() {
-                assets
-                    .reborrow()
-                    .get(idx as u32)
-                    .set_id(&asset.id);
+                assets.reborrow().get(idx as u32).set_id(&asset.id);
             }
             let assets_with_pipelines: Vec<&AssetMetadata> = metadata
                 .assets
@@ -655,6 +652,7 @@ impl FileAssetSource {
                 source_hash: Some(hash),
                 ..
             } => {
+                debug!("file without meta {}", source.path.to_string_lossy());
                 let metadata = self.get_metadata(txn, &source.path)?;
                 let saved_metadata = if let Some(ref m) = metadata {
                     Some(get_saved_import_metadata(&m.get()?)?)
@@ -664,6 +662,7 @@ impl FileAssetSource {
                 let mut import = PairImport::new(source.path);
                 import.with_source_hash(hash);
                 if !import.with_importer_from_map(&self.importers)? {
+                    debug!("file has no importer registered");
                     Ok(None)
                 } else {
                     import.default_or_saved_metadata(saved_metadata)?;
@@ -770,7 +769,6 @@ impl FileAssetSource {
             if let Some(existing_metadata) = self.get_metadata(txn, path)? {
                 for asset in existing_metadata.get()?.get_assets()? {
                     let id = utils::uuid_from_slice(asset.get_id()?)?;
-                    debug!("asset {:?}", asset.get_id()?);
                     if metadata.assets.iter().all(|a| a.id != id) {
                         to_remove.push(id);
                     }
@@ -783,7 +781,7 @@ impl FileAssetSource {
             }
             self.put_metadata(txn, path, &metadata)?;
             for asset in metadata.assets.iter() {
-                debug!("updating asset {:?}", asset.id);
+                debug!("updating asset {:?}", uuid::Uuid::from_bytes(asset.id));
                 match self.get_asset_path(txn, &asset.id)? {
                     Some(ref old_path) if old_path != path => {
                         error!(

@@ -6,7 +6,7 @@ edition = "2018"
 [dependencies]
 schema = { path = "schema" }
 atelier_importer = { path = "importer" }
-capnp = { version = "0.9.4", features = ["rpc_try"] }
+capnp = { version = "0.9.4" }
 capnp-rpc = "0.9.0"
 notify = "4.0.0"
 lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
@@ -31,8 +31,7 @@ time = "0.1"
 parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
 uuid = "0.7"
 smush = { version = "0.1", default-features = false, features = [ "lz4_support" ] }
-slotmap = { version = "0.3.0", features = [ "unstable" ] }
-amethyst = { path = "../amethyst", optional = true, features = ["importers"] }
+amethyst = { path = "../amethyst", optional = true, features = ["experimental-assets"] }
 
 [dev-dependencies]
 tempfile = "3"

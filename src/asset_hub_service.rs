@@ -1,15 +1,14 @@
 use crate::{
     asset_hub::{AssetBatchEvent, AssetHub},
     capnp_db::{CapnpCursor, Environment, RoTransaction},
-    error::{Error, Result},
+    error::Error,
     file_asset_source::FileAssetSource,
     file_tracker::FileTracker,
     serialized_asset::SerializedAsset,
     utils,
 };
-use atelier_importer::AssetUUID;
 use capnp;
-use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
+use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{sync::mpsc, Future, Stream};
 use owning_ref::OwningHandle;
 use schema::{
@@ -28,6 +27,7 @@ use tokio::runtime::current_thread::Runtime;
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
+type Result<T> = std::result::Result<T, capnp::Error>;
 
 struct ServiceContext {
     hub: Arc<AssetHub>,
@@ -65,12 +65,12 @@ fn build_serialized_asset_message<T: AsRef<[u8]>>(
     value_builder
 }
 
-impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
+impl<'a> AssetHubSnapshotImpl<'a> {
     fn get_asset_metadata(
         &mut self,
         params: asset_hub::snapshot::GetAssetMetadataParams,
         mut results: asset_hub::snapshot::GetAssetMetadataResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let params = params.get()?;
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
@@ -90,13 +90,13 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             let metadata = metadata.get()?;
             assets.set_with_caveats(idx as u32, metadata)?;
         }
-        Promise::ok(())
+        Ok(())
     }
     fn get_asset_metadata_with_dependencies(
         &mut self,
         params: asset_hub::snapshot::GetAssetMetadataWithDependenciesParams,
         mut results: asset_hub::snapshot::GetAssetMetadataWithDependenciesResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let params = params.get()?;
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
@@ -131,13 +131,13 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             let metadata = metadata.get()?;
             assets.set_with_caveats(idx as u32, metadata)?;
         }
-        Promise::ok(())
+        Ok(())
     }
     fn get_all_asset_metadata(
         &mut self,
         _params: asset_hub::snapshot::GetAllAssetMetadataParams,
         mut results: asset_hub::snapshot::GetAllAssetMetadataResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
         let mut metadatas = Vec::new();
@@ -154,13 +154,13 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             let metadata = metadata.get()?;
             assets.set_with_caveats(idx as u32, metadata)?;
         }
-        Promise::ok(())
+        Ok(())
     }
     fn get_build_artifacts(
         &mut self,
         params: asset_hub::snapshot::GetBuildArtifactsParams,
         mut results: asset_hub::snapshot::GetBuildArtifactsResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let params = params.get()?;
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
@@ -197,24 +197,24 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             out.reborrow()
                 .set_data(artifact.get_root_as_reader::<serialized_asset::Reader<'_>>()?)?;
         }
-        Promise::ok(())
+        Ok(())
     }
     fn get_latest_asset_change(
         &mut self,
         _params: asset_hub::snapshot::GetLatestAssetChangeParams,
         mut results: asset_hub::snapshot::GetLatestAssetChangeResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
         let change_num = ctx.hub.get_latest_asset_change(txn)?;
         results.get().set_num(change_num);
-        Promise::ok(())
+        Ok(())
     }
     fn get_asset_changes(
         &mut self,
         params: asset_hub::snapshot::GetAssetChangesParams,
         mut results: asset_hub::snapshot::GetAssetChangesResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let params = params.get()?;
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
@@ -240,13 +240,13 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             let change = change.get()?;
             changes_results.set_with_caveats(idx as u32, change)?;
         }
-        Promise::ok(())
+        Ok(())
     }
     fn get_path_for_assets(
         &mut self,
         params: asset_hub::snapshot::GetPathForAssetsParams,
         mut results: asset_hub::snapshot::GetPathForAssetsResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let params = params.get()?;
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
@@ -273,13 +273,13 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
                 .init_id()
                 .set_id(asset.get_id()?);
         }
-        Promise::ok(())
+        Ok(())
     }
     fn get_assets_for_paths(
         &mut self,
         params: asset_hub::snapshot::GetAssetsForPathsParams,
         mut results: asset_hub::snapshot::GetAssetsForPathsResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let params = params.get()?;
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
@@ -328,7 +328,7 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             }
             results.reborrow().get(idx as u32).set_path(path);
         }
-        Promise::ok(())
+        Ok(())
     }
 }
 
@@ -336,8 +336,24 @@ impl asset_hub::Server for AssetHubImpl {
     fn register_listener(
         &mut self,
         params: asset_hub::RegisterListenerParams,
-        _results: asset_hub::RegisterListenerResults,
+        results: asset_hub::RegisterListenerResults,
     ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubImpl::register_listener(self, params, results)))
+    }
+    fn get_snapshot(
+        &mut self,
+        params: asset_hub::GetSnapshotParams,
+        results: asset_hub::GetSnapshotResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubImpl::get_snapshot(self, params, results)))
+    }
+}
+impl AssetHubImpl {
+    fn register_listener(
+        &mut self,
+        params: asset_hub::RegisterListenerParams,
+        _results: asset_hub::RegisterListenerResults,
+    ) -> Result<()> {
         let params = params.get()?;
         let listener = Rc::new(params.get_listener()?);
         let ctx = self.ctx.clone();
@@ -377,14 +393,14 @@ impl asset_hub::Server for AssetHubImpl {
                 Ok(())
             })))
             .map_err(Error::TokioSpawnError)?;
-        Promise::ok(())
+        Ok(())
     }
 
     fn get_snapshot(
         &mut self,
         _params: asset_hub::GetSnapshotParams,
         mut results: asset_hub::GetSnapshotResults,
-    ) -> Promise<()> {
+    ) -> Result<()> {
         let ctx = self.ctx.clone();
         let snapshot = AssetHubSnapshotImpl {
             txn: Rc::new(OwningHandle::new_with_fn(ctx, |t| unsafe {
@@ -394,7 +410,7 @@ impl asset_hub::Server for AssetHubImpl {
         results.get().set_snapshot(
             asset_hub::snapshot::ToClient::new(snapshot).into_client::<::capnp_rpc::Server>(),
         );
-        Promise::ok(())
+        Ok(())
     }
 }
 
@@ -456,7 +472,7 @@ impl AssetHubService {
             spawn_rpc(reader, writer, self.ctx.clone());
             Ok(())
         });
-
+        let _ = std::fs::remove_file(endpoint());
         let ipc = Endpoint::new(endpoint());
 
         let ipc_future = ipc
@@ -470,5 +486,80 @@ impl AssetHubService {
 
         runtime.block_on(tcp_future.join(ipc_future))?;
         Ok(())
+    }
+}
+
+impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
+    fn get_asset_metadata(
+        &mut self,
+        params: asset_hub::snapshot::GetAssetMetadataParams,
+        results: asset_hub::snapshot::GetAssetMetadataResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubSnapshotImpl::get_asset_metadata(
+            self, params, results
+        )))
+    }
+    fn get_asset_metadata_with_dependencies(
+        &mut self,
+        params: asset_hub::snapshot::GetAssetMetadataWithDependenciesParams,
+        results: asset_hub::snapshot::GetAssetMetadataWithDependenciesResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(
+            AssetHubSnapshotImpl::get_asset_metadata_with_dependencies(self, params, results)
+        ))
+    }
+    fn get_all_asset_metadata(
+        &mut self,
+        params: asset_hub::snapshot::GetAllAssetMetadataParams,
+        results: asset_hub::snapshot::GetAllAssetMetadataResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubSnapshotImpl::get_all_asset_metadata(
+            self, params, results
+        )))
+    }
+    fn get_build_artifacts(
+        &mut self,
+        params: asset_hub::snapshot::GetBuildArtifactsParams,
+        results: asset_hub::snapshot::GetBuildArtifactsResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubSnapshotImpl::get_build_artifacts(
+            self, params, results
+        )))
+    }
+    fn get_latest_asset_change(
+        &mut self,
+        params: asset_hub::snapshot::GetLatestAssetChangeParams,
+        results: asset_hub::snapshot::GetLatestAssetChangeResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubSnapshotImpl::get_latest_asset_change(
+            self, params, results
+        )))
+    }
+    fn get_asset_changes(
+        &mut self,
+        params: asset_hub::snapshot::GetAssetChangesParams,
+        results: asset_hub::snapshot::GetAssetChangesResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubSnapshotImpl::get_asset_changes(
+            self, params, results
+        )))
+    }
+    fn get_path_for_assets(
+        &mut self,
+        params: asset_hub::snapshot::GetPathForAssetsParams,
+        results: asset_hub::snapshot::GetPathForAssetsResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubSnapshotImpl::get_path_for_assets(
+            self, params, results
+        )))
+    }
+    fn get_assets_for_paths(
+        &mut self,
+        params: asset_hub::snapshot::GetAssetsForPathsParams,
+        results: asset_hub::snapshot::GetAssetsForPathsResults,
+    ) -> Promise<()> {
+        Promise::ok(pry!(AssetHubSnapshotImpl::get_assets_for_paths(
+            self, params, results
+        )))
     }
 }

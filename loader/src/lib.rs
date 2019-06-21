@@ -9,6 +9,5 @@ mod rpc_state;
 
 pub use crate::loader::{AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader};
 pub use type_uuid::{TypeUuid, TypeUuidDynamic};
-pub use slotmap;
 pub type AssetUuid = [u8; 16];
 pub type AssetTypeId = [u8; 16];

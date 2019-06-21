@@ -1,5 +1,5 @@
 use capnp::{message::ReaderOptions, Result as CapnpResult};
-use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem, pry};
 use futures::{
     sync::oneshot::{channel, Receiver},
     Future,
@@ -20,14 +20,12 @@ struct Runtime {
     reactor_handle: tokio_reactor::Handle,
     timer_handle: tokio_timer::timer::Handle,
     clock: tokio_timer::clock::Clock,
-    executor:
-        tokio_current_thread::CurrentThread<tokio_timer::timer::Timer<tokio_reactor::Reactor>>,
+    executor: CurrentThread<tokio_timer::timer::Timer<tokio_reactor::Reactor>>,
 }
 
 impl Runtime {
     /// Create the configured `Runtime`.
     pub fn new() -> std::io::Result<Runtime> {
-        use tokio_current_thread::CurrentThread;
         use tokio_reactor::Reactor;
         use tokio_timer::{clock::Clock, timer::Timer};
         // We need a reactor to receive events about IO objects from kernel
@@ -277,7 +275,7 @@ impl asset_hub::listener::Server for ListenerImpl {
         params: asset_hub::listener::UpdateParams,
         _results: asset_hub::listener::UpdateResults,
     ) -> Promise<()> {
-        let snapshot = params.get()?.get_snapshot()?;
+        let snapshot = pry!(pry!(params.get()).get_snapshot());
         self.snapshot.replace(snapshot);
         Promise::ok(())
     }

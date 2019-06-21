@@ -3,8 +3,7 @@ mod boxed_importer;
 mod error;
 mod serde_obj;
 
-use serde::{Deserialize, Serialize};
-use type_uuid::{TypeUuid};
+use serde::{Serialize};
 use std::io::Read;
 
 pub use self::error::{Error, Result};

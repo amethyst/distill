@@ -7,19 +7,19 @@ use schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
 };
-use slotmap::SlotMap;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::{Ordering, AtomicU64}},
 };
 
-pub type ListenerID = slotmap::DefaultKey;
+pub type ListenerID = u64;
 
 pub struct AssetHub {
     // db: Arc<Environment>,
     tables: AssetHubTables,
-    listeners: Mutex<SlotMap<ListenerID, Sender<AssetBatchEvent>>>,
+    id_gen: AtomicU64,
+    listeners: Mutex<HashMap<ListenerID, Sender<AssetBatchEvent>>>,
 }
 
 struct AssetContentUpdateEvent {
@@ -80,9 +80,7 @@ fn build_asset_metadata<K>(
         let mut m = value_builder.init_root::<asset_metadata::Builder<'_>>();
         m.reborrow().init_id().set_id(&metadata.id);
         if let Some(pipeline) = metadata.build_pipeline {
-            m.reborrow()
-                .init_build_pipeline()
-                .set_id(&pipeline);
+            m.reborrow().init_build_pipeline().set_id(&pipeline);
         }
         set_assetid_list(
             &metadata.load_deps,
@@ -184,7 +182,8 @@ impl AssetHub {
                 asset_changes: db
                     .create_db(Some("asset_changes"), lmdb::DatabaseFlags::INTEGER_KEY)?,
             },
-            listeners: Mutex::new(SlotMap::new()),
+            id_gen: AtomicU64::new(1),
+            listeners: Mutex::new(HashMap::new()),
         })
     }
 
@@ -209,8 +208,7 @@ impl AssetHub {
         txn: &'a V,
         id: &AssetUUID,
     ) -> Result<Option<MessageReader<'a, data::asset_uuid_list::Owned>>> {
-        Ok(txn
-            .get::<data::asset_uuid_list::Owned, _>(self.tables.build_dep_reverse, &id)?)
+        Ok(txn.get::<data::asset_uuid_list::Owned, _>(self.tables.build_dep_reverse, &id)?)
     }
 
     fn put_build_deps_reverse(
@@ -255,7 +253,10 @@ impl AssetHub {
                 if !metadata.build_deps.contains(&dep) {
                     deps_to_delete.push(dep);
                 }
-                deps_to_add.remove_item(&dep);
+                deps_to_add
+                    .iter()
+                    .position(|x| x == &dep)
+                    .map(|i| deps_to_add.swap_remove(i));
             }
         } else {
             deps_to_add.extend(metadata.build_deps.iter());
@@ -281,18 +282,17 @@ impl AssetHub {
                     dependees.push(utils::uuid_from_slice(uuid.get_id()?)?);
                 }
             }
-            dependees.remove_item(&metadata.id);
+            dependees
+                .iter()
+                .position(|x| x == &metadata.id)
+                .map(|i| dependees.swap_remove(i));
             if dependees.is_empty() {
                 txn.delete(self.tables.build_dep_reverse, &dep)?;
             } else {
                 self.put_build_deps_reverse(txn, &dep, dependees)?;
             }
         }
-        txn.put(
-            self.tables.asset_metadata,
-            &metadata.id,
-            &new_metadata,
-        )?;
+        txn.put(self.tables.asset_metadata, &metadata.id, &new_metadata)?;
         if artifact_changed {
             change_batch.content_changes.push(metadata.id);
         }
@@ -323,7 +323,10 @@ impl AssetHub {
                     dependees.push(utils::uuid_from_slice(uuid.get_id()?)?);
                 }
             }
-            dependees.remove_item(&id);
+            dependees
+                .iter()
+                .position(|x| x == id)
+                .map(|i| dependees.swap_remove(i));
             if dependees.is_empty() {
                 txn.delete(self.tables.build_dep_reverse, &dep)?;
             } else {
@@ -449,21 +452,23 @@ impl AssetHub {
         for (id, listener) in listeners.iter_mut() {
             match listener.try_send(AssetBatchEvent::Commit) {
                 Err(ref err) if err.is_disconnected() => {
-                    to_remove.push(id);
+                    to_remove.push(*id);
                 }
                 _ => {}
             }
         }
         for id in to_remove {
-            listeners.remove(id);
+            listeners.remove(&id);
         }
     }
 
     pub fn register_listener(&self, listener: Sender<AssetBatchEvent>) -> ListenerID {
-        self.listeners.lock().unwrap().insert(listener)
+        let id = self.id_gen.fetch_add(1, Ordering::Relaxed);
+        self.listeners.lock().unwrap().insert(id, listener);
+        id
     }
 
     pub fn drop_listener(&self, listener: ListenerID) -> Option<Sender<AssetBatchEvent>> {
-        self.listeners.lock().unwrap().remove(listener)
+        self.listeners.lock().unwrap().remove(&listener)
     }
 }
