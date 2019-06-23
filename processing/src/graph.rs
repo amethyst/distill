@@ -13,7 +13,7 @@ type ArgIndex = usize;
 type ArgId = (NodeId, ArgIndex);
 type NodeGraph = petgraph::graph::Graph<Node, NodeEdge>;
 type NodeRef = petgraph::graph::NodeIndex;
-type ProcessorId = u128;
+type ProcessorId = type_uuid::Bytes;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct NodeEdge {

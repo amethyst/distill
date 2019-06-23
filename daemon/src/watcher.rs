@@ -43,7 +43,7 @@ pub enum FileEvent {
     // ScanEnd indicates the end of a scan. The set of all watched directories is also sent
     ScanEnd(PathBuf, Vec<PathBuf>),
 }
-pub fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
+pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
     let modify_time = metadata.modified().unwrap_or(UNIX_EPOCH);
     let since_epoch = modify_time
         .duration_since(UNIX_EPOCH)

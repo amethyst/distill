@@ -1,7 +1,7 @@
 #![allow(unknown_lints)]
 #![warn(clippy::all, rust_2018_idioms, rust_2018_compatibility)]
 
-pub mod asset_daemon;
+pub mod daemon;
 mod asset_hub;
 mod asset_hub_service;
 pub mod capnp_db;
@@ -12,7 +12,7 @@ mod serialized_asset;
 mod utils;
 pub mod watcher;
 
-pub use crate::{asset_daemon::AssetDaemon, error::Result};
+pub use crate::{daemon::AssetDaemon, error::Result};
 
 #[cfg(debug)]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Debug;

@@ -1,5 +1,5 @@
 [package]
-name = "schema"
+name = "atelier-schema"
 version = "0.1.0"
 build = "build.rs"
 

@@ -1,5 +1,5 @@
 [package]
-name = "atelier_importer"
+name = "atelier-importer"
 version = "0.1.0"
 edition = "2018"
 
@@ -8,7 +8,7 @@ uuid = { version = "0.7", features = ["v4", "serde"] }
 downcast = "0.10"
 serde = "1.0"
 type-uuid = "0.1"
-erased-serde = "0.3.6"
-ron = "0.4.0"
-bincode = "1.0.1"
+erased-serde = "0.3"
+ron = "0.4"
+bincode = "1.0"
 inventory = "0.1"

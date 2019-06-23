@@ -7,7 +7,7 @@ use crate::watcher::{self, FileEvent, FileMetadata};
 use crossbeam_channel::{self as channel, select, Receiver, Sender};
 use lmdb::Cursor;
 use log::{debug, error, info};
-use schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
+use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use std::{
     cmp::PartialEq,
     collections::{HashMap, HashSet},

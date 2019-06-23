@@ -1,4 +1,4 @@
-use crate::asset_daemon::ImporterMap;
+use crate::daemon::ImporterMap;
 use crate::asset_hub::{self, AssetHub};
 use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
 use crate::error::{Error, Result};
@@ -15,7 +15,7 @@ use crossbeam_channel::{self as channel, Receiver};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use ron;
-use schema::data::{self, source_metadata, CompressionType};
+use atelier_schema::data::{self, source_metadata, CompressionType};
 use scoped_threadpool::Pool;
 use std::collections::HashMap;
 use std::{

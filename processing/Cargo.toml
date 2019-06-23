@@ -5,7 +5,7 @@ edition = "2018"
 
 [dependencies]
 uuid = { version = "0.7", features = ["v4", "serde"] }
-downcast = "0.9.2"
+downcast = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
 type-uuid = "0.1"

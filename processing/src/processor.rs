@@ -1,5 +1,4 @@
-
-use type_uuid::{TypeUuid, TypeUuidDynamic, uuid};
+use type_uuid::{TypeUuid, TypeUuidDynamic};
 use std::ops::{DerefMut, Deref};
 use std::sync::Arc;
 use downcast::{Any, Downcast, impl_downcast};
@@ -10,7 +9,7 @@ use std::fmt::Debug;
 pub enum TypeId {
     Optional(Box<TypeId>),
     Vec(Box<TypeId>),
-    Type(u128),
+    Type(type_uuid::Bytes),
 }
 
 pub trait ProcessorType {
@@ -90,7 +89,7 @@ pub trait AnyProcessor: Send + Sync + TypeUuidDynamic {
 }
 impl<T> TypeUuidDynamic for AnyProcessorImpl<T> 
 where T: Processor + TypeUuid {
-    fn uuid(&self) -> u128 {
+    fn uuid(&self) -> type_uuid::Bytes {
         T::UUID
     }
 }
@@ -400,11 +399,10 @@ impl IOData {
         }
     }
 }
+#[derive(TypeUuid)]
+#[uuid = "d44e76e6-f00f-416e-9de9-3f16f5b70b49"]
 pub struct ConstantProcessor {
     outputs: Vec<IOData>,
-}
-uuid!{
-    ConstantProcessor => 14092692613983100637224012401022025107
 }
 impl ConstantProcessor {
     pub fn new(values: Vec<IOData>) -> ConstantProcessor {

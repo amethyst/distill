@@ -1,11 +1,4 @@
-extern crate capnp;
-extern crate capnp_rpc;
-extern crate futures;
-extern crate time;
-extern crate tokio;
-extern crate schema;
-
-use schema::{data, service::asset_hub};
+use atelier_schema::{data, service::asset_hub};
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::{ message::ReaderOptions, capability::Promise};
@@ -71,7 +64,7 @@ pub fn main() {
                 .get_snapshot()
                 .unwrap();
             for _i in 0..1000 {
-                let request = snapshot.get_all_assets_request();
+                let request = snapshot.get_all_asset_metadata_request();
                 let result = runtime.block_on(request.send().promise).unwrap();
                 let result = result.get().unwrap();
                 let len = result.get_assets().unwrap().len();

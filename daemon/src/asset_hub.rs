@@ -3,7 +3,7 @@ use crate::error::Result;
 use crate::utils;
 use atelier_importer::{AssetMetadata, AssetUUID};
 use futures::sync::mpsc::Sender;
-use schema::data::{
+use atelier_schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
 };

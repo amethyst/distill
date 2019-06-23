@@ -1,4 +1,4 @@
-
+use atelier_daemon::{init_logging, AssetDaemon};
 
 
 // This is required because rustc does not recognize .ctor segments when considering which symbols

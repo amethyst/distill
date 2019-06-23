@@ -1,44 +1,10 @@
-[package]
-name = "atelier_assets"
-version = "0.1.0"
-edition = "2018"
-
-[dependencies]
-schema = { path = "schema" }
-atelier_importer = { path = "importer" }
-capnp = { version = "0.9.4" }
-capnp-rpc = "0.9.0"
-notify = "4.0.0"
-lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
-rayon = "1.0"
-fern = { version = "0.5", features = ["colored"] }
-log = { version = "0.4", features = ["serde"] }
-tokio = "0.1"
-futures = "0.1"
-owning_ref = "0.4"
-crossbeam-channel = "0.3"
-mopa = "0.2.2"
-serde = "1.0"
-serde_derive = "1.0"
-erased-serde = "0.3"
-bincode = "1.0.1"
-ron = "0.4"
-digest = "0.8.0"
-meowhash = "0.1.2"
-scoped_threadpool = "0.1.9"
-num_cpus = "1.0"
-time = "0.1"
-parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
-uuid = "0.7"
-smush = { version = "0.1", default-features = false, features = [ "lz4_support" ] }
-amethyst = { path = "../amethyst", optional = true, features = ["experimental-assets"] }
-
-[dev-dependencies]
-tempfile = "3"
-
-[profile.release]
-debug = true
-
-[features]
-default = ["amethyst-importers"]
-amethyst-importers = ["amethyst"]
+[workspace]
+members = [
+    "importer", 
+    "loader", 
+    "processing",
+    "schema",
+    "client",
+    "cli",
+    "daemon",
+]

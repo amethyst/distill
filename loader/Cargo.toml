@@ -1,5 +1,5 @@
 [package]
-name = "atelier_loader"
+name = "atelier-loader"
 version = "0.1.0"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
@@ -8,7 +8,7 @@ edition = "2018"
 type-uuid = "0.1"
 crossbeam-channel = "0.3"
 
-schema = { path = "../schema", optional = true }
+atelier-schema = { path = "../schema", optional = true }
 tokio = { version = "0.1", optional = true }
 tokio-current-thread = { version = "0.1", optional = true }
 tokio-executor = { version = "0.1", optional = true }
@@ -18,12 +18,11 @@ capnp = { version = "0.9.4", optional = true}
 capnp-rpc = { version = "0.9.0", optional = true }
 futures = { version = "0.1", optional = true }
 log = { version = "0.4", optional = true }
-ccl = { version = "4.3.0", optional = true, path = "../../ccl" }
+ccl = { version = "4.3.0", optional = true, git = "http://gitlab.nebulanet.cc/kabergstrom/ccl.git" }
 
 [dev-dependencies]
 uuid = {version = "0.7", features = ["v4"] }
-atelier_assets = {path = "../", default-features = false }
 
 [features]
 default = ["rpc_loader"]
-rpc_loader = ["schema", "tokio", "tokio-current-thread", "tokio-executor", "tokio-reactor", "tokio-timer", "capnp", "capnp-rpc", "futures", "log", "ccl"]
+rpc_loader = ["atelier-schema", "tokio", "tokio-current-thread", "tokio-executor", "tokio-reactor", "tokio-timer", "capnp", "capnp-rpc", "futures", "log", "ccl"]

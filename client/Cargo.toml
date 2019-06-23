@@ -1,15 +1,13 @@
 [package]
-name = "client"
+name = "atelier-client"
 version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-# capnp = "0.9.0"
-capnp = { git = "http://github.com/capnproto/capnproto-rust", branch = "master", features = ["rpc_try"]}
-# capnp-rpc = "0.9.0"
-capnp-rpc = { git = "http://github.com/capnproto/capnproto-rust", branch = "master"}
+capnp = "0.9.4"
+capnp-rpc = "0.9.0"
 tokio = "0.1"
 futures = "0.1"
-schema = { path = "../schema" }
+atelier-schema = { path = "../schema" }
 time = "0.1"
 parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }

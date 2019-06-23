@@ -4,7 +4,7 @@ use futures::{
     sync::oneshot::{channel, Receiver},
     Future,
 };
-use schema::service::asset_hub;
+use atelier_schema::service::asset_hub;
 use std::{cell::RefCell, error::Error, rc::Rc};
 use tokio::prelude::*;
 use tokio_current_thread::CurrentThread;

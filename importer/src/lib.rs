@@ -16,19 +16,11 @@ pub use crate::serde_obj::SerdeObj;
 pub type AssetUUID = ::uuid::Bytes;
 pub type AssetTypeId = [u8; 16];
 
-/// A format, providing a conversion from bytes to asset data, which is then
-/// in turn accepted by `Asset::from_data`. Examples for formats are
-/// `Png`, `Obj` and `Wave`.
 pub trait Importer: Send + 'static {
-    /// Version of the importer serialization format.
     fn version_static() -> u32
     where
         Self: Sized;
-    /// Version of the importer serialization format.
     fn version(&self) -> u32;
-    /// Options specific to the format, which are passed to `import`.
-    /// E.g. for textures this would be stuff like mipmap levels and
-    /// sampler info.
     type Options: Send + 'static;
 
     /// State is specific to the format, which are passed to `import`.

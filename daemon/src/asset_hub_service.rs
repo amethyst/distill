@@ -11,7 +11,7 @@ use capnp;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{sync::mpsc, Future, Stream};
 use owning_ref::OwningHandle;
-use schema::{
+use atelier_schema::{
     data::{asset_change_log_entry, asset_metadata, serialized_asset, AssetSource},
     service::asset_hub,
 };

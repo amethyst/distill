@@ -7,7 +7,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures::Future;
 use log::{error, warn};
 use ccl::dhashmap::DHashMap;
-use schema::{
+use atelier_schema::{
     data::{artifact, asset_metadata},
     service::asset_hub::{
         snapshot::get_asset_metadata_with_dependencies_results::Owned as GetAssetMetadataWithDependenciesResults,
@@ -566,7 +566,7 @@ impl<S> Default for RpcLoader<S> {
     }
 }
 
-pub fn make_array<A, T>(slice: &[T]) -> A
+fn make_array<A, T>(slice: &[T]) -> A
 where
     A: Sized + Default + AsMut<[T]>,
     T: Copy,

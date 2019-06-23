@@ -1,16 +1,10 @@
-extern crate capnp;
-extern crate capnp_rpc;
-extern crate futures;
-extern crate schema;
-extern crate time;
-extern crate tokio;
 
 use capnp_rpc::{
     rpc_twoparty_capnp,
     twoparty::{self, VatId},
     RpcSystem,
 };
-use schema::{
+use atelier_schema::{
     data,
     service::asset_hub::{self, snapshot::Client as Snapshot},
 };
