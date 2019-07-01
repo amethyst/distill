@@ -1,12 +1,11 @@
-
+use atelier_schema::{
+    data,
+    service::asset_hub::{self, snapshot::Client as Snapshot},
+};
 use capnp_rpc::{
     rpc_twoparty_capnp,
     twoparty::{self, VatId},
     RpcSystem,
-};
-use atelier_schema::{
-    data,
-    service::asset_hub::{self, snapshot::Client as Snapshot},
 };
 
 use capnp::message::ReaderOptions;
@@ -121,40 +120,62 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
             Ok(())
         }))
     });
-    shell.new_command("build", "Get build artifact from uuid", 1, |io, ctx, args| {
-        let id = uuid::Uuid::parse_str(args[0]).unwrap();
-        let mut request = ctx.snapshot.borrow().get_build_artifacts_request();
-        request.get().init_assets(1).get(0).set_id(id.as_bytes());
-        let mut io = io.clone();
-        let start = PreciseTime::now();
-        Box::new(request.send().promise.then(move |result| {
-            let total_time = start.to(PreciseTime::now());
-            let response = result.unwrap();
-            let response = response.get().unwrap();
-            let artifacts = response.get_artifacts().unwrap();
-            for artifact in artifacts {
-                let asset_uuid = uuid::Uuid::from_slice(artifact.get_asset_id()?.get_id()?).unwrap();
-                writeln!(io, "{{ id: {}, hash: {:?}, length: {} }}", asset_uuid, artifact.get_key()?, artifact.get_data()?.get_data()?.len());
-            }
-            writeln!(io, "got {} artifacts in {}", artifacts.len(), total_time);
-            Ok(())
-        }))
-    });
-    shell.new_command("path_for_asset", "Get path from asset uuid", 1, |io, ctx, args| {
-        let id = uuid::Uuid::parse_str(args[0]).unwrap();
-        let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
-        request.get().init_assets(1).get(0).set_id(id.as_bytes());
-        let mut io = io.clone();
-        Box::new(request.send().promise.then(move |result| {
-            let response = result.unwrap();
-            let response = response.get().unwrap();
-            for asset in response.get_paths().unwrap() {
-                let asset_uuid = uuid::Uuid::from_slice(asset.get_id()?.get_id()?).unwrap();
-                write!(io, "{{ asset: {}, path: {} }}",  asset_uuid, std::str::from_utf8(asset.get_path().unwrap()).unwrap());
-            }
-            Ok(())
-        }))
-    });
+    shell.new_command(
+        "build",
+        "Get build artifact from uuid",
+        1,
+        |io, ctx, args| {
+            let id = uuid::Uuid::parse_str(args[0]).unwrap();
+            let mut request = ctx.snapshot.borrow().get_build_artifacts_request();
+            request.get().init_assets(1).get(0).set_id(id.as_bytes());
+            let mut io = io.clone();
+            let start = PreciseTime::now();
+            Box::new(request.send().promise.then(move |result| {
+                let total_time = start.to(PreciseTime::now());
+                let response = result.unwrap();
+                let response = response.get().unwrap();
+                let artifacts = response.get_artifacts().unwrap();
+                for artifact in artifacts {
+                    let asset_uuid =
+                        uuid::Uuid::from_slice(artifact.get_asset_id()?.get_id()?).unwrap();
+                    writeln!(
+                        io,
+                        "{{ id: {}, hash: {:?}, length: {} }}",
+                        asset_uuid,
+                        artifact.get_key()?,
+                        artifact.get_data()?.get_data()?.len()
+                    );
+                }
+                writeln!(io, "got {} artifacts in {}", artifacts.len(), total_time);
+                Ok(())
+            }))
+        },
+    );
+    shell.new_command(
+        "path_for_asset",
+        "Get path from asset uuid",
+        1,
+        |io, ctx, args| {
+            let id = uuid::Uuid::parse_str(args[0]).unwrap();
+            let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
+            request.get().init_assets(1).get(0).set_id(id.as_bytes());
+            let mut io = io.clone();
+            Box::new(request.send().promise.then(move |result| {
+                let response = result.unwrap();
+                let response = response.get().unwrap();
+                for asset in response.get_paths().unwrap() {
+                    let asset_uuid = uuid::Uuid::from_slice(asset.get_id()?.get_id()?).unwrap();
+                    write!(
+                        io,
+                        "{{ asset: {}, path: {} }}",
+                        asset_uuid,
+                        std::str::from_utf8(asset.get_path().unwrap()).unwrap()
+                    );
+                }
+                Ok(())
+            }))
+        },
+    );
     shell.new_command(
         "assets_for_path",
         "Get asset metadata from path",

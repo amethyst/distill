@@ -1,9 +1,8 @@
-use type_uuid::{TypeUuid, TypeUuidDynamic};
-use std::ops::{DerefMut, Deref};
-use std::sync::Arc;
-use downcast::{Any, Downcast, impl_downcast};
+use downcast::{impl_downcast, Any, Downcast};
 use std::fmt::Debug;
-
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
+use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypeId {
@@ -32,7 +31,7 @@ impl<T: ProcessorType> ProcessorType for Vec<T> {
     }
 }
 
-pub trait ProcessorObj : Any + Send + Sync + Debug {
+pub trait ProcessorObj: Any + Send + Sync + Debug {
     fn get_processor_type(&self) -> TypeId;
     fn shallow_clone(&self) -> Box<ProcessorObj>;
 }
@@ -52,7 +51,11 @@ impl<T: ProcessorType + ShallowClone + Send + Sync + Debug + 'static> ProcessorO
 pub trait ProcessorAccess {
     fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(&mut self, index: u32) -> T;
     fn put_val<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>);
-    fn put_vec<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Vec<Val<T>>);
+    fn put_vec<T: TypeUuid + Debug + Send + Sync + 'static>(
+        &mut self,
+        index: u32,
+        value: Vec<Val<T>>,
+    );
 }
 
 pub trait InputData: ShallowClone {
@@ -87,14 +90,17 @@ pub trait AnyProcessor: Send + Sync + TypeUuidDynamic {
     fn outputs(&self) -> Vec<TypeId>;
     fn run(&mut self, access: &mut ProcessorValues);
 }
-impl<T> TypeUuidDynamic for AnyProcessorImpl<T> 
-where T: Processor + TypeUuid {
+impl<T> TypeUuidDynamic for AnyProcessorImpl<T>
+where
+    T: Processor + TypeUuid,
+{
     fn uuid(&self) -> type_uuid::Bytes {
         T::UUID
     }
 }
 impl<T> AnyProcessor for AnyProcessorImpl<T>
-where T: Processor + TypeUuid
+where
+    T: Processor + TypeUuid,
 {
     fn name(&self) -> &'static str {
         T::name()
@@ -116,14 +122,17 @@ where T: Processor + TypeUuid
     }
 }
 pub fn into_any<T: Processor + TypeUuid>() -> impl AnyProcessor {
-    AnyProcessorImpl::<T> { _marker: std::marker::PhantomData }
+    AnyProcessorImpl::<T> {
+        _marker: std::marker::PhantomData,
+    }
 }
 
 pub trait RunNow {
     fn run_now<T: ProcessorAccess>(access: &mut T);
 }
 impl<T> RunNow for T
-where T: Processor
+where
+    T: Processor,
 {
     fn run_now<PA: ProcessorAccess>(access: &mut PA) {
         let input = T::Inputs::get_read(access, 0);
@@ -148,11 +157,12 @@ impl InputData for () {
 
 impl<T: TypeUuid + Send + Sync + 'static> ShallowClone for Arg<T> {
     fn shallow_clone(&self) -> Self {
-        Arg { inner: Arc::clone(&self.inner) }
+        Arg {
+            inner: Arc::clone(&self.inner),
+        }
     }
 }
-impl<T: TypeUuid + Send + Sync + 'static> InputData for Arg<T>
-{
+impl<T: TypeUuid + Send + Sync + 'static> InputData for Arg<T> {
     fn get_read<P: ProcessorAccess>(access: &mut P, idx: u32) -> Self {
         <P as ProcessorAccess>::get_input(access, idx)
     }
@@ -167,8 +177,7 @@ impl<T: ShallowClone + ProcessorType + 'static + Send + Sync> ShallowClone for V
         self.iter().map(|o| o.shallow_clone()).collect()
     }
 }
-impl<T: InputData + ProcessorType + 'static + Send + Sync> InputData for Vec<T>
-{
+impl<T: InputData + ProcessorType + 'static + Send + Sync> InputData for Vec<T> {
     fn get_read<P: ProcessorAccess>(access: &mut P, idx: u32) -> Self {
         <P as ProcessorAccess>::get_input(access, idx)
     }
@@ -199,9 +208,7 @@ impl<T: TypeUuid + Send + Debug + Sync + 'static> OutputData for Vec<Val<T>> {
 }
 
 impl OutputData for () {
-    fn put_write<T: ProcessorAccess>(_: &mut T, _: u32, _: Self) {
-        
-    }
+    fn put_write<T: ProcessorAccess>(_: &mut T, _: u32, _: Self) {}
 
     fn writes() -> Vec<TypeId> {
         Vec::new()
@@ -219,8 +226,7 @@ impl<T> From<T> for Val<T> {
     }
 }
 
-impl<T> Deref for Val<T>
-{
+impl<T> Deref for Val<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -239,8 +245,7 @@ impl<T> From<T> for Arg<T> {
     }
 }
 
-impl<T> Deref for Arg<T>
-{
+impl<T> Deref for Arg<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -254,7 +259,7 @@ macro_rules! impl_inputs {
             where $( $ty : InputData),*
             {
                 fn shallow_clone(&self) -> Self {
-                    ( $( <$ty as ShallowClone>::shallow_clone(&self.$idx), ) *) 
+                    ( $( <$ty as ShallowClone>::shallow_clone(&self.$idx), ) *)
                 }
             }
         impl<$($ty),*> InputData for ( $( $ty , )* )
@@ -263,7 +268,7 @@ macro_rules! impl_inputs {
                 fn get_read<PA: ProcessorAccess>(access: &mut PA, index: u32) -> Self {
                     #![allow(unused_variables)]
 
-                    ( $( <$ty as InputData>::get_read(access, $idx), ) *) 
+                    ( $( <$ty as InputData>::get_read(access, $idx), ) *)
                 }
 
                 fn reads() -> Vec<TypeId> {
@@ -361,7 +366,10 @@ pub struct ProcessorValues {
 
 impl ProcessorValues {
     pub fn new(inputs: Vec<Option<Box<ProcessorObj>>>) -> ProcessorValues {
-        ProcessorValues { inputs: inputs, outputs: Vec::new() }
+        ProcessorValues {
+            inputs: inputs,
+            outputs: Vec::new(),
+        }
     }
     pub fn outputs(&self) -> &Vec<Option<Box<ProcessorObj>>> {
         &self.outputs
@@ -377,14 +385,25 @@ impl ProcessorValues {
 impl ProcessorAccess for ProcessorValues {
     fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(&mut self, index: u32) -> T {
         let val = &self.inputs[index as usize];
-        <T as ShallowClone>::shallow_clone(val.as_ref().expect(&format!("expected input at argument index {}", index)).downcast_ref().expect(&format!("failed to downcast type for argument {}", index)))
+        <T as ShallowClone>::shallow_clone(
+            val.as_ref()
+                .expect(&format!("expected input at argument index {}", index))
+                .downcast_ref()
+                .expect(&format!("failed to downcast type for argument {}", index)),
+        )
     }
     fn put_val<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>) {
-        self.outputs.insert(index as usize, Some(Box::new(Arg::from(value.inner))));
+        self.outputs
+            .insert(index as usize, Some(Box::new(Arg::from(value.inner))));
     }
-    fn put_vec<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Vec<Val<T>>) {
+    fn put_vec<T: TypeUuid + Debug + Send + Sync + 'static>(
+        &mut self,
+        index: u32,
+        value: Vec<Val<T>>,
+    ) {
         let input_converted: Vec<Arg<T>> = value.into_iter().map(|o| Arg::from(o.inner)).collect();
-        self.outputs.insert(index as usize, Some(Box::new(input_converted)));
+        self.outputs
+            .insert(index as usize, Some(Box::new(input_converted)));
     }
 }
 pub struct IOData {
@@ -393,10 +412,7 @@ pub struct IOData {
 }
 impl IOData {
     pub fn new(name: String, value: Option<Box<ProcessorObj>>) -> IOData {
-        IOData {
-            value, 
-            name,
-        }
+        IOData { value, name }
     }
 }
 #[derive(TypeUuid)]
@@ -411,31 +427,56 @@ impl ConstantProcessor {
 }
 
 impl AnyProcessor for ConstantProcessor {
-     fn name(&self) -> &'static str { "Constants" }
-     fn input_names(&self) -> Vec<String> { vec![] }
-     fn output_names(&self) -> Vec<String> { self.outputs.iter().map(|d| d.name.clone()).collect() }
-     fn inputs(&self) -> Vec<TypeId> { vec![] }
-     fn outputs(&self) -> Vec<TypeId> { self.outputs.iter().filter(|d| d.value.is_some()).map(|d| ProcessorObj::get_processor_type(d.value.as_ref().unwrap().as_ref())).collect() }
-     fn run(&mut self, access: &mut ProcessorValues) {
-        access.set_outputs(self.outputs.drain(0..self.outputs.len()).map(|o| o.value).collect());
-     }
+    fn name(&self) -> &'static str {
+        "Constants"
+    }
+    fn input_names(&self) -> Vec<String> {
+        vec![]
+    }
+    fn output_names(&self) -> Vec<String> {
+        self.outputs.iter().map(|d| d.name.clone()).collect()
+    }
+    fn inputs(&self) -> Vec<TypeId> {
+        vec![]
+    }
+    fn outputs(&self) -> Vec<TypeId> {
+        self.outputs
+            .iter()
+            .filter(|d| d.value.is_some())
+            .map(|d| ProcessorObj::get_processor_type(d.value.as_ref().unwrap().as_ref()))
+            .collect()
+    }
+    fn run(&mut self, access: &mut ProcessorValues) {
+        access.set_outputs(
+            self.outputs
+                .drain(0..self.outputs.len())
+                .map(|o| o.value)
+                .collect(),
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::marker::PhantomData;
     use type_uuid::uuid;
-     use std::marker::PhantomData;
 
-    uuid!{
+    uuid! {
         ABC => 14092692613983100637224012401022025108
     }
 
     struct ABC;
     impl Processor for ABC {
-        fn name() -> &'static str { "ABC" }
-        fn input_names() -> Vec<String> { vec!["f", "b"].iter().map(|d| d.to_string()).collect() }
-        fn output_names() -> Vec<String> { vec!["g", "c"].iter().map(|d| d.to_string()).collect() }
+        fn name() -> &'static str {
+            "ABC"
+        }
+        fn input_names() -> Vec<String> {
+            vec!["f", "b"].iter().map(|d| d.to_string()).collect()
+        }
+        fn output_names() -> Vec<String> {
+            vec!["g", "c"].iter().map(|d| d.to_string()).collect()
+        }
         type Inputs = (Vec<Arg<f32>>, Arg<u16>);
         type Outputs = (Val<u32>, Val<u16>);
         fn run((f, b): Self::Inputs) -> Self::Outputs {
@@ -450,9 +491,17 @@ mod tests {
 
     #[test]
     fn test() {
-        let mut values = ProcessorValues::new(vec![ Some(Box::new(vec![Arg::from(3.2f32)])), Some(Box::new(Arg::from(2u16))) ]);
+        let mut values = ProcessorValues::new(vec![
+            Some(Box::new(vec![Arg::from(3.2f32)])),
+            Some(Box::new(Arg::from(2u16))),
+        ]);
         ABC::run_now(&mut values);
         let out = values.outputs.remove(0).unwrap();
-        println!("{}", Downcast::<Arg<u32>>::downcast_ref(out.as_ref()).unwrap().inner);
+        println!(
+            "{}",
+            Downcast::<Arg<u32>>::downcast_ref(out.as_ref())
+                .unwrap()
+                .inner
+        );
     }
 }

@@ -1,9 +1,9 @@
 use crate::error::Result;
-use crate::{AssetUUID, AssetTypeId, Importer, ImporterValue, SerdeObj};
+use crate::{AssetTypeId, AssetUUID, Importer, ImporterValue, SerdeObj};
 use ron;
 use serde::{Deserialize, Serialize};
-use type_uuid::{TypeUuid, TypeUuidDynamic};
 use std::io::Read;
+use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 #[derive(Clone, Serialize, Deserialize, Hash, Default)]
 pub struct AssetMetadata {
@@ -111,10 +111,10 @@ pub struct SourceFileImporter {
 inventory::collect!(SourceFileImporter);
 
 pub fn get_source_importers() -> impl Iterator<Item = SourceFileImporter> {
-    inventory::iter::<SourceFileImporter>.into_iter().map(|s| {
-        SourceFileImporter {
+    inventory::iter::<SourceFileImporter>
+        .into_iter()
+        .map(|s| SourceFileImporter {
             extension: s.extension.trim_start_matches("."),
-            instantiator: s.instantiator
-        }
-    })
+            instantiator: s.instantiator,
+        })
 }

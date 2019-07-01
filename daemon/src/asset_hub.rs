@@ -2,15 +2,18 @@ use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, Rw
 use crate::error::Result;
 use crate::utils;
 use atelier_importer::{AssetMetadata, AssetUUID};
-use futures::sync::mpsc::Sender;
 use atelier_schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
 };
+use futures::sync::mpsc::Sender;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex, atomic::{Ordering, AtomicU64}},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
 };
 
 pub type ListenerID = u64;

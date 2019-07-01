@@ -1,7 +1,7 @@
 use atelier_schema::{data, service::asset_hub};
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use capnp::{ message::ReaderOptions, capability::Promise};
+use capnp::{capability::Promise, message::ReaderOptions};
 
 use futures::{executor::spawn, future::Executor, Future};
 use std::{
@@ -10,8 +10,8 @@ use std::{
     thread,
 };
 use time::PreciseTime;
-use tokio::runtime::current_thread::Runtime;
 use tokio::prelude::*;
+use tokio::runtime::current_thread::Runtime;
 
 fn endpoint() -> String {
     if cfg!(windows) {
@@ -21,9 +21,8 @@ fn endpoint() -> String {
     }
 }
 pub fn main() {
-    use std::net::ToSocketAddrs;
     use parity_tokio_ipc::IpcConnection;
-
+    use std::net::ToSocketAddrs;
 
     let addr = "127.0.0.1:9999".to_socket_addrs().unwrap().next().unwrap();
 
@@ -43,13 +42,16 @@ pub fn main() {
             // stream.set_send_buffer_size(1 << 24).unwrap();
             // stream.set_recv_buffer_size(1 << 24).unwrap();
             // let (reader, writer) = stream.split();
-            let connection = IpcConnection::connect(endpoint(), &tokio::reactor::Handle::current()).expect("failed to create named pipe");
+            let connection = IpcConnection::connect(endpoint(), &tokio::reactor::Handle::current())
+                .expect("failed to create named pipe");
             let (reader, writer) = connection.split();
             let rpc_network = Box::new(twoparty::VatNetwork::new(
                 reader,
                 writer,
                 rpc_twoparty_capnp::Side::Client,
-                *ReaderOptions::new().nesting_limit(64).traversal_limit_in_words(64*1024*1024),
+                *ReaderOptions::new()
+                    .nesting_limit(64)
+                    .traversal_limit_in_words(64 * 1024 * 1024),
             ));
 
             let mut rpc_system = RpcSystem::new(rpc_network, None);
@@ -57,7 +59,8 @@ pub fn main() {
             let disconnector = rpc_system.get_disconnector();
             runtime.spawn(rpc_system.map_err(|_| ()));
             let request = hub.get_snapshot_request();
-            let snapshot = runtime.block_on(request.send().promise)
+            let snapshot = runtime
+                .block_on(request.send().promise)
                 .unwrap()
                 .get()
                 .unwrap()

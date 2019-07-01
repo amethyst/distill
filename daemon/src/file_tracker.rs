@@ -4,10 +4,10 @@ use crate::capnp_db::{
 use crate::error::Result;
 use crate::utils;
 use crate::watcher::{self, FileEvent, FileMetadata};
+use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use crossbeam_channel::{self as channel, select, Receiver, Sender};
 use lmdb::Cursor;
 use log::{debug, error, info};
-use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use std::{
     cmp::PartialEq,
     collections::{HashMap, HashSet},

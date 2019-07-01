@@ -7,14 +7,14 @@ use crate::{
     serialized_asset::SerializedAsset,
     utils,
 };
-use capnp;
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
-use futures::{sync::mpsc, Future, Stream};
-use owning_ref::OwningHandle;
 use atelier_schema::{
     data::{asset_change_log_entry, asset_metadata, serialized_asset, AssetSource},
     service::asset_hub,
 };
+use capnp;
+use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
+use futures::{sync::mpsc, Future, Stream};
+use owning_ref::OwningHandle;
 use std::{
     collections::{HashMap, HashSet},
     fs, path,

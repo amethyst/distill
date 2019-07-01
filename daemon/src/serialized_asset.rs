@@ -1,7 +1,7 @@
 use crate::error::Result;
 use atelier_importer::SerdeObj;
-use bincode;
 use atelier_schema::data::CompressionType;
+use bincode;
 
 pub struct SerializedAsset<T: AsRef<[u8]>> {
     pub compression: CompressionType,
