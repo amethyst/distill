@@ -31,7 +31,8 @@ time = "0.1"
 parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
 uuid = "0.7"
 smush = { version = "0.1", default-features = false, features = [ "lz4_support" ] }
-amethyst = { git = "https://github.com/kabergstrom/amethyst.git", branch = "new-asset-system", optional = true, features = ["experimental-assets"] }
+# amethyst = { git = "https://github.com/kabergstrom/amethyst.git", branch = "new-asset-system", optional = true, features = ["experimental-assets"] }
+amethyst = { git = "https://github.com/azriel91/amethyst.git", branch = "new-asset-tidying", optional = true, features = ["empty", "experimental-assets"] }
 
 [dev-dependencies]
 tempfile = "3"
