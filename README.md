@@ -1,5 +1,5 @@
 # Atelier Assets
-A "compiler framework for data" aimed at efficiently processing assets for game engines. _This project is still in an early phase and does not necessarily work as advertised. DO NOT USE._
+A "compiler framework for data" aimed at efficiently processing assets for game engines. More simply: Like LLVM, but for game assets.  _This project is still in an early phase and does not necessarily work as advertised. DO NOT USE._
 
 # Motivation
 Popular commercially available game engines struggle to provide a good user experience for game projects with a large volume of content. Game projects are continuously increasing in size with many AAA projects exceeding hundreds of gigabytes in source assets that are being concurrently produced by hundreds of content creators. The time spent by developers waiting on processing or building of content costs the industry immensely every year. This project aims to provide a collection of libraries, tools and services that can be integrated into a game engine to minimize redundant processing and scale builds to the capabilities your hardware. 
