@@ -2,24 +2,13 @@ use atelier_schema::{
     data,
     service::asset_hub::{self, snapshot::Client as Snapshot},
 };
-use capnp_rpc::{
-    rpc_twoparty_capnp,
-    twoparty::{self, VatId},
-    RpcSystem,
-};
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
-use futures::{executor::spawn, future::Executor, sync::mpsc, Future};
+use futures::Future;
 use shrust;
-use std::{
-    cell::RefCell,
-    io::BufRead,
-    rc::Rc,
-    sync::atomic::{AtomicUsize, Ordering},
-    sync::Arc,
-    thread,
-};
+use std::{cell::RefCell, io, rc::Rc};
 use time::PreciseTime;
 use tokio::prelude::*;
 use tokio::runtime::current_thread::Runtime;
@@ -33,7 +22,7 @@ impl asset_hub::listener::Server for ListenerImpl {
     fn update(
         &mut self,
         params: asset_hub::listener::UpdateParams,
-        mut results: asset_hub::listener::UpdateResults,
+        _results: asset_hub::listener::UpdateResults,
     ) -> Promise<()> {
         let snapshot = params.get()?.get_snapshot()?;
         self.snapshot.replace(snapshot);
@@ -51,6 +40,7 @@ where
     a
 }
 
+#[allow(dead_code)]
 fn endpoint() -> String {
     if cfg!(windows) {
         r"\\.\pipe\atelier-assets".to_string()
@@ -61,12 +51,15 @@ fn endpoint() -> String {
 struct Context {
     snapshot: Rc<RefCell<Snapshot>>,
 }
-fn print_asset_metadata(io: &mut shrust::ShellIO, asset: &data::asset_metadata::Reader) {
+fn print_asset_metadata(
+    io: &mut shrust::ShellIO,
+    asset: &data::asset_metadata::Reader,
+) -> io::Result<()> {
     write!(
         io,
         "{{ id: {:?}",
         uuid::Uuid::from_bytes(make_array(asset.get_id().unwrap().get_id().unwrap()))
-    );
+    )?;
     if let Ok(tags) = asset.get_search_tags() {
         let tags: Vec<String> = tags
             .iter()
@@ -79,12 +72,12 @@ fn print_asset_metadata(io: &mut shrust::ShellIO, asset: &data::asset_metadata::
             })
             .collect();
         if !tags.is_empty() {
-            write!(io, ", search_tags: [ {} ]", tags.join(", "));
+            write!(io, ", search_tags: [ {} ]", tags.join(", "))?;
         }
     }
-    writeln!(io, "}}");
+    writeln!(io, "}}")
 }
-fn register_commands(shell: &mut shrust::Shell<Context>) {
+fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
     shell.new_command("show_all", "Get all asset metadata", 0, |io, ctx, _| {
         let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
         let mut io = io.clone();
@@ -96,9 +89,9 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
             let assets = response.get_assets().unwrap();
             for asset in assets {
                 let id = asset.get_id().unwrap().get_id().unwrap();
-                writeln!(io, "{:?}", uuid::Uuid::from_bytes(make_array(id)));
+                writeln!(io, "{:?}", uuid::Uuid::from_bytes(make_array(id)))?;
             }
-            writeln!(io, "got {} assets in {}", assets.len(), total_time);
+            writeln!(io, "got {} assets in {}", assets.len(), total_time)?;
             Ok(())
         }))
     });
@@ -114,9 +107,9 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
             let response = response.get().unwrap();
             let assets = response.get_assets().unwrap();
             for asset in assets {
-                print_asset_metadata(&mut io, &asset);
+                print_asset_metadata(&mut io, &asset)?;
             }
-            writeln!(io, "got {} assets in {}", assets.len(), total_time);
+            writeln!(io, "got {} assets in {}", assets.len(), total_time)?;
             Ok(())
         }))
     });
@@ -144,9 +137,9 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
                         asset_uuid,
                         artifact.get_key()?,
                         artifact.get_data()?.get_data()?.len()
-                    );
+                    )?;
                 }
-                writeln!(io, "got {} artifacts in {}", artifacts.len(), total_time);
+                writeln!(io, "got {} artifacts in {}", artifacts.len(), total_time)?;
                 Ok(())
             }))
         },
@@ -170,7 +163,7 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
                         "{{ asset: {}, path: {} }}",
                         asset_uuid,
                         std::str::from_utf8(asset.get_path().unwrap()).unwrap()
-                    );
+                    )?;
                 }
                 Ok(())
             }))
@@ -207,12 +200,13 @@ fn register_commands(shell: &mut shrust::Shell<Context>) {
                 let response = result.unwrap();
                 let response = response.get().unwrap();
                 for asset in response.get_assets().unwrap() {
-                    print_asset_metadata(&mut io, &asset);
+                    print_asset_metadata(&mut io, &asset)?;
                 }
                 Ok(())
             }))
         },
     );
+    Ok(())
 }
 
 fn start_runtime() {
@@ -235,10 +229,10 @@ fn start_runtime() {
 
     let mut rpc_system = RpcSystem::new(rpc_network, None);
     let hub: asset_hub::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
-    let disconnector = rpc_system.get_disconnector();
+    let _disconnector = rpc_system.get_disconnector();
     runtime.spawn(rpc_system.map_err(|_| ()));
     let snapshot = Rc::new(RefCell::new({
-        let mut request = hub.get_snapshot_request();
+        let request = hub.get_snapshot_request();
         runtime
             .block_on(request.send().promise)
             .unwrap()
@@ -256,25 +250,27 @@ fn start_runtime() {
     runtime.block_on(request.send().promise).unwrap();
     let ctx = Context { snapshot: snapshot };
     let mut shell = shrust::Shell::new(ctx);
-    register_commands(&mut shell);
+    register_commands(&mut shell).expect("Failed to register commands.");
 
-    runtime.block_on(
-        shell
-            .run_loop(
-                tokio_stdin_stdout::stdin(0),
-                tokio_stdin_stdout::stdout(64000),
-            )
-            .map_err(|e| {
-                if let shrust::ExecError::Quit = e {
-                    ()
-                } else {
-                    panic!("error in cmd loop {}", e)
-                }
-            }),
-    );
+    runtime
+        .block_on(
+            shell
+                .run_loop(
+                    tokio_stdin_stdout::stdin(0),
+                    tokio_stdin_stdout::stdout(64000),
+                )
+                .map_err(|e| {
+                    if let shrust::ExecError::Quit = e {
+                        ()
+                    } else {
+                        panic!("error in cmd loop {}", e)
+                    }
+                }),
+        )
+        .expect("Failed to register runtime block");
 }
 
 pub fn main() {
-    use parity_tokio_ipc::IpcConnection;
+    // use parity_tokio_ipc::IpcConnection;
     start_runtime();
 }
