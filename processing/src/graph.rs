@@ -232,15 +232,11 @@ pub mod serialized {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::processor::{self, Arg, Processor, ProcessorValues, RunNow, Val};
-    use downcast::Downcast;
-    use type_uuid::uuid;
+    use crate::processor::{self, Arg, Processor, Val};
+    use type_uuid::TypeUuid;
 
-    uuid! {
-        First => 14092692613983100637224012401022025107,
-        Second => 14092692613983100637224012401022025108
-    }
-
+    #[derive(TypeUuid)]
+    #[uuid = "5b148b19-161e-4997-9156-962055396491"]
     struct First;
     impl Processor for First {
         fn name() -> &'static str {
@@ -254,12 +250,15 @@ mod tests {
         }
         type Inputs = (Arg<u32>);
         type Outputs = (Val<u32>, Vec<Val<u16>>);
-        fn run((i): Self::Inputs) -> Self::Outputs {
+        fn run(i: Self::Inputs) -> Self::Outputs {
             let mut total = 0u32;
             total += *i as u32;
             (Val::from(total), vec![Val::from(88u16)])
         }
     }
+
+    #[derive(TypeUuid)]
+    #[uuid = "c3d53b0c-2466-4e33-9cc6-530f69a130f8"]
     struct Second;
     impl Processor for Second {
         fn name() -> &'static str {

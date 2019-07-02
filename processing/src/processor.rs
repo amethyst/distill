@@ -1,6 +1,6 @@
 use downcast::{impl_downcast, Any, Downcast};
 use std::fmt::Debug;
-use std::ops::{Deref};
+use std::ops::Deref;
 use std::sync::Arc;
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
@@ -459,13 +459,10 @@ impl AnyProcessor for ConstantProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::marker::PhantomData;
-    use type_uuid::uuid;
+    use type_uuid::TypeUuid;
 
-    uuid! {
-        ABC => 14092692613983100637224012401022025108
-    }
-
+    #[derive(TypeUuid)]
+    #[uuid = "f1e9c1f0-815c-4647-ac5f-771cfecff8ca"]
     struct ABC;
     impl Processor for ABC {
         fn name() -> &'static str {
