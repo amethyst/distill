@@ -1,9 +1,9 @@
-use atelier_schema::{data, service::asset_hub};
+use atelier_schema::service::asset_hub;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use capnp::{capability::Promise, message::ReaderOptions};
+use capnp::message::ReaderOptions;
 
-use futures::{executor::spawn, future::Executor, Future};
+use futures::Future;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
@@ -24,7 +24,7 @@ pub fn main() {
     use parity_tokio_ipc::IpcConnection;
     use std::net::ToSocketAddrs;
 
-    let addr = "127.0.0.1:9999".to_socket_addrs().unwrap().next().unwrap();
+    let _addr = "127.0.0.1:9999".to_socket_addrs().unwrap().next().unwrap();
 
     let num_assets = Arc::new(AtomicUsize::new(0));
     let byte_size = Arc::new(AtomicUsize::new(0));
@@ -42,7 +42,7 @@ pub fn main() {
             // stream.set_send_buffer_size(1 << 24).unwrap();
             // stream.set_recv_buffer_size(1 << 24).unwrap();
             // let (reader, writer) = stream.split();
-            let connection = IpcConnection::connect(endpoint(), &tokio::reactor::Handle::current())
+            let connection = IpcConnection::connect(endpoint(), &tokio::reactor::Handle::default())
                 .expect("failed to create named pipe");
             let (reader, writer) = connection.split();
             let rpc_network = Box::new(twoparty::VatNetwork::new(
@@ -77,8 +77,10 @@ pub fn main() {
                     Ordering::SeqCst,
                 );
             }
-            runtime.block_on(disconnector);
-            runtime.run();
+            runtime
+                .block_on(disconnector)
+                .expect("Failed to block on RPC disconnector.");
+            runtime.run().expect("Error while running RPC system.");
         }));
         thread::sleep(std::time::Duration::new(0, 10));
     }
