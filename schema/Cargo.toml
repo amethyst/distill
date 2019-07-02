@@ -2,9 +2,10 @@
 name = "atelier-schema"
 version = "0.1.0"
 build = "build.rs"
+edition = "2018"
 
 [dependencies]
-capnp = "0.9.4"
+capnp = "0.10.0"
 
 [build-dependencies]
-capnpc = "0.9.3"
+capnpc = "0.10.0"

@@ -1,5 +1,3 @@
-extern crate capnp;
-
 #[allow(clippy::all)]
 #[allow(dead_code)]
 pub mod data_capnp {
@@ -24,5 +22,4 @@ impl ::std::fmt::Debug for data_capnp::FileState {
     }
 }
 
-pub use data_capnp as data;
-pub use service_capnp as service;
+pub use crate::{data_capnp as data, service_capnp as service};

@@ -6,8 +6,8 @@ edition = "2018"
 [dependencies]
 atelier-schema = { path = "../schema" }
 atelier-importer = { path = "../importer" }
-capnp = { version = "0.9.4" }
-capnp-rpc = "0.9.0"
+capnp = { version = "0.10.0" }
+capnp-rpc = "0.10.0"
 notify = "4.0.0"
 lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
 rayon = "1.0"
