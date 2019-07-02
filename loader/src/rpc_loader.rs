@@ -366,7 +366,7 @@ fn process_data_requests<HandleType>(
         }
         if assets_to_request.len() > 0 {
             for (asset, handle) in assets_to_request {
-                let response = rpc.request(move |conn, snapshot| {
+                let response = rpc.request(move |_conn, snapshot| {
                     let mut request = snapshot.get_build_artifacts_request();
                     let mut assets = request.get().init_assets(1);
                     assets.reborrow().get(0).set_id(&asset);
@@ -471,7 +471,7 @@ fn process_load_ops<HandleType>(
 ) {
     while let Ok(op) = op_rx.try_recv() {
         match op {
-            HandleOp::LoadError(handle, err) => {
+            HandleOp::LoadError(_handle, err) => {
                 panic!("load error {}", err);
             }
             HandleOp::LoadComplete(handle) => {
@@ -496,7 +496,7 @@ fn process_load_ops<HandleType>(
                     panic!("load op completed but load state is {:?}", load.state);
                 }
             }
-            HandleOp::LoadDrop(handle) => panic!("load op dropped without calling complete/error"),
+            HandleOp::LoadDrop(_handle) => panic!("load op dropped without calling complete/error"),
         }
     }
 }
@@ -589,7 +589,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atelier_assets::asset_daemon::AssetDaemon;
+    use std::sync::RwLock;
 
     type Handle = ();
     #[derive(Debug)]

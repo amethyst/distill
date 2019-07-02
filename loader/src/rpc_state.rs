@@ -239,7 +239,7 @@ impl RpcState {
                         .map_err(|e| -> Box<dyn Error> { Box::new(e) }))
                 })
                 .flatten()
-                .and_then(|(disconnector, hub, response)| {
+                .and_then(|(_disconnector, hub, response)| {
                     let snapshot = Rc::new(RefCell::new(response.get()?.get_snapshot()?));
                     let listener = asset_hub::listener::ToClient::new(ListenerImpl {
                         snapshot: snapshot.clone(),
