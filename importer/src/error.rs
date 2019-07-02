@@ -19,12 +19,12 @@ impl std::error::Error for Error {
             Error::Boxed(ref e) => e.description(),
         }
     }
-    fn cause(&self) -> Option<&dyn std::error::Error> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
             Error::IoError(ref e) => Some(e),
             Error::RonDeError(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
-            Error::Boxed(ref e) => e.cause(),
+            Error::Boxed(ref e) => e.source(),
         }
     }
 }
