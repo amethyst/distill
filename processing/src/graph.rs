@@ -3,7 +3,7 @@ use petgraph;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::marker::PhantomData;
+
 use type_uuid::TypeUuid;
 
 #[derive(Copy, Ord, PartialOrd, PartialEq, Eq, Clone, Hash, Debug, Serialize, Deserialize)]
@@ -34,10 +34,10 @@ impl NodeEdge {
 }
 pub struct Node {
     id: NodeId,
-    processor: Box<AnyProcessor>,
+    processor: Box<dyn AnyProcessor>,
 }
 impl Node {
-    pub fn new(id: NodeId, processor: Box<AnyProcessor>) -> Node {
+    pub fn new(id: NodeId, processor: Box<dyn AnyProcessor>) -> Node {
         Node { id, processor }
     }
     pub fn from_constants(id: NodeId, values: Vec<processor::IOData>) -> Node {
@@ -89,10 +89,10 @@ pub struct Graph {
     nodes: HashMap<NodeId, NodeRef>,
 }
 impl Graph {
-    pub fn execute(&mut self, root: NodeId) {
-        let mut outputs: HashMap<NodeId, Vec<Option<Box<ProcessorObj>>>> = HashMap::new();
+    pub fn execute(&mut self, _root: NodeId) {
+        let mut outputs: HashMap<NodeId, Vec<Option<Box<dyn ProcessorObj>>>> = HashMap::new();
         for node_id in self.execution_order.iter() {
-            let mut inputs: Vec<Option<Box<ProcessorObj>>> = Vec::new();
+            let mut inputs: Vec<Option<Box<dyn ProcessorObj>>> = Vec::new();
             for edge in self
                 .graph
                 .edges_directed(*node_id, petgraph::Direction::Incoming)
@@ -106,7 +106,7 @@ impl Graph {
                     .map(|o| o.shallow_clone());
             }
             let mut values = ProcessorValues::new(inputs);
-            let mut node = &mut self.graph[*node_id];
+            let node = &mut self.graph[*node_id];
             node.processor.run(&mut values);
             outputs.insert(node.id, values.drain_outputs());
         }
@@ -180,7 +180,7 @@ impl GraphBuilder {
 }
 
 pub struct ProcessorRegistry {
-    processors: HashMap<ProcessorId, Box<Fn() -> Box<AnyProcessor>>>,
+    processors: HashMap<ProcessorId, Box<dyn Fn() -> Box<dyn AnyProcessor>>>,
 }
 
 impl ProcessorRegistry {
@@ -195,7 +195,7 @@ impl ProcessorRegistry {
             .insert(T::UUID, Box::new(|| Box::new(processor::into_any::<T>())));
     }
 
-    pub fn get_processor(&self, id: ProcessorId) -> Option<Box<AnyProcessor>> {
+    pub fn get_processor(&self, id: ProcessorId) -> Option<Box<dyn AnyProcessor>> {
         self.processors.get(&id).map(|p| p())
     }
 }
@@ -331,7 +331,7 @@ impl std::error::Error for Error {
         }
     }
 
-    fn cause(&self) -> Option<&std::error::Error> {
+    fn cause(&self) -> Option<&dyn std::error::Error> {
         match *self {
             Error::SelfReference(_) => None,
             Error::ArgNotFound(_) => None,
@@ -344,7 +344,7 @@ impl std::error::Error for Error {
     }
 }
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use std::error::Error as StdError;
         match *self {
             Error::SelfReference(_) => f.write_str(self.description()),

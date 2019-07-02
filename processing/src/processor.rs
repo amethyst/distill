@@ -1,6 +1,6 @@
 use downcast::{impl_downcast, Any, Downcast};
 use std::fmt::Debug;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref};
 use std::sync::Arc;
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
@@ -33,17 +33,17 @@ impl<T: ProcessorType> ProcessorType for Vec<T> {
 
 pub trait ProcessorObj: Any + Send + Sync + Debug {
     fn get_processor_type(&self) -> TypeId;
-    fn shallow_clone(&self) -> Box<ProcessorObj>;
+    fn shallow_clone(&self) -> Box<dyn ProcessorObj>;
 }
 pub trait ShallowClone {
     fn shallow_clone(&self) -> Self;
 }
-impl_downcast!(ProcessorObj);
+impl_downcast!(dyn ProcessorObj);
 impl<T: ProcessorType + ShallowClone + Send + Sync + Debug + 'static> ProcessorObj for T {
     fn get_processor_type(&self) -> TypeId {
         T::get_processor_type()
     }
-    fn shallow_clone(&self) -> Box<ProcessorObj> {
+    fn shallow_clone(&self) -> Box<dyn ProcessorObj> {
         Box::new(<T as ShallowClone>::shallow_clone(self))
     }
 }
@@ -360,24 +360,24 @@ mod impl_inputs {
     impl_outputs!(A, 0, B, 1, C, 2, D, 3, E, 4, F, 5, G, 6, H, 7, I, 8, J, 9, K, 10, L, 11, M, 12, N, 13, O, 14, P, 15, Q, 16, R, 17);
 }
 pub struct ProcessorValues {
-    inputs: Vec<Option<Box<ProcessorObj>>>,
-    outputs: Vec<Option<Box<ProcessorObj>>>,
+    inputs: Vec<Option<Box<dyn ProcessorObj>>>,
+    outputs: Vec<Option<Box<dyn ProcessorObj>>>,
 }
 
 impl ProcessorValues {
-    pub fn new(inputs: Vec<Option<Box<ProcessorObj>>>) -> ProcessorValues {
+    pub fn new(inputs: Vec<Option<Box<dyn ProcessorObj>>>) -> ProcessorValues {
         ProcessorValues {
             inputs: inputs,
             outputs: Vec::new(),
         }
     }
-    pub fn outputs(&self) -> &Vec<Option<Box<ProcessorObj>>> {
+    pub fn outputs(&self) -> &Vec<Option<Box<dyn ProcessorObj>>> {
         &self.outputs
     }
-    pub fn drain_outputs(self) -> Vec<Option<Box<ProcessorObj>>> {
+    pub fn drain_outputs(self) -> Vec<Option<Box<dyn ProcessorObj>>> {
         self.outputs
     }
-    fn set_outputs(&mut self, outputs: Vec<Option<Box<ProcessorObj>>>) {
+    fn set_outputs(&mut self, outputs: Vec<Option<Box<dyn ProcessorObj>>>) {
         self.outputs = outputs;
     }
 }
@@ -407,11 +407,11 @@ impl ProcessorAccess for ProcessorValues {
     }
 }
 pub struct IOData {
-    pub value: Option<Box<ProcessorObj>>,
+    pub value: Option<Box<dyn ProcessorObj>>,
     pub name: String,
 }
 impl IOData {
-    pub fn new(name: String, value: Option<Box<ProcessorObj>>) -> IOData {
+    pub fn new(name: String, value: Option<Box<dyn ProcessorObj>>) -> IOData {
         IOData { value, name }
     }
 }
