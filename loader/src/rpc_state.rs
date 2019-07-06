@@ -1,10 +1,10 @@
+use atelier_schema::service::asset_hub;
 use capnp::{message::ReaderOptions, Result as CapnpResult};
-use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem, pry};
+use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{
     sync::oneshot::{channel, Receiver},
     Future,
 };
-use atelier_schema::service::asset_hub;
 use std::{cell::RefCell, error::Error, rc::Rc};
 use tokio::prelude::*;
 use tokio_current_thread::CurrentThread;
@@ -239,7 +239,7 @@ impl RpcState {
                         .map_err(|e| -> Box<dyn Error> { Box::new(e) }))
                 })
                 .flatten()
-                .and_then(|(disconnector, hub, response)| {
+                .and_then(|(_disconnector, hub, response)| {
                     let snapshot = Rc::new(RefCell::new(response.get()?.get_snapshot()?));
                     let listener = asset_hub::listener::ToClient::new(ListenerImpl {
                         snapshot: snapshot.clone(),

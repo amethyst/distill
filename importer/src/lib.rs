@@ -2,16 +2,17 @@ mod boxed_importer;
 mod error;
 mod serde_obj;
 
-use serde::{Serialize};
+use serde::Serialize;
 use std::io::Read;
 
 pub use self::error::{Error, Result};
 // pub use crate::amethyst_formats::amethyst_formats;
 pub use crate::boxed_importer::{
-    AssetMetadata, BoxedImporter, SourceMetadata, SOURCEMETADATA_VERSION, SourceFileImporter, get_source_importers,
+    get_source_importers, AssetMetadata, BoxedImporter, SourceFileImporter, SourceMetadata,
+    SOURCEMETADATA_VERSION,
 };
-pub use inventory;
 pub use crate::serde_obj::SerdeObj;
+pub use inventory;
 
 pub type AssetUUID = ::uuid::Bytes;
 pub type AssetTypeId = [u8; 16];

@@ -19,18 +19,18 @@ impl std::error::Error for Error {
             Error::Boxed(ref e) => e.description(),
         }
     }
-    fn cause(&self) -> Option<&std::error::Error> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
             Error::IoError(ref e) => Some(e),
             Error::RonDeError(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
-            Error::Boxed(ref e) => e.cause(),
+            Error::Boxed(ref e) => e.source(),
         }
     }
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Error::IoError(ref e) => e.fmt(f),
             Error::RonDeError(ref e) => e.fmt(f),

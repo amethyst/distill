@@ -69,7 +69,11 @@ impl AssetDaemon {
         }
         let asset_db = Arc::new(Environment::new(&self.db_dir).expect("failed to create asset db"));
         let tracker = Arc::new(
-            FileTracker::new(asset_db.clone(), self.asset_dirs.iter().map(|p| p.to_str().unwrap())).expect("failed to create tracker"),
+            FileTracker::new(
+                asset_db.clone(),
+                self.asset_dirs.iter().map(|p| p.to_str().unwrap()),
+            )
+            .expect("failed to create tracker"),
         );
 
         let hub = Arc::new(

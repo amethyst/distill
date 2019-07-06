@@ -1,10 +1,10 @@
 #![allow(unknown_lints)]
 #![warn(clippy::all, rust_2018_idioms, rust_2018_compatibility)]
 
-pub mod daemon;
 mod asset_hub;
 mod asset_hub_service;
 pub mod capnp_db;
+pub mod daemon;
 pub mod error;
 mod file_asset_source;
 pub mod file_tracker;
