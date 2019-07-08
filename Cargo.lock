@@ -547,6 +547,8 @@ dependencies = [
 name = "atelier-loader"
 version = "0.1.0"
 dependencies = [
+ "atelier-daemon 0.1.0",
+ "atelier-importer 0.1.0",
  "atelier-schema 0.1.0",
  "capnp 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "capnp-rpc 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -554,6 +556,7 @@ dependencies = [
  "crossbeam-channel 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.97 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-current-thread 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-executor 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",

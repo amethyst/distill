@@ -2,3 +2,4 @@ target
 /assets
 /.amethyst
 .vscode
+*/tests/db
