@@ -466,8 +466,8 @@ impl AssetHubService {
         let tcp = ::tokio::net::TcpListener::bind(&addr)?;
         let tcp_future = tcp.incoming().for_each(move |stream| {
             stream.set_nodelay(true)?;
-            stream.set_send_buffer_size(1 << 24)?;
-            stream.set_recv_buffer_size(1 << 24)?;
+            stream.set_send_buffer_size(1 << 22)?;
+            stream.set_recv_buffer_size(1 << 22)?;
             let (reader, writer) = stream.split();
             spawn_rpc(reader, writer, self.ctx.clone());
             Ok(())

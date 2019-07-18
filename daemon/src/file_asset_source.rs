@@ -281,7 +281,7 @@ impl<'a> PairImport<'a> {
             importer_version: importer.version(),
             importer_options: options,
             importer_state: state,
-            assets: Vec::from_iter(imported_assets.iter().map(|m| m.metadata.clone())),
+            assets: imported_assets.iter().map(|m| m.metadata.clone()).collect(),
         });
         Ok(imported_assets)
     }
