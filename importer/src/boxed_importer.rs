@@ -110,11 +110,11 @@ pub struct SourceFileImporter {
 }
 inventory::collect!(SourceFileImporter);
 
-pub fn get_source_importers() -> impl Iterator<Item = SourceFileImporter> {
+pub fn get_source_importers() -> impl Iterator<Item = (&'static str, Box<dyn BoxedImporter + 'static>)> {
     inventory::iter::<SourceFileImporter>
         .into_iter()
-        .map(|s| SourceFileImporter {
-            extension: s.extension.trim_start_matches("."),
-            instantiator: s.instantiator,
-        })
+        .map(|s| (
+            s.extension.trim_start_matches("."),
+            (s.instantiator)(),
+        ))
 }

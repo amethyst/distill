@@ -59,7 +59,7 @@ pub trait AssetStorage {
         &self,
         asset_type: &AssetTypeId,
         storage_handle: &Self::HandleType,
-        data: &dyn AsRef<[u8]>,
+        data: &dyn AsRef<[u8]>, //TODO: make it a slice
         loader_handle: &LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
@@ -95,6 +95,7 @@ pub struct LoadInfo {
 }
 
 pub trait Loader {
+    // TODO: this type is always (), should be removed
     type HandleType;
     fn add_ref(&self, id: AssetUuid) -> LoadHandle;
     fn remove_ref(&self, id: &LoadHandle);
