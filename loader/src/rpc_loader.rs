@@ -702,7 +702,7 @@ mod tests {
     fn wait_for_status(
         status: LoadStatus,
         handle: &LoadHandle,
-        loader: &mut RpcLoader<Handle>,
+        loader: &mut RpcLoader,
         storage: &Storage,
     ) {
         loop {
@@ -726,7 +726,7 @@ mod tests {
         // Start daemon in a separate thread
         let _atelier_daemon = spawn_daemon();
 
-        let mut loader = RpcLoader::<Handle>::default();
+        let mut loader = RpcLoader::default();
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset.txt"
             *uuid::Uuid::parse_str("60352042-616f-460e-abd2-546195c060fe")
