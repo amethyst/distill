@@ -31,18 +31,17 @@ enum LoadState {
     RequestingMetadata,
     WaitingForData,
     RequestingData,
-    LoadingData,
     LoadingAsset,
     Loaded,
     UnloadRequested,
     Unloading,
 }
 
-struct AssetLoad<Handle> {
+struct AssetLoad {
     asset_id: AssetUuid,
     state: LoadState,
     refs: AtomicUsize,
-    asset_handle: Option<(AssetTypeId, Handle)>,
+    asset_type: Option<AssetTypeId>,
     requested_version: Option<u32>,
     loaded_version: Option<u32>,
 }
@@ -55,12 +54,11 @@ impl HandleAllocator {
     fn alloc(&self) -> LoadHandle {
         LoadHandle(self.0.fetch_add(1, Ordering::Relaxed))
     }
-    fn free(&self, _handle: LoadHandle) {}
 }
 
-struct LoaderData<HandleType> {
+struct LoaderData {
     handle_allocator: HandleAllocator,
-    load_states: DHashMap<LoadHandle, AssetLoad<HandleType>>,
+    load_states: DHashMap<LoadHandle, AssetLoad>,
     uuid_to_load: DHashMap<AssetUuid, LoadHandle>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
     op_tx: Arc<Sender<HandleOp>>,
@@ -74,7 +72,7 @@ struct RpcRequests {
 
 unsafe impl Send for RpcRequests {}
 
-impl<HandleType: Clone> LoaderData<HandleType> {
+impl LoaderData {
     fn add_ref(&self, id: AssetUuid) -> LoadHandle {
         let handle = self.uuid_to_load.get(&id).map(|h| *h);
         let handle = if let Some(handle) = handle {
@@ -88,7 +86,7 @@ impl<HandleType: Clone> LoaderData<HandleType> {
                         asset_id: id,
                         state: LoadState::None,
                         refs: AtomicUsize::new(0),
-                        asset_handle: None,
+                        asset_type: None,
                         requested_version: None,
                         loaded_version: None,
                     },
@@ -101,18 +99,11 @@ impl<HandleType: Clone> LoaderData<HandleType> {
             .map(|h| h.refs.fetch_add(1, Ordering::Relaxed));
         handle
     }
-    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, HandleType, LoadHandle)> {
+    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.load_states
             .get(load)
-            .filter(|a| {
-                if let LoadState::Loaded = a.state {
-                    true
-                } else {
-                    false
-                }
-            })
-            .map(|a| a.asset_handle.clone().map(|(t, a)| (t, a, *load)))
-            .unwrap_or(None)
+            .filter(|a| a.state == LoadState::Loaded)
+            .and_then(|a| a.asset_type.map(|t| (t, *load)))
     }
     fn remove_ref(&self, load: &LoadHandle) {
         self.load_states
@@ -121,15 +112,14 @@ impl<HandleType: Clone> LoaderData<HandleType> {
     }
 }
 
-pub struct RpcLoader<HandleType> {
+pub struct RpcLoader {
     connect_string: String,
     rpc: Arc<Mutex<RpcState>>,
-    data: LoaderData<HandleType>,
+    data: LoaderData,
     requests: Mutex<RpcRequests>,
 }
 
-impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
-    type HandleType = HandleType;
+impl Loader for RpcLoader {
     fn get_load(&self, id: AssetUuid) -> Option<LoadHandle> {
         self.data.uuid_to_load.get(&id).map(|l| *l)
     }
@@ -147,7 +137,7 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
             .map(|s| match s.state {
                 None => LoadStatus::NotRequested,
                 WaitingForMetadata | RequestingMetadata | WaitingForData | RequestingData
-                | LoadingData | LoadingAsset => LoadStatus::Loading,
+                | LoadingAsset => LoadStatus::Loading,
                 Loaded => {
                     if let Some(_) = s.loaded_version {
                         LoadStatus::Loaded
@@ -162,16 +152,13 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
     fn add_ref(&self, id: AssetUuid) -> LoadHandle {
         self.data.add_ref(id)
     }
-    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, Self::HandleType, LoadHandle)> {
+    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.data.get_asset(load)
     }
     fn remove_ref(&self, load: &LoadHandle) {
         self.data.remove_ref(load)
     }
-    fn process(
-        &mut self,
-        asset_storage: &dyn AssetStorage<HandleType = Self::HandleType>,
-    ) -> Result<(), Box<dyn Error>> {
+    fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>> {
         let mut rpc = self.rpc.lock().expect("rpc mutex poisoned");
         let mut requests = self.requests.lock().expect("rpc requests mutex poisoned");
         match rpc.connection_state() {
@@ -196,8 +183,9 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
         Ok(())
     }
 }
-impl<HandleType> RpcLoader<HandleType> {
-    pub fn new(connect_string: String) -> std::io::Result<RpcLoader<HandleType>> {
+
+impl RpcLoader {
+    pub fn new(connect_string: String) -> std::io::Result<RpcLoader> {
         let (tx, rx) = unbounded();
         Ok(RpcLoader {
             connect_string: connect_string,
@@ -217,6 +205,7 @@ impl<HandleType> RpcLoader<HandleType> {
         })
     }
 }
+
 fn update_asset_metadata(
     metadata: &mut HashMap<AssetUuid, AssetMetadata>,
     uuid: &AssetUuid,
@@ -230,12 +219,12 @@ fn update_asset_metadata(
     Ok(())
 }
 
-fn load_data<HandleType>(
+fn load_data(
     chan: &Arc<Sender<HandleOp>>,
     handle: &LoadHandle,
-    state: &mut AssetLoad<HandleType>,
+    state: &mut AssetLoad,
     reader: &artifact::Reader<'_>,
-    storage: &dyn AssetStorage<HandleType = HandleType>,
+    storage: &dyn AssetStorage,
 ) -> Result<LoadState, Box<dyn Error>> {
     assert!(
         LoadState::RequestingData == state.state || LoadState::Loaded == state.state,
@@ -245,20 +234,16 @@ fn load_data<HandleType>(
     );
     let serialized_asset = reader.get_data()?;
     let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
-    if let Some((prev_type, _)) = state.asset_handle {
+    if let Some(prev_type) = state.asset_type {
         // TODO handle asset type changing?
         assert!(prev_type == asset_type);
     } else {
-        state.asset_handle.replace((
-            asset_type,
-            storage.allocate(&asset_type, &state.asset_id, handle),
-        ));
+        state.asset_type.replace(asset_type);
     }
     let new_version = state.requested_version.unwrap_or(0) + 1;
     state.requested_version = Some(new_version);
     storage.update_asset(
         &asset_type,
-        &state.asset_handle.as_ref().unwrap().1,
         &serialized_asset.get_data()?,
         handle,
         AssetLoadOp::new(chan.clone(), *handle),
@@ -309,10 +294,10 @@ fn process_pending_requests<T, U, ProcessFunc>(
     }
 }
 
-fn process_data_requests<HandleType>(
+fn process_data_requests(
     requests: &mut RpcRequests,
-    data: &mut LoaderData<HandleType>,
-    storage: &dyn AssetStorage<HandleType = HandleType>,
+    data: &mut LoaderData,
+    storage: &dyn AssetStorage,
     rpc: &mut RpcState,
 ) -> Result<(), Box<dyn Error>> {
     let op_channel = &data.op_tx;
@@ -379,9 +364,9 @@ fn process_data_requests<HandleType>(
     Ok(())
 }
 
-fn process_metadata_requests<HandleType>(
+fn process_metadata_requests(
     requests: &mut RpcRequests,
-    data: &mut LoaderData<HandleType>,
+    data: &mut LoaderData,
     rpc: &mut RpcState,
 ) -> Result<(), capnp::Error> {
     let metadata = &mut data.metadata;
@@ -464,9 +449,9 @@ fn process_metadata_requests<HandleType>(
     Ok(())
 }
 
-fn process_load_ops<HandleType>(
-    asset_storage: &dyn AssetStorage<HandleType = HandleType>,
-    load_states: &mut DHashMap<LoadHandle, AssetLoad<HandleType>>,
+fn process_load_ops(
+    asset_storage: &dyn AssetStorage,
+    load_states: &mut DHashMap<LoadHandle, AssetLoad>,
     op_rx: &Receiver<HandleOp>,
 ) {
     while let Ok(op) = op_rx.try_recv() {
@@ -480,13 +465,12 @@ fn process_load_ops<HandleType>(
                     .expect("load op completed but load state does not exist");
                 if let LoadState::LoadingAsset = load.state {
                     // TODO ensure dependencies are committed
-                    let (asset_type, asset_handle) = load
-                        .asset_handle
+                    let asset_type = load
+                        .asset_type
                         .as_ref()
-                        .expect("in LoadingAsset state but asset_handle is None");
+                        .expect("in LoadingAsset state but asset_type is None");
                     asset_storage.commit_asset_version(
                         asset_type,
-                        asset_handle,
                         &handle,
                         load.requested_version.unwrap(),
                     );
@@ -501,9 +485,9 @@ fn process_load_ops<HandleType>(
     }
 }
 
-fn process_load_states<HandleType>(
-    asset_storage: &dyn AssetStorage<HandleType = HandleType>,
-    load_states: &mut DHashMap<LoadHandle, AssetLoad<HandleType>>,
+fn process_load_states(
+    asset_storage: &dyn AssetStorage,
+    load_states: &mut DHashMap<LoadHandle, AssetLoad>,
     metadata: &HashMap<AssetUuid, AssetMetadata>,
 ) {
     let mut to_remove = Vec::new();
@@ -531,14 +515,13 @@ fn process_load_states<HandleType>(
                 LoadState::RequestingMetadata => LoadState::RequestingMetadata,
                 LoadState::WaitingForData => {
                     log::info!("waiting for data");
-                    if value.asset_handle.is_some() {
+                    if value.asset_type.is_some() {
                         LoadState::LoadingAsset
                     } else {
                         LoadState::WaitingForData
                     }
                 }
                 LoadState::RequestingData => LoadState::RequestingData,
-                LoadState::LoadingData => LoadState::LoadingData,
                 LoadState::LoadingAsset => LoadState::LoadingAsset,
                 LoadState::Loaded => {
                     if value.refs.load(Ordering::Relaxed) <= 0 {
@@ -548,8 +531,8 @@ fn process_load_states<HandleType>(
                     }
                 }
                 LoadState::UnloadRequested => {
-                    if let Some((asset_type, asset_handle)) = value.asset_handle.take() {
-                        asset_storage.free(&asset_type, asset_handle, *key);
+                    if let Some(asset_type) = value.asset_type.take() {
+                        asset_storage.free(&asset_type, *key);
                         value.requested_version = None;
                         value.loaded_version = None;
                     }
@@ -570,8 +553,8 @@ fn process_load_states<HandleType>(
     }
 }
 
-impl<S> Default for RpcLoader<S> {
-    fn default() -> RpcLoader<S> {
+impl Default for RpcLoader {
+    fn default() -> RpcLoader {
         RpcLoader::new("127.0.0.1:9999".to_string()).unwrap()
     }
 }
@@ -601,7 +584,6 @@ mod tests {
         thread::{self, JoinHandle},
     };
 
-    type Handle = ();
     #[derive(Debug)]
     struct LoadState {
         size: Option<usize>,
@@ -612,29 +594,10 @@ mod tests {
         map: RwLock<HashMap<LoadHandle, LoadState>>,
     }
     impl AssetStorage for Storage {
-        type HandleType = Handle;
-        fn allocate(
-            &self,
-            asset_type: &AssetTypeId,
-            _id: &AssetUuid,
-            loader_handle: &LoadHandle,
-        ) -> Self::HandleType {
-            println!("allocated asset {:?} type {:?}", loader_handle, asset_type);
-            self.map.write().unwrap().insert(
-                *loader_handle,
-                LoadState {
-                    size: None,
-                    commit_version: None,
-                    load_version: None,
-                },
-            );
-            ()
-        }
         fn update_asset(
             &self,
             _asset_type: &AssetTypeId,
-            _storage_handle: &Self::HandleType,
-            data: &dyn AsRef<[u8]>,
+            data: &[u8],
             loader_handle: &LoadHandle,
             load_op: AssetLoadOp,
             version: u32,
@@ -645,7 +608,11 @@ mod tests {
                 data.as_ref().len()
             );
             let mut map = self.map.write().unwrap();
-            let state = map.get_mut(loader_handle).unwrap();
+            let state = map.entry(*loader_handle).or_insert(LoadState {
+                size: None,
+                commit_version: None,
+                load_version: None,
+            });
 
             state.size = Some(data.as_ref().len());
             state.load_version = Some(version);
@@ -655,7 +622,6 @@ mod tests {
         fn commit_asset_version(
             &self,
             _asset_type: &AssetTypeId,
-            _storage_handle: &Self::HandleType,
             loader_handle: &LoadHandle,
             version: u32,
         ) {
@@ -667,12 +633,7 @@ mod tests {
             state.commit_version = Some(version);
             state.load_version = None;
         }
-        fn free(
-            &self,
-            _asset_type: &AssetTypeId,
-            _storage_handle: Self::HandleType,
-            loader_handle: LoadHandle,
-        ) {
+        fn free(&self, _asset_type: &AssetTypeId, loader_handle: LoadHandle) {
             println!("free asset {:?}", loader_handle);
             self.map.write().unwrap().remove(&loader_handle);
         }

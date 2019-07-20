@@ -48,18 +48,10 @@ impl Drop for AssetLoadOp {
 }
 
 pub trait AssetStorage {
-    type HandleType;
-    fn allocate(
-        &self,
-        asset_type: &AssetTypeId,
-        id: &AssetUuid,
-        loader_handle: &LoadHandle,
-    ) -> Self::HandleType;
     fn update_asset(
         &self,
         asset_type: &AssetTypeId,
-        storage_handle: &Self::HandleType,
-        data: &dyn AsRef<[u8]>, //TODO: make it a slice
+        data: &[u8],
         loader_handle: &LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
@@ -67,16 +59,10 @@ pub trait AssetStorage {
     fn commit_asset_version(
         &self,
         asset_type: &AssetTypeId,
-        storage_handle: &Self::HandleType,
         loader_handle: &LoadHandle,
         version: u32,
     );
-    fn free(
-        &self,
-        asset_type: &AssetTypeId,
-        storage_handle: Self::HandleType,
-        loader_handle: LoadHandle,
-    );
+    fn free(&self, asset_type: &AssetTypeId, loader_handle: LoadHandle);
 }
 
 #[derive(Debug)]
@@ -96,15 +82,11 @@ pub struct LoadInfo {
 
 pub trait Loader {
     // TODO: this type is always (), should be removed
-    type HandleType;
     fn add_ref(&self, id: AssetUuid) -> LoadHandle;
     fn remove_ref(&self, id: &LoadHandle);
-    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, Self::HandleType, LoadHandle)>;
+    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, LoadHandle)>;
     fn get_load(&self, id: AssetUuid) -> Option<LoadHandle>;
     fn get_load_info(&self, load: &LoadHandle) -> Option<LoadInfo>;
     fn get_load_status(&self, load: &LoadHandle) -> LoadStatus;
-    fn process(
-        &mut self,
-        asset_storage: &dyn AssetStorage<HandleType = Self::HandleType>,
-    ) -> Result<(), Box<dyn Error>>;
+    fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>>;
 }
