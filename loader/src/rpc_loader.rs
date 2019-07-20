@@ -589,7 +589,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::RwLock;
+    use crate::TypeUuid;
+    use atelier_daemon::{init_logging, AssetDaemon};
+    use atelier_importer::{BoxedImporter, ImportedAsset, Importer, ImporterValue};
+    use serde::{Deserialize, Serialize};
+    use std::{
+        iter::FromIterator,
+        path::PathBuf,
+        string::FromUtf8Error,
+        sync::RwLock,
+        thread::{self, JoinHandle},
+    };
 
     type Handle = ();
     #[derive(Debug)]
@@ -668,6 +678,66 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Debug, Default, Deserialize, Serialize, TypeUuid)]
+    #[uuid = "346e6a3e-3278-4c53-b21c-99b4350662db"]
+    pub struct TxtFormat;
+    impl TxtFormat {
+        fn from_utf8(&self, vec: Vec<u8>) -> Result<String, FromUtf8Error> {
+            String::from_utf8(vec)
+        }
+    }
+    /// A simple state for Importer to retain the same UUID between imports
+    /// for all single-asset source files
+    #[derive(Default, Deserialize, Serialize, TypeUuid)]
+    #[uuid = "c50c36fe-8df0-48fe-b1d7-3e69ab00a997"]
+    pub struct TxtImporterState {
+        id: Option<AssetUuid>,
+    }
+    #[derive(TypeUuid)]
+    #[uuid = "fa50e08c-af6c-4ada-aed1-447c116d63bc"]
+    struct TxtImporter;
+    impl Importer for TxtImporter {
+        type State = TxtImporterState;
+        type Options = TxtFormat;
+
+        fn version_static() -> u32
+        where
+            Self: Sized,
+        {
+            1
+        }
+        fn version(&self) -> u32 {
+            Self::version_static()
+        }
+
+        fn import(
+            &self,
+            source: &mut dyn Read,
+            txt_format: Self::Options,
+            state: &mut Self::State,
+        ) -> atelier_importer::Result<ImporterValue> {
+            if state.id.is_none() {
+                state.id = Some(*uuid::Uuid::new_v4().as_bytes());
+            }
+            let mut bytes = Vec::new();
+            source.read_to_end(&mut bytes)?;
+            let parsed_asset_data = txt_format
+                .from_utf8(bytes)
+                .expect("Failed to construct string asset.");
+            Ok(ImporterValue {
+                assets: vec![ImportedAsset {
+                    id: state.id.expect("AssetUUID not generated"),
+                    search_tags: Vec::new(),
+                    build_deps: Vec::new(),
+                    load_deps: Vec::new(),
+                    instantiate_deps: Vec::new(),
+                    asset_data: Box::new(parsed_asset_data),
+                    build_pipeline: None,
+                }],
+            })
+        }
+    }
+
     fn wait_for_status(
         status: LoadStatus,
         handle: &LoadHandle,
@@ -690,9 +760,15 @@ mod tests {
 
     #[test]
     fn test_connect() {
+        init_logging().expect("failed to init logging");
+
+        // Start daemon in a separate thread
+        let _atelier_daemon = spawn_daemon();
+
         let mut loader = RpcLoader::<Handle>::default();
         let handle = loader.add_ref(
-            *uuid::Uuid::parse_str("72249910-5400-433a-9be9-984e13ea3578")
+            // asset uuid of "tests/assets/asset.txt"
+            *uuid::Uuid::parse_str("60352042-616f-460e-abd2-546195c060fe")
                 .unwrap()
                 .as_bytes(),
         );
@@ -702,6 +778,24 @@ mod tests {
         wait_for_status(LoadStatus::Loaded, &handle, &mut loader, &storage);
         loader.remove_ref(&handle);
         wait_for_status(LoadStatus::NotRequested, &handle, &mut loader, &storage);
+    }
+
+    fn spawn_daemon() -> JoinHandle<()> {
+        thread::Builder::new()
+            .name("atelier-daemon".to_string())
+            .spawn(move || {
+                let tests_path = PathBuf::from_iter(&[env!("CARGO_MANIFEST_DIR"), "tests"]);
+
+                AssetDaemon::default()
+                    .with_db_path(tests_path.join("db"))
+                    .with_importers(std::iter::once((
+                        "txt",
+                        Box::new(TxtImporter) as Box<dyn BoxedImporter>,
+                    )))
+                    .with_asset_dirs(vec![tests_path.join("assets")])
+                    .run();
+            })
+            .expect("Failed to spawn `atelier-daemon` thread.")
     }
 
 }

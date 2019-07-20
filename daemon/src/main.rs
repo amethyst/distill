@@ -19,14 +19,12 @@ fn main() {
     log::debug!(
         "registered importers for {}",
         atelier_importer::get_source_importers()
-            .map(|i| i.extension)
+            .map(|(ext, _)| ext)
             .collect::<Vec<_>>()
             .join(", ")
     );
 
     AssetDaemon::default()
-        .with_importers(
-            atelier_importer::get_source_importers().map(|i| (i.extension, (i.instantiator)())),
-        )
+        .with_importers(atelier_importer::get_source_importers())
         .run();
 }
