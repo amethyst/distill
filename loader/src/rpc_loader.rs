@@ -33,7 +33,6 @@ enum LoadState {
     WaitingForData,
     RequestingData,
     LoadingAsset,
-    LoadedPrecommit,
     Loaded,
     UnloadRequested,
     Unloading,
@@ -144,7 +143,7 @@ impl Loader for RpcLoader {
             .map(|s| match s.state {
                 None => LoadStatus::NotRequested,
                 WaitingForMetadata | RequestingMetadata | RequestDependencies | WaitingForData
-                | RequestingData | LoadingAsset | LoadedPrecommit => LoadStatus::Loading,
+                | RequestingData | LoadingAsset => LoadStatus::Loading,
                 Loaded => {
                     if let Some(_) = s.loaded_version {
                         LoadStatus::Loaded
@@ -183,7 +182,7 @@ impl Loader for RpcLoader {
         };
         rpc.poll();
         {
-            process_load_ops(&mut self.data.load_states, &self.data.op_rx);
+            process_load_ops(asset_storage, &mut self.data.load_states, &self.data.op_rx);
             process_load_states(
                 asset_storage,
                 &self.data.handle_allocator,
@@ -463,7 +462,11 @@ fn process_metadata_requests(
     Ok(())
 }
 
-fn process_load_ops(load_states: &mut DHashMap<LoadHandle, AssetLoad>, op_rx: &Receiver<HandleOp>) {
+fn process_load_ops(
+    asset_storage: &dyn AssetStorage,
+    load_states: &mut DHashMap<LoadHandle, AssetLoad>,
+    op_rx: &Receiver<HandleOp>,
+) {
     while let Ok(op) = op_rx.try_recv() {
         match op {
             HandleOp::LoadError(_handle, err) => {
@@ -474,7 +477,17 @@ fn process_load_ops(load_states: &mut DHashMap<LoadHandle, AssetLoad>, op_rx: &R
                     .get_mut(&handle)
                     .expect("load op completed but load state does not exist");
                 if let LoadState::LoadingAsset = load.state {
-                    load.state = LoadState::LoadedPrecommit;
+                    let asset_type = load
+                        .asset_type
+                        .as_ref()
+                        .expect("in LoadingAsset state but asset_type is None");
+                    asset_storage.commit_asset_version(
+                        asset_type,
+                        &handle,
+                        load.requested_version.unwrap(),
+                    );
+                    load.loaded_version = load.requested_version;
+                    load.state = LoadState::Loaded;
                 } else {
                     panic!("load op completed but load state is {:?}", load.state);
                 }
@@ -532,31 +545,8 @@ fn process_load_states(
                             );
                         });
 
-                    LoadState::WaitingForData
-                }
-                LoadState::WaitingForData => {
-                    log::info!("waiting for data");
-                    if value.asset_type.is_some() {
-                        LoadState::LoadingAsset
-                    } else {
-                        LoadState::WaitingForData
-                    }
-                }
-                LoadState::RequestingData => LoadState::RequestingData,
-                LoadState::LoadingAsset => LoadState::LoadingAsset,
-                LoadState::LoadedPrecommit => {
-                    let asset_type = value
-                        .asset_type
-                        .as_ref()
-                        .expect("in `LoadedPrecommit` state but asset_type is None");
-
-                    // Ensure dependencies are committed before committing this asset.
-                    // load is an AssetLoad.
+                    // Ensure dependencies are committed before continuing to load this asset.
                     let asset_dependencies_committed = {
-                        let asset_id = value.asset_id;
-                        let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
-                            panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
-                        });
                         asset_metadata.load_deps.iter().all(|dependency_asset_id| {
                             uuid_to_load
                                 .get(dependency_asset_id)
@@ -568,17 +558,21 @@ fn process_load_states(
                     };
 
                     if asset_dependencies_committed {
-                        asset_storage.commit_asset_version(
-                            asset_type,
-                            &key,
-                            value.requested_version.unwrap(),
-                        );
-                        value.loaded_version = value.requested_version;
-                        LoadState::Loaded
+                        LoadState::WaitingForData
                     } else {
-                        LoadState::LoadedPrecommit
+                        LoadState::RequestDependencies
                     }
                 }
+                LoadState::WaitingForData => {
+                    log::info!("waiting for data");
+                    if value.asset_type.is_some() {
+                        LoadState::LoadingAsset
+                    } else {
+                        LoadState::WaitingForData
+                    }
+                }
+                LoadState::RequestingData => LoadState::RequestingData,
+                LoadState::LoadingAsset => LoadState::LoadingAsset,
                 LoadState::Loaded => {
                     if value.refs.load(Ordering::Relaxed) <= 0 {
                         LoadState::UnloadRequested
@@ -894,7 +888,8 @@ mod tests {
         // Remove ref when unloading top level asset.
         asset_handles
             .iter()
-            .for_each(|(asset_load_handle, _file_name)| {
+            .for_each(|(asset_load_handle, file_name)| {
+                println!("Waiting for {} to be `NotRequested`.", file_name);
                 wait_for_status(
                     LoadStatus::NotRequested,
                     &asset_load_handle,
