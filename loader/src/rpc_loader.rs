@@ -724,9 +724,11 @@ mod tests {
         init_logging().expect("failed to init logging");
 
         // Start daemon in a separate thread
-        let _atelier_daemon = spawn_daemon();
+        let daemon_port = 2500;
+        let daemon_address = format!("127.0.0.1:{}", daemon_port);
+        let _atelier_daemon = spawn_daemon(&daemon_address);
 
-        let mut loader = RpcLoader::default();
+        let mut loader = RpcLoader::new(daemon_address).expect("Failed to construct `RpcLoader`.");
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset.txt"
             *uuid::Uuid::parse_str("60352042-616f-460e-abd2-546195c060fe")
@@ -741,7 +743,10 @@ mod tests {
         wait_for_status(LoadStatus::NotRequested, &handle, &mut loader, &storage);
     }
 
-    fn spawn_daemon() -> JoinHandle<()> {
+    fn spawn_daemon(daemon_address: &str) -> JoinHandle<()> {
+        let daemon_address = daemon_address
+            .parse()
+            .expect("Failed to parse string as `SocketAddr`.");
         thread::Builder::new()
             .name("atelier-daemon".to_string())
             .spawn(move || {
@@ -749,6 +754,7 @@ mod tests {
 
                 AssetDaemon::default()
                     .with_db_path(tests_path.join("db"))
+                    .with_address(daemon_address)
                     .with_importers(std::iter::once((
                         "txt",
                         Box::new(TxtImporter) as Box<dyn BoxedImporter>,
