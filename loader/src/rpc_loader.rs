@@ -574,15 +574,17 @@ mod tests {
     use super::*;
     use crate::TypeUuid;
     use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{BoxedImporter, ImportedAsset, Importer, ImporterValue};
+    use atelier_importer::{AssetUUID, BoxedImporter, ImportedAsset, Importer, ImporterValue};
     use serde::{Deserialize, Serialize};
     use std::{
         iter::FromIterator,
         path::PathBuf,
+        str::FromStr,
         string::FromUtf8Error,
         sync::RwLock,
         thread::{self, JoinHandle},
     };
+    use uuid::Uuid;
 
     #[derive(Debug)]
     struct LoadState {
@@ -639,12 +641,25 @@ mod tests {
         }
     }
 
+    /// Removes file comments (begin with `#`) and empty lines.
     #[derive(Clone, Debug, Default, Deserialize, Serialize, TypeUuid)]
     #[uuid = "346e6a3e-3278-4c53-b21c-99b4350662db"]
     pub struct TxtFormat;
     impl TxtFormat {
         fn from_utf8(&self, vec: Vec<u8>) -> Result<String, FromUtf8Error> {
-            String::from_utf8(vec)
+            String::from_utf8(vec).map(|data| {
+                let processed = data
+                    .lines()
+                    .map(|line| {
+                        line.find('#')
+                            .map(|index| line.split_at(index).0)
+                            .unwrap_or(line)
+                            .trim()
+                    })
+                    .filter(|line| !line.is_empty())
+                    .flat_map(|line| line.chars().chain(std::iter::once('\n')));
+                String::from_iter(processed)
+            })
         }
     }
     /// A simple state for Importer to retain the same UUID between imports
@@ -685,12 +700,19 @@ mod tests {
             let parsed_asset_data = txt_format
                 .from_utf8(bytes)
                 .expect("Failed to construct string asset.");
+
+            let load_deps = parsed_asset_data
+                .lines()
+                .filter_map(|line| Uuid::from_str(line).ok())
+                .map(|uuid| *uuid.as_bytes())
+                .collect::<Vec<AssetUUID>>();
+
             Ok(ImporterValue {
                 assets: vec![ImportedAsset {
                     id: state.id.expect("AssetUUID not generated"),
                     search_tags: Vec::new(),
                     build_deps: Vec::new(),
-                    load_deps: Vec::new(),
+                    load_deps,
                     instantiate_deps: Vec::new(),
                     asset_data: Box::new(parsed_asset_data),
                     build_pipeline: None,
@@ -721,7 +743,7 @@ mod tests {
 
     #[test]
     fn test_connect() {
-        init_logging().expect("failed to init logging");
+        let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
 
         // Start daemon in a separate thread
         let daemon_port = 2500;
@@ -741,6 +763,84 @@ mod tests {
         wait_for_status(LoadStatus::Loaded, &handle, &mut loader, &storage);
         loader.remove_ref(&handle);
         wait_for_status(LoadStatus::NotRequested, &handle, &mut loader, &storage);
+    }
+
+    #[test]
+    fn test_load_with_dependencies() {
+        let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
+
+        // Start daemon in a separate thread
+        let daemon_port = 9999;
+        let daemon_address = format!("127.0.0.1:{}", daemon_port);
+        let _atelier_daemon = spawn_daemon(&daemon_address);
+
+        let mut loader = RpcLoader::new(daemon_address).expect("Failed to construct `RpcLoader`.");
+        let handle = loader.add_ref(
+            // asset uuid of "tests/assets/asset_a.txt"
+            *uuid::Uuid::parse_str("a5ce4da0-675e-4460-be02-c8b145c2ee49")
+                .unwrap()
+                .as_bytes(),
+        );
+        let storage = &mut Storage {
+            map: RwLock::new(HashMap::new()),
+        };
+        wait_for_status(LoadStatus::Loaded, &handle, &mut loader, &storage);
+
+        // Check that dependent assets are loaded
+        let asset_handles = asset_tree()
+            .iter()
+            .map(|(asset_uuid, file_name)| {
+                let asset_load_handle = loader
+                    .get_load(*asset_uuid)
+                    .unwrap_or_else(|| panic!("Expected `{}` to be loaded.", file_name));
+
+                (asset_load_handle, *file_name)
+            })
+            .collect::<Vec<(LoadHandle, &'static str)>>();
+
+        asset_handles
+            .iter()
+            .for_each(|(asset_load_handle, file_name)| {
+                assert_eq!(
+                    std::mem::discriminant(&LoadStatus::Loaded),
+                    std::mem::discriminant(&loader.get_load_status(&asset_load_handle)),
+                    "Expected `{}` to be loaded.",
+                    file_name
+                );
+            });
+
+        // Remove reference to top level asset.
+        loader.remove_ref(&handle);
+        wait_for_status(LoadStatus::NotRequested, &handle, &mut loader, &storage);
+
+        asset_handles
+            .iter()
+            .for_each(|(asset_load_handle, file_name)| {
+                assert_eq!(
+                    std::mem::discriminant(&LoadStatus::NotRequested),
+                    std::mem::discriminant(&loader.get_load_status(&asset_load_handle)),
+                    "Expected `{}` to be loaded.",
+                    file_name
+                );
+            });
+    }
+
+    fn asset_tree() -> Vec<(AssetUUID, &'static str)> {
+        [
+            ("a5ce4da0-675e-4460-be02-c8b145c2ee49", "asset_a.txt"),
+            ("039dc5f8-ee1c-4949-a7df-72383f12c7a2", "asset_b.txt"),
+            ("c071f3ff-c9ea-4bf5-b3b9-bf5fc29f9b59", "asset_c.txt"),
+            ("55adb689-b91c-42a0-941b-de4a9f7f4f03", "asset_d.txt"),
+        ]
+        .into_iter()
+        .map(|(id, file_name)| {
+            let asset_uuid = *uuid::Uuid::parse_str(id)
+                .unwrap_or_else(|_| panic!("Failed to parse `{}` as `Uuid`.", id))
+                .as_bytes();
+
+            (asset_uuid, *file_name)
+        })
+        .collect::<Vec<(AssetUUID, &'static str)>>()
     }
 
     fn spawn_daemon(daemon_address: &str) -> JoinHandle<()> {
