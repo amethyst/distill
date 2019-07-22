@@ -30,6 +30,7 @@ enum LoadState {
     WaitingForMetadata,
     RequestingMetadata,
     RequestDependencies,
+    WaitingForDependencies,
     WaitingForData,
     RequestingData,
     LoadingAsset,
@@ -142,8 +143,13 @@ impl Loader for RpcLoader {
             .get(load)
             .map(|s| match s.state {
                 None => LoadStatus::NotRequested,
-                WaitingForMetadata | RequestingMetadata | RequestDependencies | WaitingForData
-                | RequestingData | LoadingAsset => LoadStatus::Loading,
+                WaitingForMetadata
+                | RequestingMetadata
+                | RequestDependencies
+                | WaitingForDependencies
+                | WaitingForData
+                | RequestingData
+                | LoadingAsset => LoadStatus::Loading,
                 Loaded => {
                     if let Some(_) = s.loaded_version {
                         LoadStatus::Loaded
@@ -545,6 +551,14 @@ fn process_load_states(
                             );
                         });
 
+                    LoadState::WaitingForDependencies
+                }
+                LoadState::WaitingForDependencies => {
+                    let asset_id = value.asset_id;
+                    let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
+                        panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
+                    });
+
                     // Ensure dependencies are committed before continuing to load this asset.
                     let asset_dependencies_committed = {
                         asset_metadata.load_deps.iter().all(|dependency_asset_id| {
@@ -560,7 +574,7 @@ fn process_load_states(
                     if asset_dependencies_committed {
                         LoadState::WaitingForData
                     } else {
-                        LoadState::RequestDependencies
+                        LoadState::WaitingForDependencies
                     }
                 }
                 LoadState::WaitingForData => {
@@ -599,6 +613,7 @@ fn process_load_states(
                             if let Some(dependency_load_handle) =
                                 uuid_to_load.get(dependency_asset_id).as_ref()
                             {
+                                log::debug!("Removing ref from `{:?}`", *dependency_asset_id);
                                 LoaderData::remove_ref(load_states, dependency_load_handle)
                             } else {
                                 panic!(
