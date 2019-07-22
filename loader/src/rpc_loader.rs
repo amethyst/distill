@@ -112,8 +112,8 @@ impl LoaderData {
             .filter(|a| a.state == LoadState::Loaded)
             .and_then(|a| a.asset_type.map(|t| (t, *load)))
     }
-    fn remove_ref(&self, load: &LoadHandle) {
-        self.load_states
+    fn remove_ref(load_states: &DHashMap<LoadHandle, AssetLoad>, load: &LoadHandle) {
+        load_states
             .get(load)
             .map(|h| h.refs.fetch_sub(1, Ordering::Relaxed));
     }
@@ -168,7 +168,7 @@ impl Loader for RpcLoader {
         self.data.get_asset(load)
     }
     fn remove_ref(&self, load: &LoadHandle) {
-        self.data.remove_ref(load)
+        LoaderData::remove_ref(&self.data.load_states, load)
     }
     fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>> {
         let mut rpc = self.rpc.lock().expect("rpc mutex poisoned");
@@ -553,7 +553,6 @@ fn process_load_states(
                     // Ensure dependencies are committed before committing this asset.
                     // load is an AssetLoad.
                     let asset_dependencies_committed = {
-                        // need to map from  load: AssetLoad to its AssetMetadata, to get load_deps
                         let asset_id = value.asset_id;
                         let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
                             panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
@@ -593,6 +592,28 @@ fn process_load_states(
                         value.requested_version = None;
                         value.loaded_version = None;
                     }
+
+                    // Remove reference from asset dependencies.
+                    let asset_id = value.asset_id;
+                    let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
+                        panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
+                    });
+                    asset_metadata
+                        .load_deps
+                        .iter()
+                        .for_each(|dependency_asset_id| {
+                            if let Some(dependency_load_handle) =
+                                uuid_to_load.get(dependency_asset_id).as_ref()
+                            {
+                                LoaderData::remove_ref(load_states, dependency_load_handle)
+                            } else {
+                                panic!(
+                                    "Expected load handle to exist for asset `{:?}`.",
+                                    dependency_asset_id
+                                );
+                            }
+                        });
+
                     LoadState::Unloading
                 }
                 LoadState::Unloading => {
@@ -827,7 +848,7 @@ mod tests {
         let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
 
         // Start daemon in a separate thread
-        let daemon_port = 2501;
+        let daemon_port = 2505;
         let daemon_address = format!("127.0.0.1:{}", daemon_port);
         let _atelier_daemon = spawn_daemon(&daemon_address);
 
@@ -870,17 +891,17 @@ mod tests {
         loader.remove_ref(&handle);
         wait_for_status(LoadStatus::NotRequested, &handle, &mut loader, &storage);
 
-        // TODO: Remove ref when unloading top level asset.
-        // asset_handles
-        //     .iter()
-        //     .for_each(|(asset_load_handle, _file_name)| {
-        //         wait_for_status(
-        //             LoadStatus::NotRequested,
-        //             &asset_load_handle,
-        //             &mut loader,
-        //             &storage,
-        //         );
-        //     });
+        // Remove ref when unloading top level asset.
+        asset_handles
+            .iter()
+            .for_each(|(asset_load_handle, _file_name)| {
+                wait_for_status(
+                    LoadStatus::NotRequested,
+                    &asset_load_handle,
+                    &mut loader,
+                    &storage,
+                );
+            });
     }
 
     fn asset_tree() -> Vec<(AssetUUID, &'static str)> {
