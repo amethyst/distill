@@ -11,12 +11,12 @@ use structopt::StructOpt;
 /// # Examples
 ///
 /// ```bash
-/// asset_daemon --db ./db --address "127.0.0.1:9999" assets
+/// asset_daemon --db .assets_db --address "127.0.0.1:9999" assets
 /// ```
 #[derive(StructOpt)]
 pub struct AssetDaemonOpt {
     /// Path to the asset metadata database directory.
-    #[structopt(name = "db", long, parse(from_os_str), default_value = ".db")]
+    #[structopt(name = "db", long, parse(from_os_str), default_value = ".assets_db")]
     pub db_dir: PathBuf,
     /// Socket address for the daemon to listen for connections, e.g. "127.0.0.1:9999".
     #[structopt(

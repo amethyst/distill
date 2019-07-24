@@ -942,7 +942,7 @@ mod tests {
                 let tests_path = PathBuf::from_iter(&[env!("CARGO_MANIFEST_DIR"), "tests"]);
 
                 AssetDaemon::default()
-                    .with_db_path(tests_path.join("db"))
+                    .with_db_path(tests_path.join("assets_db"))
                     .with_address(daemon_address)
                     .with_importers(std::iter::once((
                         "txt",

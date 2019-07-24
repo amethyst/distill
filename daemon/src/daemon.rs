@@ -24,7 +24,7 @@ pub struct AssetDaemon {
 impl Default for AssetDaemon {
     fn default() -> Self {
         Self {
-            db_dir: PathBuf::from(".db"),
+            db_dir: PathBuf::from(".assets_db"),
             address: "127.0.0.1:9999".parse().unwrap(),
             importers: Default::default(),
             asset_dirs: vec![PathBuf::from("assets")],
