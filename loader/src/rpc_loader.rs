@@ -560,7 +560,7 @@ fn process_load_states(
                     });
 
                     // Ensure dependencies are committed before continuing to load this asset.
-                    let asset_dependencies_committed = {
+                    let asset_dependencies_committed =
                         asset_metadata.load_deps.iter().all(|dependency_asset_id| {
                             uuid_to_load
                                 .get(dependency_asset_id)
@@ -568,8 +568,7 @@ fn process_load_states(
                                 .and_then(|dep_load_handle| load_states.get(dep_load_handle))
                                 .map(|dep_load| dep_load.state == LoadState::Loaded)
                                 .unwrap_or(false)
-                        })
-                    };
+                        });
 
                     if asset_dependencies_committed {
                         LoadState::WaitingForData
