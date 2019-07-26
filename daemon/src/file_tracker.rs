@@ -202,7 +202,6 @@ mod events {
         Ok(())
     }
 
-
     pub(super) fn handle_file_event(
         txn: &mut RwTransaction<'_>,
         tables: &FileTrackerTables,
@@ -666,7 +665,7 @@ pub mod tests {
                 thread::sleep(Duration::from_millis(1));
             }
 
-            expect_no_event(&rx);
+            expect_event(&rx);
 
             f(tracker.clone(), rx, asset_dir.path());
 
