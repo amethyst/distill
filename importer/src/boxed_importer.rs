@@ -45,7 +45,7 @@ pub struct SourceMetadata<Options, State> {
     pub importer_options: Options,
     /// The [Importer::State] generated when importing the source file.
     pub importer_state: State,
-    /// Metadata for asssets generated when importing the source file.
+    /// Metadata for assets generated when importing the source file.
     pub assets: Vec<AssetMetadata>,
 }
 

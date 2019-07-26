@@ -131,7 +131,7 @@ impl LoaderData {
     }
 }
 
-/// [Loader] implementation which communiates with `atelier-daemon`.
+/// [Loader] implementation which communicates with `atelier-daemon`.
 /// `RpcLoader` is intended for use in development environments.
 pub struct RpcLoader {
     connect_string: String,
