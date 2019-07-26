@@ -23,6 +23,8 @@ pub struct SourceMetadata<Options, State> {
     /// Hash of the source file + importer options + importer state this metadata was generated from
     pub import_hash: Option<u64>,
     pub importer_version: u32,
+    #[serde(default)]
+    pub importer_type: AssetTypeId,
     pub importer_options: Options,
     pub importer_state: State,
     pub assets: Vec<AssetMetadata>,
@@ -90,6 +92,7 @@ where
             version: metadata.version,
             import_hash: metadata.import_hash,
             importer_version: metadata.importer_version,
+            importer_type: metadata.importer_type,
             importer_options: Box::new(metadata.importer_options),
             importer_state: Box::new(metadata.importer_state),
             assets: metadata.assets.clone(),
@@ -110,11 +113,9 @@ pub struct SourceFileImporter {
 }
 inventory::collect!(SourceFileImporter);
 
-pub fn get_source_importers() -> impl Iterator<Item = (&'static str, Box<dyn BoxedImporter + 'static>)> {
+pub fn get_source_importers(
+) -> impl Iterator<Item = (&'static str, Box<dyn BoxedImporter + 'static>)> {
     inventory::iter::<SourceFileImporter>
         .into_iter()
-        .map(|s| (
-            s.extension.trim_start_matches("."),
-            (s.instantiator)(),
-        ))
+        .map(|s| (s.extension.trim_start_matches("."), (s.instantiator)()))
 }

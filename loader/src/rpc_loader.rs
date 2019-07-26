@@ -24,17 +24,28 @@ use std::{
 };
 use tokio::prelude::*;
 
+/// Describes the state of an asset load operation
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum LoadState {
+    /// Indeterminate state - may transition into a lod, or result in removal if ref count is < 0
     None,
+    /// The load operation needs metadata to progress
     WaitingForMetadata,
+    /// Metadata is being fetched for the load operation
     RequestingMetadata,
+    /// The load operation needs asset data to progress
     WaitingForData,
+    /// Asset data is being fetched for the load operation
     RequestingData,
-    LoadingData,
+    /// Asset data is being decompressed
+    DecompressingData,
+    /// Asset data is being loaded by engine systems
     LoadingAsset,
+    /// Asset is loaded and ready to use
     Loaded,
+    /// Asset should be unloaded
     UnloadRequested,
+    /// Asset is being unloaded by engine systems
     Unloading,
 }
 
@@ -147,7 +158,7 @@ impl<HandleType: Clone> Loader for RpcLoader<HandleType> {
             .map(|s| match s.state {
                 None => LoadStatus::NotRequested,
                 WaitingForMetadata | RequestingMetadata | WaitingForData | RequestingData
-                | LoadingData | LoadingAsset => LoadStatus::Loading,
+                | DecompressingData | LoadingAsset => LoadStatus::Loading,
                 Loaded => {
                     if let Some(_) = s.loaded_version {
                         LoadStatus::Loaded
@@ -538,7 +549,7 @@ fn process_load_states<HandleType>(
                     }
                 }
                 LoadState::RequestingData => LoadState::RequestingData,
-                LoadState::LoadingData => LoadState::LoadingData,
+                LoadState::DecompressingData => LoadState::DecompressingData,
                 LoadState::LoadingAsset => LoadState::LoadingAsset,
                 LoadState::Loaded => {
                     if value.refs.load(Ordering::Relaxed) <= 0 {

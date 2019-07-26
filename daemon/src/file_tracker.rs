@@ -1,7 +1,7 @@
 use crate::capnp_db::{
     CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
 };
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::utils;
 use crate::watcher::{self, FileEvent, FileMetadata};
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
@@ -33,7 +33,8 @@ struct FileTrackerTables {
 }
 #[derive(Copy, Clone, Debug)]
 pub enum FileTrackerEvent {
-    Updated,
+    Start,
+    Update,
 }
 pub struct FileTracker {
     db: Arc<Environment>,
@@ -157,156 +158,173 @@ where
     Ok(())
 }
 
-fn handle_file_event(
-    txn: &mut RwTransaction<'_>,
-    tables: &FileTrackerTables,
-    evt: watcher::FileEvent,
-    scan_stack: &mut Vec<ScanContext>,
-) -> Result<()> {
-    match evt {
-        FileEvent::Updated(path, metadata) => {
-            let path_str = path.to_string_lossy();
-            let key = path_str.as_bytes();
-            let mut changed = true;
-            {
-                let maybe_msg: Option<MessageReader<'_, source_file_info::Owned>> =
-                    txn.get(tables.source_files, &key)?;
-                if let Some(msg) = maybe_msg {
-                    let info = msg.get()?;
-                    if info.get_length() == metadata.length
-                        && info.get_last_modified() == metadata.last_modified
-                        && info.get_type()? == db_file_type(metadata.file_type)
-                    {
-                        changed = false;
-                    } else {
-                        debug!("CHANGED {} metadata {:?}", path_str, metadata);
-                    }
+mod events {
+    use super::*;
+    fn handle_update(
+        txn: &mut RwTransaction<'_>,
+        tables: &FileTrackerTables,
+        path: &PathBuf,
+        metadata: &watcher::FileMetadata,
+        scan_stack: &mut Vec<ScanContext>,
+    ) -> Result<()> {
+        let path_str = path.to_string_lossy();
+        let key = path_str.as_bytes();
+        let mut changed = true;
+        {
+            let maybe_msg: Option<MessageReader<'_, source_file_info::Owned>> =
+                txn.get(tables.source_files, &key)?;
+            if let Some(msg) = maybe_msg {
+                let info = msg.get()?;
+                if info.get_length() == metadata.length
+                    && info.get_last_modified() == metadata.last_modified
+                    && info.get_type()? == db_file_type(metadata.file_type)
+                {
+                    changed = false;
+                } else {
+                    debug!("CHANGED {} metadata {:?}", path_str, metadata);
                 }
             }
-            if !scan_stack.is_empty() {
-                let head_idx = scan_stack.len() - 1;
-                let scan_ctx = scan_stack.index_mut(head_idx);
-                scan_ctx.files.insert(path.clone(), metadata.clone());
-            }
-            if changed {
-                let value = build_source_info(&metadata);
-                let dirty_value = build_dirty_file_info(
-                    data::FileState::Exists,
-                    value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
-                );
-                txn.put(tables.source_files, &key, &value)?;
-                txn.put(tables.dirty_files, &key, &dirty_value)?;
-            }
         }
-        FileEvent::Renamed(src, dst, metadata) => {
-            if !scan_stack.is_empty() {
-                let head_idx = scan_stack.len() - 1;
-                let scan_ctx = scan_stack.index_mut(head_idx);
-                scan_ctx.files.insert(dst.clone(), metadata.clone());
-                scan_ctx.files.remove(&src);
-            }
-            let src_str = src.to_string_lossy();
-            let src_key = src_str.as_bytes();
-            let dst_str = dst.to_string_lossy();
-            let dst_key = dst_str.as_bytes();
-            debug!("rename {} to {} metadata {:?}", src_str, dst_str, metadata);
+        if !scan_stack.is_empty() {
+            let head_idx = scan_stack.len() - 1;
+            let scan_ctx = scan_stack.index_mut(head_idx);
+            scan_ctx.files.insert(path.clone(), metadata.clone());
+        }
+        if changed {
             let value = build_source_info(&metadata);
-            txn.delete(tables.source_files, &src_key)?;
-            txn.put(tables.source_files, &dst_key, &value)?;
-            let dirty_value_new = build_dirty_file_info(
+            let dirty_value = build_dirty_file_info(
                 data::FileState::Exists,
                 value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
             );
-            let dirty_value_old = build_dirty_file_info(
-                data::FileState::Deleted,
-                value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
-            );
-            txn.put(tables.dirty_files, &src_key, &dirty_value_old)?;
-            txn.put(tables.dirty_files, &dst_key, &dirty_value_new)?;
-            add_rename_event(tables, txn, &src_key, &dst_key)?;
+            txn.put(tables.source_files, &key, &value)?;
+            txn.put(tables.dirty_files, &key, &dirty_value)?;
         }
-        FileEvent::Removed(path) => {
-            if !scan_stack.is_empty() {
-                let head_idx = scan_stack.len() - 1;
-                let scan_ctx = scan_stack.index_mut(head_idx);
-                scan_ctx.files.remove(&path);
+        Ok(())
+    }
+
+
+    pub(super) fn handle_file_event(
+        txn: &mut RwTransaction<'_>,
+        tables: &FileTrackerTables,
+        evt: watcher::FileEvent,
+        scan_stack: &mut Vec<ScanContext>,
+    ) -> Result<Option<FileTrackerEvent>> {
+        match evt {
+            FileEvent::Updated(path, metadata) => {
+                handle_update(txn, tables, &path, &metadata, scan_stack)?;
             }
-            let path_str = path.to_string_lossy();
-            let key = path_str.as_bytes();
-            debug!("removed {}", path_str);
-            update_deleted_dirty_entry(txn, &tables, &key)?;
-            txn.delete(tables.source_files, &key)?;
-        }
-        FileEvent::FileError(err) => {
-            debug!("file event error: {}", err);
-            return Err(err);
-        }
-        FileEvent::ScanStart(path) => {
-            debug!("scan start: {}", path.to_string_lossy());
-            scan_stack.push(ScanContext {
-                path,
-                files: HashMap::new(),
-            });
-        }
-        FileEvent::ScanEnd(path, watched_dirs) => {
-            // When we finish a scan, we know which files exist in the subdirectories.
-            // This means we can scan our DB for files we've tracked and delete removed files from DB
-            let scan_ctx = scan_stack.pop().unwrap();
-            let mut db_file_set = HashSet::new();
-            {
+            FileEvent::Renamed(src, dst, metadata) => {
+                if !scan_stack.is_empty() {
+                    let head_idx = scan_stack.len() - 1;
+                    let scan_ctx = scan_stack.index_mut(head_idx);
+                    scan_ctx.files.insert(dst.clone(), metadata.clone());
+                    scan_ctx.files.remove(&src);
+                }
+                let src_str = src.to_string_lossy();
+                let src_key = src_str.as_bytes();
+                let dst_str = dst.to_string_lossy();
+                let dst_key = dst_str.as_bytes();
+                debug!("rename {} to {} metadata {:?}", src_str, dst_str, metadata);
+                let value = build_source_info(&metadata);
+                txn.delete(tables.source_files, &src_key)?;
+                txn.put(tables.source_files, &dst_key, &value)?;
+                let dirty_value_new = build_dirty_file_info(
+                    data::FileState::Exists,
+                    value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
+                );
+                let dirty_value_old = build_dirty_file_info(
+                    data::FileState::Deleted,
+                    value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
+                );
+                txn.put(tables.dirty_files, &src_key, &dirty_value_old)?;
+                txn.put(tables.dirty_files, &dst_key, &dirty_value_new)?;
+                add_rename_event(tables, txn, &src_key, &dst_key)?;
+            }
+            FileEvent::Removed(path) => {
+                if !scan_stack.is_empty() {
+                    let head_idx = scan_stack.len() - 1;
+                    let scan_ctx = scan_stack.index_mut(head_idx);
+                    scan_ctx.files.remove(&path);
+                }
                 let path_str = path.to_string_lossy();
                 let key = path_str.as_bytes();
-                let path_string = scan_ctx.path.to_string_lossy().into_owned();
-                let mut cursor = txn.open_ro_cursor(tables.source_files)?;
-                for (key, _) in cursor.capnp_iter_from(&key) {
-                    let key = str::from_utf8(key).expect("Encoded key was invalid utf8");
-                    if !key.starts_with(&path_string) {
-                        break;
-                    }
-                    db_file_set.insert(PathBuf::from(key));
-                }
+                debug!("removed {}", path_str);
+                update_deleted_dirty_entry(txn, &tables, &key)?;
+                txn.delete(tables.source_files, &key)?;
             }
-            let scan_ctx_set = HashSet::from_iter(scan_ctx.files.keys().cloned());
-            let to_remove = db_file_set.difference(&scan_ctx_set);
-            for p in to_remove {
-                let p_str = p.to_string_lossy();
-                let p_key = p_str.as_bytes();
-                update_deleted_dirty_entry(txn, &tables, &p_key)?;
-                txn.delete(tables.source_files, &p_key)?;
+            FileEvent::FileError(err) => {
+                debug!("file event error: {}", err);
+                return Err(err);
             }
-            info!(
-                "Scanned and compared {} + {}, deleted {}",
-                scan_ctx_set.len(),
-                db_file_set.len(),
-                db_file_set.difference(&scan_ctx_set).count()
-            );
-            // If this is the top-level scan, we have a final set of watched directories,
-            // so we can delete any files that are not in any watched directories from the DB.
-            if scan_stack.is_empty() {
-                let mut to_delete = Vec::new();
+            FileEvent::ScanStart(path) => {
+                debug!("scan start: {}", path.to_string_lossy());
+                scan_stack.push(ScanContext {
+                    path,
+                    files: HashMap::new(),
+                });
+            }
+            FileEvent::ScanEnd(path, watched_dirs) => {
+                // When we finish a scan, we know which files exist in the subdirectories.
+                // This means we can scan our DB for files we've tracked and delete removed files from DB
+                let scan_ctx = scan_stack.pop().unwrap();
+                let mut db_file_set = HashSet::new();
                 {
+                    let path_str = path.to_string_lossy();
+                    let key = path_str.as_bytes();
+                    let path_string = scan_ctx.path.to_string_lossy().into_owned();
                     let mut cursor = txn.open_ro_cursor(tables.source_files)?;
-                    let dirs_as_strings = Vec::from_iter(
-                        watched_dirs
-                            .into_iter()
-                            .map(|f| f.to_string_lossy().into_owned()),
-                    );
-                    for (key_bytes, _) in cursor.iter_start() {
-                        let key = str::from_utf8(key_bytes).expect("Encoded key was invalid utf8");
-                        if !dirs_as_strings.iter().any(|dir| key.starts_with(dir)) {
-                            to_delete.push(key);
+                    for (key, _) in cursor.capnp_iter_from(&key) {
+                        let key = str::from_utf8(key).expect("Encoded key was invalid utf8");
+                        if !key.starts_with(&path_string) {
+                            break;
+                        }
+                        db_file_set.insert(PathBuf::from(key));
+                    }
+                }
+                let scan_ctx_set = HashSet::from_iter(scan_ctx.files.keys().cloned());
+                let to_remove = db_file_set.difference(&scan_ctx_set);
+                for p in to_remove {
+                    let p_str = p.to_string_lossy();
+                    let p_key = p_str.as_bytes();
+                    update_deleted_dirty_entry(txn, &tables, &p_key)?;
+                    txn.delete(tables.source_files, &p_key)?;
+                }
+                info!(
+                    "Scanned and compared {} + {}, deleted {}",
+                    scan_ctx_set.len(),
+                    db_file_set.len(),
+                    db_file_set.difference(&scan_ctx_set).count()
+                );
+                // If this is the top-level scan, we have a final set of watched directories,
+                // so we can delete any files that are not in any watched directories from the DB.
+                if scan_stack.is_empty() {
+                    let mut to_delete = Vec::new();
+                    {
+                        let mut cursor = txn.open_ro_cursor(tables.source_files)?;
+                        let dirs_as_strings = Vec::from_iter(
+                            watched_dirs
+                                .into_iter()
+                                .map(|f| f.to_string_lossy().into_owned()),
+                        );
+                        for (key_bytes, _) in cursor.iter_start() {
+                            let key =
+                                str::from_utf8(key_bytes).expect("Encoded key was invalid utf8");
+                            if !dirs_as_strings.iter().any(|dir| key.starts_with(dir)) {
+                                to_delete.push(key);
+                            }
                         }
                     }
+                    for key in to_delete {
+                        txn.delete(tables.source_files, &key)?;
+                        update_deleted_dirty_entry(txn, &tables, &key)?;
+                    }
                 }
-                for key in to_delete {
-                    txn.delete(tables.source_files, &key)?;
-                    update_deleted_dirty_entry(txn, &tables, &key)?;
-                }
+                debug!("scan end: {}", path.to_string_lossy());
+                return Ok(Some(FileTrackerEvent::Start));
             }
-            debug!("scan end: {}", path.to_string_lossy());
         }
+        Ok(None)
     }
-    Ok(())
 }
 
 impl FileTracker {
@@ -328,7 +346,7 @@ impl FileTracker {
                 rename_file_events: db
                     .create_db(Some("rename_file_events"), lmdb::DatabaseFlags::INTEGER_KEY)?,
             },
-            db: db,
+            db,
             listener_rx: rx,
             listener_tx: tx,
             is_running: AtomicBool::new(false),
@@ -336,7 +354,7 @@ impl FileTracker {
         })
     }
 
-    pub fn get_watch_dirs<'a>(&'a self) -> impl Iterator<Item = &'a PathBuf> {
+    pub fn get_watch_dirs(&self) -> impl Iterator<Item = &'_ PathBuf> {
         self.watch_dirs.iter()
     }
 
@@ -378,6 +396,28 @@ impl FileTracker {
 
     pub fn clear_rename_events(&self, txn: &mut RwTransaction<'_>) -> Result<()> {
         txn.clear_db(self.tables.rename_file_events)?;
+        Ok(())
+    }
+
+    pub fn add_dirty_file(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Result<()> {
+        let metadata = match fs::metadata(path) {
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(Error::IO(e)),
+            Ok(metadata) => Some(watcher::file_metadata(&metadata)),
+        };
+        let path_str = path.to_string_lossy();
+        let key = path_str.as_bytes();
+        if let Some(metadata) = metadata {
+            let source_info = build_source_info(&metadata);
+            let dirty_file_info = build_dirty_file_info(
+                data::FileState::Exists,
+                source_info.get_root_as_reader::<source_file_info::Reader<'_>>()?,
+            );
+            txn.put(self.tables.source_files, &key, &source_info)?;
+            txn.put(self.tables.dirty_files, &key, &dirty_file_info)?;
+        } else {
+            update_deleted_dirty_entry(txn, &self.tables, &key)?;
+        }
         Ok(())
     }
 
@@ -492,8 +532,9 @@ impl FileTracker {
         is_running: &mut bool,
         rx: &Receiver<FileEvent>,
         scan_stack: &mut Vec<ScanContext>,
-    ) -> Result<Option<FileTrackerEvent>> {
+    ) -> Result<Vec<FileTrackerEvent>> {
         let mut txn = None;
+        let mut output_evts = Vec::new();
         while *is_running {
             let timeout = Duration::from_millis(100);
             select! {
@@ -503,7 +544,9 @@ impl FileTracker {
                             txn = Some(self.db.rw_txn()?);
                         }
                         let txn = txn.as_mut().unwrap();
-                        handle_file_event(txn, &self.tables, evt, scan_stack)?;
+                        if let Some(evt) = events::handle_file_event(txn, &self.tables, evt, scan_stack)? {
+                            output_evts.push(evt);
+                        }
                     } else {
                         error!("Receive error");
                         *is_running = false;
@@ -519,13 +562,10 @@ impl FileTracker {
             if txn.dirty {
                 txn.commit()?;
                 debug!("Commit");
-                Ok(Some(FileTrackerEvent::Updated))
-            } else {
-                Ok(None)
+                output_evts.push(FileTrackerEvent::Update);
             }
-        } else {
-            Ok(None)
         }
+        Ok(output_evts)
     }
 
     pub fn run(&self) -> Result<()> {
@@ -536,13 +576,10 @@ impl FileTracker {
             return Ok(());
         }
         let (tx, rx) = channel::unbounded();
-        let dir_strings: Vec<_> = self
-            .watch_dirs
-            .iter()
-            .map(|p| p.to_string_lossy().to_string())
-            .collect();
-        let mut watcher =
-            watcher::DirWatcher::from_path_iter(dir_strings.iter().map(|s| s.as_str()), tx)?;
+        let mut watcher = watcher::DirWatcher::from_path_iter(
+            self.watch_dirs.iter().map(|p| p.to_str().unwrap()),
+            tx,
+        )?;
 
         let stop_handle = watcher.stop_handle();
         let handle = thread::spawn(move || watcher.run());
@@ -550,7 +587,7 @@ impl FileTracker {
         while self.is_running.load(Ordering::Acquire) {
             let mut scan_stack = Vec::new();
             let mut is_running = true;
-            let event = self.read_file_events(&mut is_running, &rx, &mut scan_stack)?;
+            let events = self.read_file_events(&mut is_running, &rx, &mut scan_stack)?;
             select! {
                 recv(self.listener_rx) -> listener => {
                     if let Ok(listener) = listener {
@@ -559,7 +596,7 @@ impl FileTracker {
                 },
                 default => {}
             }
-            if let Some(event) = event {
+            for event in events {
                 for listener in listeners.iter() {
                     debug!("Sent to listener");
                     select! {

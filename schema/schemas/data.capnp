@@ -58,6 +58,7 @@ struct SourceMetadata {
   importerStateType @4 :Data;
   importerState @5 :Data;
   buildPipelines @6 :List(AssetUuidPair);
+  importerType @7 :Data;
 }
 
 struct ImportError {

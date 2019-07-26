@@ -1,6 +1,12 @@
 use crate::error::Error;
+use atelier_importer::AssetUUID;
+use std::{
+    ffi::OsStr,
+    hash::{Hash, Hasher},
+    path::PathBuf,
+};
 
-pub fn make_array<A, T>(slice: &[T]) -> A
+pub(crate) fn make_array<A, T>(slice: &[T]) -> A
 where
     A: Sized + Default + AsMut<[T]>,
     T: Copy,
@@ -10,7 +16,7 @@ where
     a
 }
 
-pub fn uuid_from_slice(slice: &[u8]) -> Result<uuid::Bytes, Error> {
+pub(crate) fn uuid_from_slice(slice: &[u8]) -> Result<uuid::Bytes, Error> {
     const BYTES_LEN: usize = 16;
 
     let len = slice.len();
@@ -22,4 +28,17 @@ pub fn uuid_from_slice(slice: &[u8]) -> Result<uuid::Bytes, Error> {
     let mut bytes: uuid::Bytes = [0; 16];
     bytes.copy_from_slice(slice);
     Ok(bytes)
+}
+
+pub(crate) fn to_meta_path(p: &PathBuf) -> PathBuf {
+    p.with_file_name(OsStr::new(
+        &(p.file_name().unwrap().to_str().unwrap().to_owned() + ".meta"),
+    ))
+}
+
+pub(crate) fn calc_asset_hash(id: &AssetUUID, import_hash: u64) -> u64 {
+    let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
+    import_hash.hash(&mut hasher);
+    id.hash(&mut hasher);
+    hasher.finish()
 }

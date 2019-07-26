@@ -12,7 +12,22 @@ use std::{
     thread,
 };
 
-pub type ImporterMap = HashMap<&'static str, Box<dyn BoxedImporter>>;
+#[derive(Default)]
+pub struct ImporterMap(HashMap<&'static str, Box<dyn BoxedImporter>>);
+
+impl ImporterMap {
+    pub fn insert(&mut self, ext: &'static str, importer: Box<dyn BoxedImporter>) {
+        self.0.insert(ext, importer);
+    }
+
+    pub fn get_by_path<'a>(&'a self, path: &PathBuf) -> Option<&'a dyn BoxedImporter> {
+        let lower_extension = path
+            .extension()
+            .map(|s| s.to_str().unwrap().to_lowercase())
+            .unwrap_or_else(|| "".to_string());
+        self.0.get(lower_extension.as_str()).map(|i| i.as_ref())
+    }
+}
 
 pub struct AssetDaemon {
     db_dir: PathBuf,

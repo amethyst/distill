@@ -9,6 +9,7 @@ pub mod error;
 mod file_asset_source;
 pub mod file_tracker;
 mod serialized_asset;
+mod source_pair_import;
 mod utils;
 pub mod watcher;
 
