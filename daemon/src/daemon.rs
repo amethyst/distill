@@ -77,7 +77,7 @@ impl AssetDaemon {
         self
     }
 
-    pub fn run(self) -> Result<()> {
+    pub fn run(self) {
         let _ = fs::create_dir(&self.db_dir);
         for dir in self.asset_dirs.iter() {
             let _ = fs::create_dir_all(dir);
