@@ -37,18 +37,52 @@ enum LoadState {
     RequestDependencies,
     /// Waiting for dependencies to complete loading
     WaitingForDependencies,
+    /// Asset is loading. [AssetLoadState] describes the sub-state.
+    LoadingAsset(AssetLoadState),
+    /// Asset is loaded and available to use. [AssetLoadState] describes the sub-state.
+    Loaded(AssetLoadState),
+    /// Asset should be unloaded
+    UnloadRequested,
+    /// Asset is being unloaded by engine systems
+    Unloading,
+}
+
+impl LoadState {
+    fn map_asset_load_state<F>(self, f: F) -> LoadState
+    where
+        F: FnOnce(AssetLoadState) -> AssetLoadState,
+    {
+        match self {
+            LoadState::LoadingAsset(asset_state) => LoadState::LoadingAsset(f(asset_state)),
+            LoadState::Loaded(asset_state) => LoadState::Loaded(f(asset_state)),
+            load_state => panic!(
+                "map_asset_load_state expected AssetLoadState, LoadState was {:?}",
+                load_state
+            ),
+        }
+    }
+
+    fn is_asset_available(&self) -> bool {
+        match self {
+            LoadState::Loaded(_) => true,
+            _ => false,
+        }
+    }
+}
+
+/// Describes the state of loading an asset.
+/// This is separate to LoadState to support tracking load states
+/// even when an asset is already loaded, like for hot reload.
+#[derive(Copy, Clone, PartialEq, Debug)]
+enum AssetLoadState {
     /// Waiting for asset data to be fetched
     WaitingForData,
-    /// Asset data is being fetched for the load operation
+    /// Asset data is being fetched
     RequestingData,
     /// Engine systems are loading asset
     LoadingAsset,
     /// Asset is loaded and ready to use
     Loaded,
-    /// Asset should be unloaded
-    UnloadRequested,
-    /// Asset is being unloaded by engine systems
-    Unloading,
 }
 
 struct AssetLoad {
@@ -121,7 +155,10 @@ impl LoaderData {
     fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.load_states
             .get(load)
-            .filter(|a| a.state == LoadState::Loaded)
+            .filter(|a| match a.state {
+                LoadState::Loaded(_) => true,
+                _ => false,
+            })
             .and_then(|a| a.asset_type.map(|t| (t, *load)))
     }
     fn remove_ref(load_states: &DHashMap<LoadHandle, AssetLoad>, load: &LoadHandle) {
@@ -161,10 +198,8 @@ impl Loader for RpcLoader {
                 | RequestingMetadata
                 | RequestDependencies
                 | WaitingForDependencies
-                | WaitingForData
-                | RequestingData
-                | LoadingAsset => LoadStatus::Loading,
-                Loaded => {
+                | LoadingAsset(_) => LoadStatus::Loading,
+                Loaded(_) => {
                     if let Some(_) = s.loaded_version {
                         LoadStatus::Loaded
                     } else {
@@ -259,12 +294,19 @@ fn load_data(
     reader: &artifact::Reader<'_>,
     storage: &dyn AssetStorage,
 ) -> Result<LoadState, Box<dyn Error>> {
-    assert!(
-        LoadState::RequestingData == state.state || LoadState::Loaded == state.state,
-        "LoadState::RequestingData == {:?} || LoadState::Loaded == {:?}",
-        state.state,
-        state.state
-    );
+    match state.state {
+        LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
+            assert!(
+                AssetLoadState::RequestingData == asset_state,
+                "load_data expected AssetLoadState::RequestingData, was {:?}",
+                asset_state
+            );
+        }
+        load_state => panic!(
+            "load_data expected AssetLoadState, LoadState was {:?}",
+            load_state
+        ),
+    }
     let serialized_asset = reader.get_data()?;
     let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
     if let Some(prev_type) = state.asset_type {
@@ -283,9 +325,9 @@ fn load_data(
         new_version,
     )?;
     if state.loaded_version.is_none() {
-        Ok(LoadState::LoadingAsset)
+        Ok(LoadState::LoadingAsset(AssetLoadState::LoadingAsset))
     } else {
-        Ok(LoadState::Loaded)
+        Ok(LoadState::Loaded(AssetLoadState::LoadingAsset))
     }
 }
 
@@ -348,7 +390,9 @@ fn process_data_requests(
                         "asset data request did not return any data for asset {:?}",
                         load.asset_id
                     );
-                    LoadState::WaitingForData
+                    load.state.map_asset_load_state(|_| {
+                        AssetLoadState::WaitingForData
+                    })
                 } else {
                     load_data(op_channel, &handle, &mut load, &artifacts.get(0), storage)?
                 }
@@ -358,7 +402,9 @@ fn process_data_requests(
                     "asset data request failed for asset {:?}: {}",
                     load.asset_id, err
                 );
-                LoadState::WaitingForData
+                load.state.map_asset_load_state(|_| {
+                    AssetLoadState::WaitingForData
+                })
             }
         };
         Ok(())
@@ -370,14 +416,16 @@ fn process_data_requests(
                 chunk
                     .iter_mut()
                     .filter(|(_, v)| {
-                        if let LoadState::WaitingForData = v.state {
-                            true
-                        } else {
-                            false
+                        match v.state {
+                            LoadState::LoadingAsset(asset_state) 
+                            | LoadState::Loaded(asset_state) => {
+                                AssetLoadState::WaitingForData == asset_state
+                            }
+                            _ => false
                         }
                     })
                     .map(|(k, v)| {
-                        v.state = LoadState::RequestingData;
+                        v.state = v.state.map_asset_load_state(|_| AssetLoadState::RequestingData);
                         (v.asset_id, *k)
                     }),
             );
@@ -496,20 +544,22 @@ fn process_load_ops(
                 let mut load = load_states
                     .get_mut(&handle)
                     .expect("load op completed but load state does not exist");
-                if let LoadState::LoadingAsset = load.state {
-                    let asset_type = load
-                        .asset_type
-                        .as_ref()
-                        .expect("in LoadingAsset state but asset_type is None");
-                    asset_storage.commit_asset_version(
-                        asset_type,
-                        &handle,
-                        load.requested_version.unwrap(),
-                    );
-                    load.loaded_version = load.requested_version;
-                    load.state = LoadState::Loaded;
-                } else {
-                    panic!("load op completed but load state is {:?}", load.state);
+                match load.state {
+                    LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
+                        assert!(AssetLoadState::LoadingAsset == asset_state);
+                        let asset_type = load
+                            .asset_type
+                            .as_ref()
+                            .expect("in LoadingAsset state but asset_type is None");
+                        asset_storage.commit_asset_version(
+                            asset_type,
+                            &handle,
+                            load.requested_version.unwrap(),
+                        );
+                        load.loaded_version = load.requested_version;
+                        load.state = LoadState::Loaded(AssetLoadState::Loaded);
+                    }
+                    _ => panic!("load op completed but load state is {:?}", load.state),
                 }
             }
             HandleOp::LoadDrop(_handle) => panic!("load op dropped without calling complete/error"),
@@ -580,31 +630,27 @@ fn process_load_states(
                                 .get(dependency_asset_id)
                                 .as_ref()
                                 .and_then(|dep_load_handle| load_states.get(dep_load_handle))
-                                .map(|dep_load| dep_load.state == LoadState::Loaded)
+                                .map(|dep_load| dep_load.state.is_asset_available())
                                 .unwrap_or(false)
                         });
 
                     if asset_dependencies_committed {
-                        LoadState::WaitingForData
+                        LoadState::LoadingAsset(AssetLoadState::WaitingForData)
                     } else {
                         LoadState::WaitingForDependencies
                     }
                 }
-                LoadState::WaitingForData => {
-                    log::info!("waiting for data");
-                    if value.asset_type.is_some() {
-                        LoadState::LoadingAsset
-                    } else {
-                        LoadState::WaitingForData
-                    }
-                }
-                LoadState::RequestingData => LoadState::RequestingData,
-                LoadState::LoadingAsset => LoadState::LoadingAsset,
-                LoadState::Loaded => {
-                    if value.refs.load(Ordering::Relaxed) <= 0 {
-                        LoadState::UnloadRequested
-                    } else {
-                        LoadState::Loaded
+                LoadState::LoadingAsset(asset_state) => LoadState::LoadingAsset(asset_state),
+                LoadState::Loaded(asset_state) => {
+                    match asset_state {
+                        AssetLoadState::Loaded => {
+                            if value.refs.load(Ordering::Relaxed) <= 0 {
+                                LoadState::UnloadRequested
+                            } else {
+                                LoadState::Loaded(asset_state)
+                            }
+                        }
+                        _ => LoadState::Loaded(asset_state)
                     }
                 }
                 LoadState::UnloadRequested => {
@@ -674,7 +720,7 @@ mod tests {
     use super::*;
     use crate::TypeUuid;
     use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{AssetUUID, BoxedImporter, ImportedAsset, Importer, ImporterValue};
+    use atelier_importer::{AssetUuid, BoxedImporter, ImportedAsset, Importer, ImporterValue};
     use serde::{Deserialize, Serialize};
     use std::{
         iter::FromIterator,
@@ -805,11 +851,11 @@ mod tests {
                 .lines()
                 .filter_map(|line| Uuid::from_str(line).ok())
                 .map(|uuid| *uuid.as_bytes())
-                .collect::<Vec<AssetUUID>>();
+                .collect::<Vec<AssetUuid>>();
 
             Ok(ImporterValue {
                 assets: vec![ImportedAsset {
-                    id: state.id.expect("AssetUUID not generated"),
+                    id: state.id.expect("AssetUuid not generated"),
                     search_tags: Vec::new(),
                     build_deps: Vec::new(),
                     load_deps,
@@ -927,7 +973,7 @@ mod tests {
             });
     }
 
-    fn asset_tree() -> Vec<(AssetUUID, &'static str)> {
+    fn asset_tree() -> Vec<(AssetUuid, &'static str)> {
         [
             ("a5ce4da0-675e-4460-be02-c8b145c2ee49", "asset_a.txt"),
             ("039dc5f8-ee1c-4949-a7df-72383f12c7a2", "asset_b.txt"),
@@ -942,7 +988,7 @@ mod tests {
 
             (asset_uuid, *file_name)
         })
-        .collect::<Vec<(AssetUUID, &'static str)>>()
+        .collect::<Vec<(AssetUuid, &'static str)>>()
     }
 
     fn spawn_daemon(daemon_address: &str) -> JoinHandle<()> {
