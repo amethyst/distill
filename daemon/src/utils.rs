@@ -1,5 +1,5 @@
 use crate::error::Error;
-use atelier_importer::AssetUUID;
+use atelier_importer::AssetUuid;
 use std::{
     ffi::OsStr,
     hash::{Hash, Hasher},
@@ -36,7 +36,7 @@ pub(crate) fn to_meta_path(p: &PathBuf) -> PathBuf {
     ))
 }
 
-pub(crate) fn calc_asset_hash(id: &AssetUUID, import_hash: u64) -> u64 {
+pub(crate) fn calc_asset_hash(id: &AssetUuid, import_hash: u64) -> u64 {
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
     import_hash.hash(&mut hasher);
     id.hash(&mut hasher);

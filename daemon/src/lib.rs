@@ -3,15 +3,15 @@
 
 mod asset_hub;
 mod asset_hub_service;
-pub mod capnp_db;
-pub mod daemon;
-pub mod error;
+mod capnp_db;
+mod daemon;
+mod error;
 mod file_asset_source;
-pub mod file_tracker;
+mod file_tracker;
 mod serialized_asset;
 mod source_pair_import;
 mod utils;
-pub mod watcher;
+mod watcher;
 
 pub use crate::{daemon::AssetDaemon, error::Result};
 

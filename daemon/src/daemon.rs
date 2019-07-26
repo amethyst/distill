@@ -13,7 +13,7 @@ use std::{
 };
 
 #[derive(Default)]
-pub struct ImporterMap(HashMap<&'static str, Box<dyn BoxedImporter>>);
+pub(crate) struct ImporterMap(HashMap<&'static str, Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
     pub fn insert(&mut self, ext: &'static str, importer: Box<dyn BoxedImporter>) {

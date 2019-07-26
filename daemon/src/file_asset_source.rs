@@ -8,7 +8,7 @@ use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
 use crate::utils;
-use atelier_importer::{AssetMetadata, AssetUUID, BoxedImporter};
+use atelier_importer::{AssetMetadata, AssetUuid, BoxedImporter};
 use atelier_schema::data::{self, source_metadata};
 use bincode;
 use crossbeam_channel::{self as channel, Receiver};
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::{iter::FromIterator, path::PathBuf, str, sync::Arc};
 use time::PreciseTime;
 
-pub struct FileAssetSource {
+pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
     tracker: Arc<FileTracker>,
     rx: Receiver<FileTrackerEvent>,
@@ -32,8 +32,8 @@ struct FileAssetSourceTables {
     /// Maps the source file path to its SourceMetadata
     /// Path -> SourceMetadata
     path_to_metadata: lmdb::Database,
-    /// Maps an AssetUUID to its source file path
-    /// AssetUUID -> Path
+    /// Maps an AssetUuid to its source file path
+    /// AssetUuid -> Path
     asset_id_to_path: lmdb::Database,
 }
 
@@ -181,7 +181,7 @@ impl FileAssetSource {
     fn put_asset_path<'a>(
         &self,
         txn: &'a mut RwTransaction<'_>,
-        asset_id: &AssetUUID,
+        asset_id: &AssetUuid,
         path: &PathBuf,
     ) -> Result<()> {
         let path_str = path.to_string_lossy();
@@ -193,7 +193,7 @@ impl FileAssetSource {
     pub fn get_asset_path<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        asset_id: &AssetUUID,
+        asset_id: &AssetUuid,
     ) -> Result<Option<PathBuf>> {
         match txn.get_as_bytes(self.tables.asset_id_to_path, asset_id)? {
             Some(p) => Ok(Some(PathBuf::from(
@@ -203,14 +203,14 @@ impl FileAssetSource {
         }
     }
 
-    fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUUID) -> Result<bool> {
+    fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUuid) -> Result<bool> {
         Ok(txn.delete(self.tables.asset_id_to_path, asset_id)?)
     }
 
     pub fn regenerate_import_artifact<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        id: &AssetUUID,
+        id: &AssetUuid,
         scratch_buf: &mut Vec<u8>,
     ) -> Result<Option<(u64, SerializedAssetVec)>> {
         let path = self.get_asset_path(txn, id)?;

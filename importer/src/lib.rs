@@ -14,24 +14,39 @@ pub use crate::boxed_importer::{
 pub use crate::serde_obj::SerdeObj;
 pub use inventory;
 
-pub type AssetUUID = ::uuid::Bytes;
+/// A universally unique identifier for an asset.
+/// An asset can be an instance of any Rust type that implements 
+/// [type_uuid::TypeUuid] + [serde::Serialize] + [Send].
+/// 
+/// Note that a source file may produce multiple assets.
+pub type AssetUuid = [u8; 16];
+/// UUID of an asset's Rust type. Produced by [type_uuid::TypeUuid::UUID].
 pub type AssetTypeId = [u8; 16];
 
+/// Importers parse file formats and produce assets.
 pub trait Importer: Send + 'static {
+    /// Returns the version of the importer.
+    /// This version should change any time the importer behaviour changes to
+    /// trigger reimport of assets.
     fn version_static() -> u32
     where
         Self: Sized;
+    /// Returns the version of the importer.
+    /// This version should change any time the importer behaviour changes to
+    /// trigger reimport of assets.
     fn version(&self) -> u32;
+
+    /// Options can store settings that change importer behaviour.
+    /// Will be automatically stored in .meta files and passed to [Importer::import]. 
     type Options: Send + 'static;
 
-    /// State is specific to the format, which are passed to `import`.
-    /// This is maintained by the asset pipeline to enable Importers to
+    /// State is maintained by the asset pipeline to enable Importers to
     /// store state between calls to import().
-    /// This is primarily used to store generated AssetUUIDs with mappings to
-    /// format-internal identifiers and ensure IDs are stable between imports.
+    /// This is primarily used to ensure IDs are stable between imports
+    /// by storing generated AssetUuids with mappings to format-internal identifiers.
     type State: Serialize + Send + 'static;
 
-    /// Reads the given bytes and produces asset data.
+    /// Reads the given bytes and produces assets.
     fn import(
         &self,
         source: &mut dyn Read,
@@ -40,27 +55,27 @@ pub trait Importer: Send + 'static {
     ) -> Result<ImporterValue>;
 }
 
-/// Contains metadata and asset data for an imported asset
+/// Contains metadata and asset data for an imported asset.
+/// Produced by [Importer] implementations.
 pub struct ImportedAsset {
-    /// UUID for the asset to uniquely identify it
-    pub id: AssetUUID,
-    /// Search tags that are used by asset tooling to search for the imported asset
+    /// UUID for the asset to uniquely identify it.
+    pub id: AssetUuid,
+    /// Search tags are used by asset tooling to search for the imported asset.
     pub search_tags: Vec<(String, Option<String>)>,
-    /// Build dependencies will be included in the Builder arguments when building the asset
-    pub build_deps: Vec<AssetUUID>,
-    /// Load dependencies will be loaded before this asset in the Loader
-    pub load_deps: Vec<AssetUUID>,
+    /// Build dependencies will be included in the Builder arguments when building the asset.
+    pub build_deps: Vec<AssetUuid>,
+    /// Load dependencies are guaranteed to load before this asset by the Loader.
+    pub load_deps: Vec<AssetUuid>,
     /// Instantiate dependencies will be instantiated along with this asset when
-    /// the asset is instantiated into a world
-    pub instantiate_deps: Vec<AssetUUID>,
-    /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset
-    pub build_pipeline: Option<AssetUUID>,
-    /// The actual asset data used by tools and Builder
+    /// the asset is instantiated into a world. Only applies for Prefabs.
+    pub instantiate_deps: Vec<AssetUuid>,
+    /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset.
+    pub build_pipeline: Option<AssetUuid>,
+    /// The actual asset data used by tools and Builder.
     pub asset_data: Box<dyn SerdeObj>,
 }
 
-/// Return value for Importers containing all imported assets
+/// Return value for Importers containing all imported assets.
 pub struct ImporterValue {
-    /// All imported assets
     pub assets: Vec<ImportedAsset>,
 }

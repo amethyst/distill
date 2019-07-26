@@ -131,6 +131,8 @@ impl LoaderData {
     }
 }
 
+/// [Loader] implementation which communicates with `atelier-daemon`.
+/// `RpcLoader` is intended for use in development environments.
 pub struct RpcLoader {
     connect_string: String,
     rpc: Arc<Mutex<RpcState>>,
