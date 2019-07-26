@@ -1,4 +1,5 @@
 target
 /assets
-/.amethyst
+/.assets_db
 .vscode
+*/tests/assets_db

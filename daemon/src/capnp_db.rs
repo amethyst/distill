@@ -233,7 +233,7 @@ impl Environment {
         let map_size = 1 << 31;
         #[cfg(target_pointer_width = "64")]
         let map_size = 1 << 42;
-        
+
         #[cfg(not(target_os = "macos"))]
         let flags = lmdb::EnvironmentFlags::NO_TLS | lmdb::EnvironmentFlags::WRITE_MAP;
         #[cfg(target_os = "macos")]
@@ -252,7 +252,7 @@ impl Environment {
         let flags = lmdb::EnvironmentFlags::NO_TLS | lmdb::EnvironmentFlags::WRITE_MAP;
         #[cfg(target_os = "macos")]
         let flags = lmdb::EnvironmentFlags::NO_TLS;
-        
+
         let env = lmdb::Environment::new()
             .set_max_dbs(64)
             .set_map_size(map_size)

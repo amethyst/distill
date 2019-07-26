@@ -21,7 +21,10 @@ log = { version = "0.4", optional = true }
 ccl = { version = "4.12", optional = true }
 
 [dev-dependencies]
-uuid = {version = "0.7", features = ["v4"] }
+atelier-daemon = { path = "../daemon" }
+atelier-importer = { path = "../importer" }
+uuid = { version = "0.7", features = ["v4"] }
+serde = { version = "1.0", features = ["derive"] }
 
 [features]
 default = ["rpc_loader"]

@@ -1,0 +1,25 @@
+(
+    version: 1,
+    import_hash: Some(5294496694179974904),
+    importer_version: 1,
+    importer_options: (),
+    importer_state: (
+        id: Some((96, 53, 32, 66, 97, 111, 70, 14, 171, 210, 84, 97, 149, 192, 96, 254)),
+    ),
+    assets: [
+        (
+            id: (96, 53, 32, 66, 97, 111, 70, 14, 171, 210, 84, 97, 149, 192, 96, 254),
+            search_tags: [
+                ("file_name", Some("asset.txt")),
+            ],
+            build_deps: [
+            ],
+            load_deps: [
+            ],
+            instantiate_deps: [
+            ],
+            build_pipeline: None,
+            import_asset_type: (126, 219, 193, 10, 33, 71, 73, 156, 175, 154, 73, 135, 35, 199, 179, 95),
+        ),
+    ],
+)
