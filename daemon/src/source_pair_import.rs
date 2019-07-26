@@ -24,28 +24,28 @@ pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn Serd
 
 // Only files get Some(hash)
 #[derive(Clone, Debug)]
-pub struct HashedSourcePair {
+pub(crate) struct HashedSourcePair {
     pub source: Option<FileState>,
     pub source_hash: Option<u64>,
     pub meta: Option<FileState>,
     pub meta_hash: Option<u64>,
 }
 #[derive(Clone, Debug)]
-pub struct SourcePair {
+pub(crate) struct SourcePair {
     pub source: Option<FileState>,
     pub meta: Option<FileState>,
 }
 
 pub(crate) type ImportedAssetVec = ImportedAsset<Vec<u8>>;
 
-pub struct ImportedAsset<T: AsRef<[u8]>> {
+pub(crate) struct ImportedAsset<T: AsRef<[u8]>> {
     pub asset_hash: u64,
     pub metadata: AssetMetadata,
     pub asset: Option<SerializedAsset<T>>,
 }
 
 #[derive(Default)]
-pub struct SourcePairImport<'a> {
+pub(crate) struct SourcePairImport<'a> {
     source: PathBuf,
     importer: Option<&'a dyn BoxedImporter>,
     source_hash: Option<u64>,
@@ -54,7 +54,7 @@ pub struct SourcePairImport<'a> {
     source_metadata: Option<SourceMetadata>,
 }
 
-pub trait SourceMetadataCache {
+pub(crate) trait SourceMetadataCache {
     fn restore_metadata<'a>(
         &self,
         path: &PathBuf,
@@ -197,6 +197,7 @@ impl<'a> SourcePairImport<'a> {
             importer.uuid(),
             scratch_buf,
         )?;
+        self.import_hash = Some(import_hash);
         for mut asset in imported.assets {
             asset.search_tags.push((
                 "file_name".to_string(),
@@ -266,7 +267,7 @@ impl<'a> SourcePairImport<'a> {
     }
 }
 
-pub fn process_pair<'a, C: SourceMetadataCache>(
+pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
     metadata_cache: &C,
     importer_map: &'a ImporterMap,
     pair: &HashedSourcePair,

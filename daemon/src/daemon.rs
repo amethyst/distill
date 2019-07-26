@@ -13,7 +13,7 @@ use std::{
 };
 
 #[derive(Default)]
-pub struct ImporterMap(HashMap<&'static str, Box<dyn BoxedImporter>>);
+pub(crate) struct ImporterMap(HashMap<&'static str, Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
     pub fn insert(&mut self, ext: &'static str, importer: Box<dyn BoxedImporter>) {
@@ -77,7 +77,7 @@ impl AssetDaemon {
         self
     }
 
-    pub fn run(self) {
+    pub fn run(self) -> Result<()> {
         let _ = fs::create_dir(&self.db_dir);
         for dir in self.asset_dirs.iter() {
             let _ = fs::create_dir_all(dir);

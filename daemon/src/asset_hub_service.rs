@@ -36,7 +36,7 @@ struct ServiceContext {
     db: Arc<Environment>,
 }
 
-pub struct AssetHubService {
+pub(crate) struct AssetHubService {
     ctx: Arc<ServiceContext>,
 }
 

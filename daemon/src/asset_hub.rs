@@ -1,7 +1,7 @@
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
 use crate::utils;
-use atelier_importer::{AssetMetadata, AssetUUID};
+use atelier_importer::{AssetMetadata, AssetUuid};
 use atelier_schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
@@ -26,14 +26,14 @@ pub struct AssetHub {
 }
 
 struct AssetContentUpdateEvent {
-    id: AssetUUID,
+    id: AssetUuid,
     import_hash: Option<Vec<u8>>,
     build_dep_hash: Option<Vec<u8>>,
 }
 
 enum ChangeEvent {
     ContentUpdate(AssetContentUpdateEvent),
-    Remove(AssetUUID),
+    Remove(AssetUuid),
 }
 
 pub enum AssetBatchEvent {
@@ -41,7 +41,7 @@ pub enum AssetBatchEvent {
 }
 
 pub struct ChangeBatch {
-    content_changes: Vec<AssetUUID>,
+    content_changes: Vec<AssetUuid>,
 }
 
 impl ChangeBatch {
@@ -53,11 +53,11 @@ impl ChangeBatch {
 }
 
 struct AssetHubTables {
-    /// Maps an AssetUUID to a list of other assets that have a build dependency on it
-    /// AssetUUID -> [AssetUUID]
+    /// Maps an AssetUuid to a list of other assets that have a build dependency on it
+    /// AssetUuid -> [AssetUuid]
     build_dep_reverse: lmdb::Database,
     /// Maps an AssetID to its most recent metadata and artifact
-    /// AssetUUID -> ImportedMetadata
+    /// AssetUuid -> ImportedMetadata
     asset_metadata: lmdb::Database,
     /// Maps a SequenceNum to a AssetChangeLogEntry
     /// SequenceNum -> AssetChangeLogEntry
@@ -65,7 +65,7 @@ struct AssetHubTables {
 }
 
 fn set_assetid_list(
-    asset_ids: &[AssetUUID],
+    asset_ids: &[AssetUuid],
     builder: &mut capnp::struct_list::Builder<'_, data::asset_uuid::Owned>,
 ) {
     for (idx, uuid) in asset_ids.iter().enumerate() {
@@ -201,7 +201,7 @@ impl AssetHub {
     pub fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        id: &AssetUUID,
+        id: &AssetUuid,
     ) -> Result<Option<MessageReader<'a, asset_metadata::Owned>>> {
         Ok(txn.get::<asset_metadata::Owned, _>(self.tables.asset_metadata, &id)?)
     }
@@ -209,7 +209,7 @@ impl AssetHub {
     pub fn get_build_deps_reverse<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        id: &AssetUUID,
+        id: &AssetUuid,
     ) -> Result<Option<MessageReader<'a, data::asset_uuid_list::Owned>>> {
         Ok(txn.get::<data::asset_uuid_list::Owned, _>(self.tables.build_dep_reverse, &id)?)
     }
@@ -217,8 +217,8 @@ impl AssetHub {
     fn put_build_deps_reverse(
         &self,
         txn: &mut RwTransaction<'_>,
-        id: &AssetUUID,
-        dependees: Vec<AssetUUID>,
+        id: &AssetUuid,
+        dependees: Vec<AssetUuid>,
     ) -> Result<()> {
         let mut value_builder = capnp::message::Builder::new_default();
         let mut value = value_builder.init_root::<data::asset_uuid_list::Builder<'_>>();
@@ -305,7 +305,7 @@ impl AssetHub {
     pub fn remove_asset(
         &self,
         txn: &mut RwTransaction<'_>,
-        id: &AssetUUID,
+        id: &AssetUuid,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
         let metadata = self.get_metadata(txn, id)?;
@@ -391,7 +391,7 @@ impl AssetHub {
                         }
                     }
                 }
-                let mut sorted_assets: Vec<(&AssetUUID, &Vec<u8>)> =
+                let mut sorted_assets: Vec<(&AssetUuid, &Vec<u8>)> =
                     dependency_graph.iter().collect();
                 sorted_assets.sort_by(|(x, _), (y, _)| {
                     x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)

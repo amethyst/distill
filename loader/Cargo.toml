@@ -18,7 +18,7 @@ capnp = { version = "0.10.0", optional = true}
 capnp-rpc = { version = "0.10.0", optional = true }
 futures = { version = "0.1", optional = true }
 log = { version = "0.4", optional = true }
-ccl = { version = "4.12", optional = true }
+ccl = { version = "4", optional = true }
 
 [dev-dependencies]
 atelier-daemon = { path = "../daemon" }
