@@ -4,7 +4,7 @@ use capnp::{message::ReaderOptions, Result as CapnpResult};
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
 use futures::Future;
-use std::{error::Error};
+use std::error::Error;
 use tokio::prelude::*;
 use tokio_current_thread::CurrentThread;
 

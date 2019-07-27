@@ -536,7 +536,10 @@ fn process_metadata_requests(
 fn commit_asset(handle: LoadHandle, load: &mut AssetLoad, asset_storage: &dyn AssetStorage) {
     match load.state {
         LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
-            assert!(AssetLoadState::LoadingAsset == asset_state || AssetLoadState::LoadedUncommitted == asset_state);
+            assert!(
+                AssetLoadState::LoadingAsset == asset_state
+                    || AssetLoadState::LoadedUncommitted == asset_state
+            );
             let asset_type = load
                 .asset_type
                 .as_ref()
@@ -671,20 +674,21 @@ fn process_load_states(
                 LoadState::LoadingAsset(asset_state) => LoadState::LoadingAsset(asset_state),
                 LoadState::Loaded(asset_state) => {
                     match asset_state {
-                    AssetLoadState::Loaded => {
-                        if value.refs.load(Ordering::Relaxed) <= 0 {
-                            LoadState::UnloadRequested
-                        } else if value.pending_reload {
-                            // turn off auto_commit for hot reloads
-                            value.auto_commit = false;
-                            value.pending_reload = false;
-                            LoadState::Loaded(AssetLoadState::WaitingForData)
-                        } else {
-                            LoadState::Loaded(AssetLoadState::Loaded)
+                        AssetLoadState::Loaded => {
+                            if value.refs.load(Ordering::Relaxed) <= 0 {
+                                LoadState::UnloadRequested
+                            } else if value.pending_reload {
+                                // turn off auto_commit for hot reloads
+                                value.auto_commit = false;
+                                value.pending_reload = false;
+                                LoadState::Loaded(AssetLoadState::WaitingForData)
+                            } else {
+                                LoadState::Loaded(AssetLoadState::Loaded)
+                            }
                         }
+                        _ => LoadState::Loaded(asset_state),
                     }
-                    _ => LoadState::Loaded(asset_state),
-                }},
+                }
                 LoadState::UnloadRequested => {
                     if let Some(asset_type) = value.asset_type.take() {
                         asset_storage.free(&asset_type, *key);
@@ -768,7 +772,9 @@ fn process_asset_changes(
                 .map(|load| match load.state {
                     LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
                         match asset_state {
-                            AssetLoadState::Loaded | AssetLoadState::LoadedUncommitted => load.requested_version.unwrap() > *version,
+                            AssetLoadState::Loaded | AssetLoadState::LoadedUncommitted => {
+                                load.requested_version.unwrap() > *version
+                            }
                             _ => false,
                         }
                     }
