@@ -326,7 +326,6 @@ impl asset_hub::listener::Server for ListenerImpl {
                     .promise
                     .and_then(move |response| -> Result<(), capnp::Error> {
                         let response = response.get()?;
-                        println!("response ");
                         let mut changed_assets = Vec::new();
                         let mut deleted_assets = Vec::new();
                         for change in response.get_changes()? {
