@@ -104,6 +104,14 @@ impl HandleAllocator {
     }
 }
 
+/// Keeps track of a pending reload
+struct PendingReload {
+    /// ID of asset that should be reloaded
+    asset_id: AssetUuid,
+    /// The version of the asset before it was reloaded
+    version_before: u32,
+}
+
 struct LoaderData {
     handle_allocator: HandleAllocator,
     load_states: DHashMap<LoadHandle, AssetLoad>,
@@ -111,7 +119,7 @@ struct LoaderData {
     metadata: HashMap<AssetUuid, AssetMetadata>,
     op_tx: Arc<Sender<HandleOp>>,
     op_rx: Receiver<HandleOp>,
-    pending_hot_reloads: Vec<(AssetUuid, u32)>,
+    pending_reloads: Vec<PendingReload>,
 }
 
 struct RpcRequests {
@@ -240,6 +248,7 @@ impl Loader for RpcLoader {
             _ => {}
         };
         rpc.poll();
+        process_asset_changes(&mut self.data, &mut rpc, asset_storage)?;
         {
             process_load_ops(asset_storage, &mut self.data.load_states, &self.data.op_rx);
             process_load_states(
@@ -252,7 +261,6 @@ impl Loader for RpcLoader {
         }
         process_metadata_requests(&mut requests, &mut self.data, &mut rpc)?;
         process_data_requests(&mut requests, &mut self.data, asset_storage, &mut rpc)?;
-        process_asset_changes(&mut self.data, &mut rpc, asset_storage)?;
         Ok(())
     }
 }
@@ -269,7 +277,7 @@ impl RpcLoader {
                 metadata: HashMap::new(),
                 op_rx: rx,
                 op_tx: Arc::new(tx),
-                pending_hot_reloads: Vec::new(),
+                pending_reloads: Vec::new(),
             },
             rpc: Arc::new(Mutex::new(RpcState::new()?)),
             requests: Mutex::new(RpcRequests {
@@ -735,12 +743,14 @@ fn process_load_states(
     }
 }
 
+/// Checks for changed assets that need to be reloaded or unloaded
 fn process_asset_changes(
     data: &mut LoaderData,
     rpc: &mut RpcState,
     asset_storage: &dyn AssetStorage,
 ) -> Result<(), Box<dyn Error>> {
-    if data.pending_hot_reloads.is_empty() {
+    if data.pending_reloads.is_empty() {
+        // if we have no pending hot reloads, poll for new changes
         let changes = rpc.check_asset_changes();
         if let Some(changes) = changes {
             // TODO handle deleted assets
@@ -754,39 +764,50 @@ fn process_asset_changes(
                             .get(&load_handle)
                             .map(|load| (load_handle, load))
                     })
-                    .filter(|(_, load)| load.requested_version.is_some())
-                    .map(|(load_handle, load)| (load_handle, load.requested_version.unwrap()));
+                    .map(|(load_handle, load)| {
+                        load.requested_version.map(|version| (load_handle, version))
+                    })
+                    .unwrap_or(None);
                 if let Some((handle, current_version)) = current_version {
-                    let mut load = data.load_states.get_mut(&handle).unwrap();
+                    let mut load = data
+                        .load_states
+                        .get_mut(&handle)
+                        .expect("load state should exist for pending reload");
                     load.pending_reload = true;
-                    data.pending_hot_reloads.push((*asset_id, current_version));
+                    data.pending_reloads.push(PendingReload {
+                        asset_id: *asset_id,
+                        version_before: current_version,
+                    });
                 }
             }
         }
     } else {
-        let is_finished = data.pending_hot_reloads.iter().all(|(asset_id, version)| {
+        let is_finished = data.pending_reloads.iter().all(|reload| {
             data.uuid_to_load
-                .get(asset_id)
+                .get(&reload.asset_id)
                 .as_ref()
                 .and_then(|load_handle| data.load_states.get(load_handle))
                 .map(|load| match load.state {
                     LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
                         match asset_state {
+                            // The reload is finished if we have a loaded asset with a version
+                            // that is higher than the version observed when the reload was requested
                             AssetLoadState::Loaded | AssetLoadState::LoadedUncommitted => {
-                                load.requested_version.unwrap() > *version
+                                load.requested_version.unwrap() > reload.version_before
                             }
                             _ => false,
                         }
                     }
-                    LoadState::None => true,
                     _ => false,
                 })
+                // A pending reload for something that is not supposed to be loaded is considered finished.
+                // The asset could have been unloaded by being unreferenced.
                 .unwrap_or(true)
         });
         if is_finished {
-            data.pending_hot_reloads.iter().for_each(|(asset_id, _)| {
+            data.pending_reloads.iter().for_each(|reload| {
                 data.uuid_to_load
-                    .get(asset_id)
+                    .get(&reload.asset_id)
                     .as_ref()
                     .and_then(|load_handle| {
                         data.load_states
@@ -797,6 +818,9 @@ fn process_asset_changes(
                         LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
                             match asset_state {
                                 AssetLoadState::LoadedUncommitted => {
+                                    // Commit reloaded asset and turn auto_commit back on
+                                    // The assets are not auto_commit for reloads to ensure all assets in a
+                                    // changeset are made visible together, atomically
                                     commit_asset(**load_handle, &mut load, asset_storage);
                                     load.auto_commit = true;
                                 }
@@ -806,7 +830,7 @@ fn process_asset_changes(
                         _ => {}
                     });
             });
-            data.pending_hot_reloads.clear();
+            data.pending_reloads.clear();
         }
     }
     Ok(())

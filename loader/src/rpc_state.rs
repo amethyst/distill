@@ -14,7 +14,6 @@ struct RpcConnection {
     asset_hub: asset_hub::Client,
     snapshot: asset_hub::snapshot::Client,
     snapshot_rx: Receiver<SnapshotChange>,
-    snapshot_tx: Sender<SnapshotChange>,
 }
 
 struct Runtime {
@@ -276,7 +275,7 @@ impl RpcState {
                     let snapshot = response.get()?.get_snapshot()?;
                     let (snapshot_tx, snapshot_rx) = unbounded();
                     let listener = asset_hub::listener::ToClient::new(ListenerImpl {
-                        snapshot_channel: snapshot_tx.clone(),
+                        snapshot_channel: snapshot_tx,
                         snapshot_change: None,
                     })
                     .into_client::<::capnp_rpc::Server>();
@@ -289,7 +288,6 @@ impl RpcState {
                             asset_hub: hub,
                             snapshot,
                             snapshot_rx,
-                            snapshot_tx,
                         })
                         .map_err(|e| -> Box<dyn Error> { Box::new(e) }))
                 })
@@ -331,7 +329,8 @@ impl asset_hub::listener::Server for ListenerImpl {
                         for change in response.get_changes()? {
                             match change.get_event()?.which()? {
                                 asset_change_event::ContentUpdateEvent(evt) => {
-                                    let id = utils::make_array(evt?.get_id()?.get_id()?);
+                                    let evt = evt?;
+                                    let id = utils::make_array(evt.get_id()?.get_id()?);
                                     changed_assets.push(id);
                                 }
                                 asset_change_event::RemoveEvent(evt) => {
