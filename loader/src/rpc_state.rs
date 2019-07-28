@@ -1,11 +1,10 @@
-use atelier_schema::service::asset_hub;
+use crate::{utils, AssetUuid};
+use atelier_schema::{data::asset_change_event, service::asset_hub};
 use capnp::{message::ReaderOptions, Result as CapnpResult};
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
-use futures::{
-    sync::oneshot::{channel, Receiver},
-    Future,
-};
-use std::{cell::RefCell, error::Error, rc::Rc};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
+use futures::Future;
+use std::error::Error;
 use tokio::prelude::*;
 use tokio_current_thread::CurrentThread;
 
@@ -13,7 +12,8 @@ type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 
 struct RpcConnection {
     asset_hub: asset_hub::Client,
-    snapshot: Rc<RefCell<asset_hub::snapshot::Client>>,
+    snapshot: asset_hub::snapshot::Client,
+    snapshot_rx: Receiver<SnapshotChange>,
 }
 
 struct Runtime {
@@ -112,19 +112,30 @@ impl<T: for<'a> capnp::traits::Owned<'a>, U> Future for ResponsePromise<T, U> {
     type Error = Box<dyn Error>;
     fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
         match self.rx.try_recv() {
-            Ok(Some(response_result)) => match response_result {
+            Ok(response_result) => match response_result {
                 Ok(response) => Ok(Async::Ready(response)),
                 Err(e) => Err(Box::new(e)),
             },
-            Ok(None) => Ok(Async::NotReady),
+            Err(TryRecvError::Empty) => Ok(Async::NotReady),
             Err(e) => Err(Box::new(e)),
         }
     }
 }
 
+struct SnapshotChange {
+    snapshot: asset_hub::snapshot::Client,
+    changed_assets: Vec<AssetUuid>,
+    deleted_assets: Vec<AssetUuid>,
+}
+
 pub struct RpcState {
     runtime: Runtime,
     connection: InternalConnectionState,
+}
+
+pub struct AssetChanges {
+    pub changed: Vec<AssetUuid>,
+    pub deleted: Vec<AssetUuid>,
 }
 // While capnp_rpc does not impl Send or Sync, in our usage of the API there can only be one thread
 // accessing the internal state at any time, and this is safe since we are using a single-threaded tokio runtime.
@@ -159,8 +170,8 @@ impl RpcState {
         <Results as capnp::traits::Pipelined>::Pipeline: capnp::capability::FromTypelessPipeline,
     {
         if let InternalConnectionState::Connected(ref conn) = self.connection {
-            let (req, user_data) = f(&conn.asset_hub, &*conn.snapshot.borrow());
-            let (tx, rx) = channel();
+            let (req, user_data) = f(&conn.asset_hub, &conn.snapshot);
+            let (tx, rx) = bounded(1);
             self.runtime.executor().spawn(
                 req.send()
                     .promise
@@ -170,7 +181,7 @@ impl RpcState {
                         m.set_root(r)?;
                         Ok(capnp::message::TypedReader::new(m.into_reader()))
                     })
-                    .then(|r| {
+                    .then(move |r| {
                         let _ = tx.send(r);
                         Ok(())
                     }),
@@ -185,19 +196,40 @@ impl RpcState {
         self.connection =
             match std::mem::replace(&mut self.connection, InternalConnectionState::None) {
                 // update connection state
-                InternalConnectionState::Connecting(mut pending_connection) => {
+                InternalConnectionState::Connecting(pending_connection) => {
                     match pending_connection.try_recv() {
-                        Ok(Some(connection_result)) => match connection_result {
+                        Ok(connection_result) => match connection_result {
                             Ok(conn) => InternalConnectionState::Connected(conn),
                             Err(err) => InternalConnectionState::Error(err),
                         },
+                        Err(TryRecvError::Empty) => {
+                            InternalConnectionState::Connecting(pending_connection)
+                        } // still waiting
                         Err(e) => InternalConnectionState::Error(Box::new(e)),
-                        Ok(None) => InternalConnectionState::Connecting(pending_connection), // still waiting
                     }
                 }
                 c => c,
             };
         self.runtime.poll()
+    }
+
+    pub fn check_asset_changes(&mut self) -> Option<AssetChanges> {
+        let mut changes = None;
+        self.connection =
+            match std::mem::replace(&mut self.connection, InternalConnectionState::None) {
+                InternalConnectionState::Connected(mut conn) => {
+                    if let Ok(change) = conn.snapshot_rx.try_recv() {
+                        conn.snapshot = change.snapshot;
+                        changes = Some(AssetChanges {
+                            changed: change.changed_assets,
+                            deleted: change.deleted_assets,
+                        });
+                    }
+                    InternalConnectionState::Connected(conn)
+                }
+                c => c,
+            };
+        changes
     }
 
     pub fn connect(&mut self, connect_string: &String) {
@@ -209,7 +241,7 @@ impl RpcState {
         };
         use std::net::ToSocketAddrs;
         let addr = connect_string.to_socket_addrs().unwrap().next().unwrap();
-        let (tx, rx) = channel();
+        let (conn_tx, conn_rx) = bounded(1);
         self.runtime.executor().spawn(
             ::tokio::net::TcpStream::connect(&addr)
                 .map_err(|e| -> Box<dyn Error> { Box::new(e) })
@@ -240,9 +272,11 @@ impl RpcState {
                 })
                 .flatten()
                 .and_then(|(_disconnector, hub, response)| {
-                    let snapshot = Rc::new(RefCell::new(response.get()?.get_snapshot()?));
+                    let snapshot = response.get()?.get_snapshot()?;
+                    let (snapshot_tx, snapshot_rx) = unbounded();
                     let listener = asset_hub::listener::ToClient::new(ListenerImpl {
-                        snapshot: snapshot.clone(),
+                        snapshot_channel: snapshot_tx,
+                        snapshot_change: None,
                     })
                     .into_client::<::capnp_rpc::Server>();
                     let mut request = hub.register_listener_request();
@@ -253,21 +287,23 @@ impl RpcState {
                         .map(|_| RpcConnection {
                             asset_hub: hub,
                             snapshot,
+                            snapshot_rx,
                         })
                         .map_err(|e| -> Box<dyn Error> { Box::new(e) }))
                 })
                 .flatten()
-                .then(|result| {
-                    let _ = tx.send(result);
+                .then(move |result| {
+                    let _ = conn_tx.send(result);
                     Ok(())
                 }),
         );
-        self.connection = InternalConnectionState::Connecting(rx)
+        self.connection = InternalConnectionState::Connecting(conn_rx)
     }
 }
 
 struct ListenerImpl {
-    snapshot: Rc<RefCell<asset_hub::snapshot::Client>>,
+    snapshot_channel: Sender<SnapshotChange>,
+    snapshot_change: Option<u64>,
 }
 impl asset_hub::listener::Server for ListenerImpl {
     fn update(
@@ -275,8 +311,53 @@ impl asset_hub::listener::Server for ListenerImpl {
         params: asset_hub::listener::UpdateParams,
         _results: asset_hub::listener::UpdateResults,
     ) -> Promise<()> {
-        let snapshot = pry!(pry!(params.get()).get_snapshot());
-        self.snapshot.replace(snapshot);
+        let params = pry!(params.get());
+        let snapshot = pry!(params.get_snapshot());
+        if let Some(change_num) = self.snapshot_change {
+            let mut request = snapshot.get_asset_changes_request();
+            request.get().set_start(change_num);
+            request.get().set_count(1);
+            let channel = self.snapshot_channel.clone();
+            let _ = tokio_current_thread::TaskExecutor::current().spawn_local(Box::new(
+                request
+                    .send()
+                    .promise
+                    .and_then(move |response| -> Result<(), capnp::Error> {
+                        let response = response.get()?;
+                        let mut changed_assets = Vec::new();
+                        let mut deleted_assets = Vec::new();
+                        for change in response.get_changes()? {
+                            match change.get_event()?.which()? {
+                                asset_change_event::ContentUpdateEvent(evt) => {
+                                    let evt = evt?;
+                                    let id = utils::make_array(evt.get_id()?.get_id()?);
+                                    changed_assets.push(id);
+                                }
+                                asset_change_event::RemoveEvent(evt) => {
+                                    let id = utils::make_array(evt?.get_id()?.get_id()?);
+                                    deleted_assets.push(id);
+                                }
+                            }
+                        }
+                        let _ = channel.try_send(SnapshotChange {
+                            snapshot: snapshot,
+                            changed_assets,
+                            deleted_assets,
+                        });
+                        Ok(())
+                    })
+                    .map_err(|e| {
+                        panic!("error {:?}", e);
+                    }),
+            ));
+        } else {
+            let _ = self.snapshot_channel.try_send(SnapshotChange {
+                snapshot,
+                changed_assets: Vec::new(),
+                deleted_assets: Vec::new(),
+            });
+        }
+        self.snapshot_change = Some(params.get_latest_change());
         Promise::ok(())
     }
 }

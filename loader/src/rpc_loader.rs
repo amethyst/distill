@@ -1,6 +1,7 @@
 use crate::{
     loader::{AssetLoadOp, AssetStorage, HandleOp, LoadHandle, LoadInfo, LoadStatus, Loader},
     rpc_state::{ConnectionState, ResponsePromise, RpcState},
+    utils::make_array,
     AssetTypeId, AssetUuid,
 };
 use atelier_schema::{
@@ -61,13 +62,6 @@ impl LoadState {
             ),
         }
     }
-
-    fn is_asset_available(&self) -> bool {
-        match self {
-            LoadState::Loaded(_) => true,
-            _ => false,
-        }
-    }
 }
 
 /// Describes the state of loading an asset.
@@ -81,10 +75,14 @@ enum AssetLoadState {
     RequestingData,
     /// Engine systems are loading asset
     LoadingAsset,
+    /// Engine systems have loaded asset, but the asset is not committed.
+    /// This state is only reached when AssetLoad.auto_commit == false.
+    LoadedUncommitted,
     /// Asset is loaded and ready to use
     Loaded,
 }
 
+#[derive(Debug)]
 struct AssetLoad {
     asset_id: AssetUuid,
     state: LoadState,
@@ -92,6 +90,8 @@ struct AssetLoad {
     asset_type: Option<AssetTypeId>,
     requested_version: Option<u32>,
     loaded_version: Option<u32>,
+    auto_commit: bool,
+    pending_reload: bool,
 }
 struct AssetMetadata {
     load_deps: Vec<AssetUuid>,
@@ -104,6 +104,14 @@ impl HandleAllocator {
     }
 }
 
+/// Keeps track of a pending reload
+struct PendingReload {
+    /// ID of asset that should be reloaded
+    asset_id: AssetUuid,
+    /// The version of the asset before it was reloaded
+    version_before: u32,
+}
+
 struct LoaderData {
     handle_allocator: HandleAllocator,
     load_states: DHashMap<LoadHandle, AssetLoad>,
@@ -111,7 +119,9 @@ struct LoaderData {
     metadata: HashMap<AssetUuid, AssetMetadata>,
     op_tx: Arc<Sender<HandleOp>>,
     op_rx: Receiver<HandleOp>,
+    pending_reloads: Vec<PendingReload>,
 }
+
 struct RpcRequests {
     pending_data_requests: Vec<ResponsePromise<GetBuildArtifactsResults, LoadHandle>>,
     pending_metadata_requests:
@@ -142,6 +152,8 @@ impl LoaderData {
                         asset_type: None,
                         requested_version: None,
                         loaded_version: None,
+                        auto_commit: true,
+                        pending_reload: false,
                     },
                 );
                 new_handle
@@ -236,6 +248,7 @@ impl Loader for RpcLoader {
             _ => {}
         };
         rpc.poll();
+        process_asset_changes(&mut self.data, &mut rpc, asset_storage)?;
         {
             process_load_ops(asset_storage, &mut self.data.load_states, &self.data.op_rx);
             process_load_states(
@@ -264,6 +277,7 @@ impl RpcLoader {
                 metadata: HashMap::new(),
                 op_rx: rx,
                 op_tx: Arc::new(tx),
+                pending_reloads: Vec::new(),
             },
             rpc: Arc::new(Mutex::new(RpcState::new()?)),
             requests: Mutex::new(RpcRequests {
@@ -390,9 +404,8 @@ fn process_data_requests(
                         "asset data request did not return any data for asset {:?}",
                         load.asset_id
                     );
-                    load.state.map_asset_load_state(|_| {
-                        AssetLoadState::WaitingForData
-                    })
+                    load.state
+                        .map_asset_load_state(|_| AssetLoadState::WaitingForData)
                 } else {
                     load_data(op_channel, &handle, &mut load, &artifacts.get(0), storage)?
                 }
@@ -402,9 +415,8 @@ fn process_data_requests(
                     "asset data request failed for asset {:?}: {}",
                     load.asset_id, err
                 );
-                load.state.map_asset_load_state(|_| {
-                    AssetLoadState::WaitingForData
-                })
+                load.state
+                    .map_asset_load_state(|_| AssetLoadState::WaitingForData)
             }
         };
         Ok(())
@@ -415,17 +427,16 @@ fn process_data_requests(
             assets_to_request.extend(
                 chunk
                     .iter_mut()
-                    .filter(|(_, v)| {
-                        match v.state {
-                            LoadState::LoadingAsset(asset_state) 
-                            | LoadState::Loaded(asset_state) => {
-                                AssetLoadState::WaitingForData == asset_state
-                            }
-                            _ => false
+                    .filter(|(_, v)| match v.state {
+                        LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
+                            AssetLoadState::WaitingForData == asset_state
                         }
+                        _ => false,
                     })
                     .map(|(k, v)| {
-                        v.state = v.state.map_asset_load_state(|_| AssetLoadState::RequestingData);
+                        v.state = v
+                            .state
+                            .map_asset_load_state(|_| AssetLoadState::RequestingData);
                         (v.asset_id, *k)
                     }),
             );
@@ -530,6 +541,32 @@ fn process_metadata_requests(
     Ok(())
 }
 
+fn commit_asset(handle: LoadHandle, load: &mut AssetLoad, asset_storage: &dyn AssetStorage) {
+    match load.state {
+        LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
+            assert!(
+                AssetLoadState::LoadingAsset == asset_state
+                    || AssetLoadState::LoadedUncommitted == asset_state
+            );
+            let asset_type = load
+                .asset_type
+                .as_ref()
+                .expect("in LoadingAsset state but asset_type is None");
+            asset_storage.commit_asset_version(
+                asset_type,
+                &handle,
+                load.requested_version.unwrap(),
+            );
+            load.loaded_version = load.requested_version;
+            load.state = LoadState::Loaded(AssetLoadState::Loaded);
+        }
+        _ => panic!(
+            "attempting to commit asset but load state is {:?}",
+            load.state
+        ),
+    }
+}
+
 fn process_load_ops(
     asset_storage: &dyn AssetStorage,
     load_states: &mut DHashMap<LoadHandle, AssetLoad>,
@@ -544,22 +581,12 @@ fn process_load_ops(
                 let mut load = load_states
                     .get_mut(&handle)
                     .expect("load op completed but load state does not exist");
-                match load.state {
-                    LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
-                        assert!(AssetLoadState::LoadingAsset == asset_state);
-                        let asset_type = load
-                            .asset_type
-                            .as_ref()
-                            .expect("in LoadingAsset state but asset_type is None");
-                        asset_storage.commit_asset_version(
-                            asset_type,
-                            &handle,
-                            load.requested_version.unwrap(),
-                        );
-                        load.loaded_version = load.requested_version;
-                        load.state = LoadState::Loaded(AssetLoadState::Loaded);
-                    }
-                    _ => panic!("load op completed but load state is {:?}", load.state),
+                if load.auto_commit {
+                    commit_asset(handle, &mut load, asset_storage);
+                } else {
+                    load.state = load
+                        .state
+                        .map_asset_load_state(|_| AssetLoadState::LoadedUncommitted)
                 }
             }
             HandleOp::LoadDrop(_handle) => panic!("load op dropped without calling complete/error"),
@@ -623,14 +650,26 @@ fn process_load_states(
                         panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
                     });
 
-                    // Ensure dependencies are committed before continuing to load this asset.
+                    // Ensure dependencies are loaded by engine before continuing to load this asset.
                     let asset_dependencies_committed =
                         asset_metadata.load_deps.iter().all(|dependency_asset_id| {
                             uuid_to_load
                                 .get(dependency_asset_id)
                                 .as_ref()
                                 .and_then(|dep_load_handle| load_states.get(dep_load_handle))
-                                .map(|dep_load| dep_load.state.is_asset_available())
+                                .map(|dep_load| match dep_load.state {
+                                    LoadState::Loaded(asset_state)
+                                    | LoadState::LoadingAsset(asset_state) => {
+                                        // Note that we accept assets to be uncommitted but loaded
+                                        // This is to support atomically committing a set of changes when hot reloading
+                                        match asset_state {
+                                            AssetLoadState::Loaded
+                                            | AssetLoadState::LoadedUncommitted => true,
+                                            _ => false,
+                                        }
+                                    }
+                                    _ => false,
+                                })
                                 .unwrap_or(false)
                         });
 
@@ -646,11 +685,16 @@ fn process_load_states(
                         AssetLoadState::Loaded => {
                             if value.refs.load(Ordering::Relaxed) <= 0 {
                                 LoadState::UnloadRequested
+                            } else if value.pending_reload {
+                                // turn off auto_commit for hot reloads
+                                value.auto_commit = false;
+                                value.pending_reload = false;
+                                LoadState::Loaded(AssetLoadState::WaitingForData)
                             } else {
-                                LoadState::Loaded(asset_state)
+                                LoadState::Loaded(AssetLoadState::Loaded)
                             }
                         }
-                        _ => LoadState::Loaded(asset_state)
+                        _ => LoadState::Loaded(asset_state),
                     }
                 }
                 LoadState::UnloadRequested => {
@@ -699,20 +743,103 @@ fn process_load_states(
     }
 }
 
+/// Checks for changed assets that need to be reloaded or unloaded
+fn process_asset_changes(
+    data: &mut LoaderData,
+    rpc: &mut RpcState,
+    asset_storage: &dyn AssetStorage,
+) -> Result<(), Box<dyn Error>> {
+    if data.pending_reloads.is_empty() {
+        // if we have no pending hot reloads, poll for new changes
+        let changes = rpc.check_asset_changes();
+        if let Some(changes) = changes {
+            // TODO handle deleted assets
+            for asset_id in changes.changed.iter() {
+                let current_version = data
+                    .uuid_to_load
+                    .get(asset_id)
+                    .map(|l| *l)
+                    .and_then(|load_handle| {
+                        data.load_states
+                            .get(&load_handle)
+                            .map(|load| (load_handle, load))
+                    })
+                    .map(|(load_handle, load)| {
+                        load.requested_version.map(|version| (load_handle, version))
+                    })
+                    .unwrap_or(None);
+                if let Some((handle, current_version)) = current_version {
+                    let mut load = data
+                        .load_states
+                        .get_mut(&handle)
+                        .expect("load state should exist for pending reload");
+                    load.pending_reload = true;
+                    data.pending_reloads.push(PendingReload {
+                        asset_id: *asset_id,
+                        version_before: current_version,
+                    });
+                }
+            }
+        }
+    } else {
+        let is_finished = data.pending_reloads.iter().all(|reload| {
+            data.uuid_to_load
+                .get(&reload.asset_id)
+                .as_ref()
+                .and_then(|load_handle| data.load_states.get(load_handle))
+                .map(|load| match load.state {
+                    LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
+                        match asset_state {
+                            // The reload is finished if we have a loaded asset with a version
+                            // that is higher than the version observed when the reload was requested
+                            AssetLoadState::Loaded | AssetLoadState::LoadedUncommitted => {
+                                load.requested_version.unwrap() > reload.version_before
+                            }
+                            _ => false,
+                        }
+                    }
+                    _ => false,
+                })
+                // A pending reload for something that is not supposed to be loaded is considered finished.
+                // The asset could have been unloaded by being unreferenced.
+                .unwrap_or(true)
+        });
+        if is_finished {
+            data.pending_reloads.iter().for_each(|reload| {
+                data.uuid_to_load
+                    .get(&reload.asset_id)
+                    .as_ref()
+                    .and_then(|load_handle| {
+                        data.load_states
+                            .get_mut(load_handle)
+                            .map(|load| (load_handle, load))
+                    })
+                    .map(|(load_handle, mut load)| match load.state {
+                        LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
+                            match asset_state {
+                                AssetLoadState::LoadedUncommitted => {
+                                    // Commit reloaded asset and turn auto_commit back on
+                                    // The assets are not auto_commit for reloads to ensure all assets in a
+                                    // changeset are made visible together, atomically
+                                    commit_asset(**load_handle, &mut load, asset_storage);
+                                    load.auto_commit = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    });
+            });
+            data.pending_reloads.clear();
+        }
+    }
+    Ok(())
+}
+
 impl Default for RpcLoader {
     fn default() -> RpcLoader {
         RpcLoader::new("127.0.0.1:9999".to_string()).unwrap()
     }
-}
-
-fn make_array<A, T>(slice: &[T]) -> A
-where
-    A: Sized + Default + AsMut<[T]>,
-    T: Copy,
-{
-    let mut a = Default::default();
-    <A as AsMut<[T]>>::as_mut(&mut a).copy_from_slice(slice);
-    a
 }
 
 #[cfg(test)]
