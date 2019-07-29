@@ -316,7 +316,7 @@ impl asset_hub::listener::Server for ListenerImpl {
         if let Some(change_num) = self.snapshot_change {
             let mut request = snapshot.get_asset_changes_request();
             request.get().set_start(change_num);
-            request.get().set_count(1);
+            request.get().set_count(params.get_latest_change() - change_num);
             let channel = self.snapshot_channel.clone();
             let _ = tokio_current_thread::TaskExecutor::current().spawn_local(Box::new(
                 request

@@ -6,7 +6,7 @@ use crate::utils;
 use crate::watcher::file_metadata;
 use atelier_importer::{
     AssetMetadata, BoxedImporter, SerdeObj, SourceMetadata as ImporterSourceMetadata,
-    SOURCEMETADATA_VERSION,
+    SOURCEMETADATA_VERSION, ImporterContext,
 };
 use atelier_schema::data::{self, CompressionType};
 use bincode;
@@ -48,6 +48,7 @@ pub(crate) struct ImportedAsset<T: AsRef<[u8]>> {
 pub(crate) struct SourcePairImport<'a> {
     source: PathBuf,
     importer: Option<&'a dyn BoxedImporter>,
+    importer_contexts: Option<&'a Vec<Box<dyn ImporterContext>>>,
     source_hash: Option<u64>,
     meta_hash: Option<u64>,
     import_hash: Option<u64>,
@@ -94,6 +95,9 @@ impl<'a> SourcePairImport<'a> {
     pub fn with_importer_from_map(&mut self, importers: &'a ImporterMap) -> Result<bool> {
         self.importer = importers.get_by_path(&self.source);
         Ok(self.importer.is_some())
+    }
+    pub fn with_importer_contexts(&mut self, importer_contexts: &'a Vec<Box<dyn ImporterContext>>) {
+        self.importer_contexts = Some(importer_contexts);
     }
     pub fn needs_source_import(&mut self, scratch_buf: &mut Vec<u8>) -> Result<bool> {
         if let Some(ref metadata) = self.source_metadata {
@@ -174,6 +178,22 @@ impl<'a> SourcePairImport<'a> {
         Ok(())
     }
 
+    fn enter_import_contexts<F, R>(import_contexts: Option<&Vec<Box<dyn ImporterContext>>>, f: F) -> R 
+    where
+        F: FnOnce() -> R {
+        let mut handles = Vec::new();
+        if let Some(contexts) = import_contexts {
+            for ctx in contexts.iter() {
+                handles.push(ctx.enter());
+            }
+        }
+        let retval = f();
+        for mut handle in handles {
+            handle.exit();
+        }
+        retval
+    }
+
     pub fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<Vec<ImportedAssetVec>> {
         let start_time = PreciseTime::now();
         let importer = self
@@ -182,74 +202,76 @@ impl<'a> SourcePairImport<'a> {
 
         let metadata = std::mem::replace(&mut self.source_metadata, None)
             .expect("cannot import source file without source_metadata");
-        let imported = {
-            let mut f = fs::File::open(&self.source)?;
-            importer.import_boxed(&mut f, metadata.importer_options, metadata.importer_state)?
-        };
-        let options = imported.options;
-        let state = imported.state;
-        let imported = imported.value;
-        let mut imported_assets = Vec::new();
-        let import_hash = self.calc_import_hash(
-            options.as_ref(),
-            state.as_ref(),
-            importer.version(),
-            importer.uuid(),
-            scratch_buf,
-        )?;
-        self.import_hash = Some(import_hash);
-        for mut asset in imported.assets {
-            asset.search_tags.push((
-                "file_name".to_string(),
-                Some(
-                    self.source
-                        .file_name()
-                        .expect("failed to get file stem")
-                        .to_string_lossy()
-                        .to_string(),
-                ),
-            ));
-            let asset_data = &asset.asset_data;
-            let serialized_asset =
-                SerializedAsset::create(asset_data.as_ref(), CompressionType::None, scratch_buf)?;
-            let build_pipeline = metadata
-                .assets
-                .iter()
-                .find(|a| a.id == asset.id)
-                .map(|m| m.build_pipeline)
-                .unwrap_or(None);
-            imported_assets.push({
-                ImportedAsset {
-                    asset_hash: utils::calc_asset_hash(&asset.id, import_hash),
-                    metadata: AssetMetadata {
-                        id: asset.id,
-                        search_tags: asset.search_tags,
-                        build_deps: asset.build_deps,
-                        load_deps: asset.load_deps,
-                        instantiate_deps: asset.instantiate_deps,
-                        build_pipeline,
-                        import_asset_type: asset_data.uuid(),
-                    },
-                    asset: Some(serialized_asset),
-                }
+        Self::enter_import_contexts(self.importer_contexts, || {
+            let imported = {
+                let mut f = fs::File::open(&self.source)?;
+                importer.import_boxed(&mut f, metadata.importer_options, metadata.importer_state)?
+            };
+            let options = imported.options;
+            let state = imported.state;
+            let imported = imported.value;
+            let mut imported_assets = Vec::new();
+            let import_hash = self.calc_import_hash(
+                options.as_ref(),
+                state.as_ref(),
+                importer.version(),
+                importer.uuid(),
+                scratch_buf,
+            )?;
+            self.import_hash = Some(import_hash);
+            for mut asset in imported.assets {
+                asset.search_tags.push((
+                    "file_name".to_string(),
+                    Some(
+                        self.source
+                            .file_name()
+                            .expect("failed to get file stem")
+                            .to_string_lossy()
+                            .to_string(),
+                    ),
+                ));
+                let asset_data = &asset.asset_data;
+                let serialized_asset =
+                    SerializedAsset::create(asset_data.as_ref(), CompressionType::None, scratch_buf)?;
+                let build_pipeline = metadata
+                    .assets
+                    .iter()
+                    .find(|a| a.id == asset.id)
+                    .map(|m| m.build_pipeline)
+                    .unwrap_or(None);
+                imported_assets.push({
+                    ImportedAsset {
+                        asset_hash: utils::calc_asset_hash(&asset.id, import_hash),
+                        metadata: AssetMetadata {
+                            id: asset.id,
+                            search_tags: asset.search_tags,
+                            build_deps: asset.build_deps,
+                            load_deps: asset.load_deps,
+                            instantiate_deps: asset.instantiate_deps,
+                            build_pipeline,
+                            import_asset_type: asset_data.uuid(),
+                        },
+                        asset: Some(serialized_asset),
+                    }
+                });
+                debug!(
+                    "Import success {} read {} bytes",
+                    self.source.to_string_lossy(),
+                    scratch_buf.len(),
+                );
+            }
+            info!("Imported pair in {}", start_time.to(PreciseTime::now()));
+            self.source_metadata = Some(SourceMetadata {
+                version: SOURCEMETADATA_VERSION,
+                import_hash: Some(import_hash),
+                importer_version: importer.version(),
+                importer_type: importer.uuid(),
+                importer_options: options,
+                importer_state: state,
+                assets: imported_assets.iter().map(|m| m.metadata.clone()).collect(),
             });
-            debug!(
-                "Import success {} read {} bytes",
-                self.source.to_string_lossy(),
-                scratch_buf.len(),
-            );
-        }
-        info!("Imported pair in {}", start_time.to(PreciseTime::now()));
-        self.source_metadata = Some(SourceMetadata {
-            version: SOURCEMETADATA_VERSION,
-            import_hash: Some(import_hash),
-            importer_version: importer.version(),
-            importer_type: importer.uuid(),
-            importer_options: options,
-            importer_state: state,
-            assets: imported_assets.iter().map(|m| m.metadata.clone()).collect(),
-        });
-        Ok(imported_assets)
+            Ok(imported_assets)
+        })
     }
 
     pub fn write_metadata(&self) -> Result<()> {
@@ -270,6 +292,7 @@ impl<'a> SourcePairImport<'a> {
 pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
     metadata_cache: &C,
     importer_map: &'a ImporterMap,
+    importer_contexts: &'a Vec<Box<dyn ImporterContext>>,
     pair: &HashedSourcePair,
     scratch_buf: &mut Vec<u8>,
 ) -> Result<Option<(SourcePairImport<'a>, Option<Vec<ImportedAssetVec>>)>> {
@@ -332,6 +355,7 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
             let mut import = SourcePairImport::new(source.path);
             import.with_source_hash(source_hash);
             import.with_meta_hash(meta_hash);
+            import.with_importer_contexts(importer_contexts);
             if !import.with_importer_from_map(&importer_map)? {
                 Ok(None)
             } else {
@@ -357,6 +381,7 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
             debug!("file without meta {}", source.path.to_string_lossy());
             let mut import = SourcePairImport::new(source.path);
             import.with_source_hash(hash);
+            import.with_importer_contexts(importer_contexts);
             if !import.with_importer_from_map(&importer_map)? {
                 debug!("file has no importer registered");
                 Ok(Some((import, None)))

@@ -4,7 +4,7 @@ use std::{error::Error, sync::Arc};
 
 /// Loading ID allocated by `atelier-assets` to track loading of a particular asset.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct LoadHandle(pub(crate) u64);
+pub struct LoadHandle(pub u64);
 
 pub(crate) enum HandleOp {
     LoadError(LoadHandle, Box<dyn Error + Send>),
@@ -68,6 +68,7 @@ pub trait AssetStorage {
     ///
     /// # Parameters
     ///
+    /// * `loader`: Loader implementation calling this function.
     /// * `asset_type_id`: UUID of the asset type.
     /// * `data`: The updated asset byte data.
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of a particular asset.
@@ -75,6 +76,7 @@ pub trait AssetStorage {
     /// * `version`: Runtime load version of this asset, increments each time the asset is updated.
     fn update_asset(
         &self,
+        loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
         data: &[u8],
         load_handle: &LoadHandle,
@@ -171,7 +173,7 @@ pub trait Loader {
     ///
     /// * `id`: UUID of the asset.
     fn get_load(&self, id: AssetUuid) -> Option<LoadHandle>;
-    
+
     /// Returns the number of references to an asset.
     ///
     /// **Note:** The information is true at the time the `LoadInfo` is retrieved. The actual number
@@ -202,4 +204,35 @@ pub trait Loader {
     ///
     /// * `asset_storage`: Storage for all assets of all asset types.
     fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>>;
+}
+
+/// Provides information about mappings between `AssetUuid` and `LoadHandle`.
+/// Intended to be used for `Handle` serde.
+pub trait LoaderInfoProvider {
+
+    /// Returns the load handle for the asset with the given UUID, if present.
+    ///
+    /// This will only return `Some(..)` if there has been a previous call to [`Loader::add_ref`].
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: UUID of the asset.
+    fn get_load(&self, id: AssetUuid) -> Option<LoadHandle>;
+
+    /// Returns the AssetUUID for the given LoadHandle, if present.
+    ///
+    /// # Parameters
+    ///
+    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
+    fn get_asset_id(&self, load: &LoadHandle) -> Option<AssetUuid>;
+
+    /// Adds a reference to an asset and returns its [`LoadHandle`].
+    ///
+    /// If the asset is already loaded, this returns the existing [`LoadHandle`]. If it is not
+    /// loaded, this allocates a new [`LoadHandle`] and returns that.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: UUID of the asset.
+    fn add_ref(&self, id: AssetUuid) -> LoadHandle;
 }
