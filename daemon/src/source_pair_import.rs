@@ -181,15 +181,16 @@ impl<'a> SourcePairImport<'a> {
     fn enter_import_contexts<F, R>(import_contexts: Option<&Vec<Box<dyn ImporterContext>>>, f: F) -> R 
     where
         F: FnOnce() -> R {
-        let mut handles = Vec::new();
+        let mut ctx_handles = Vec::new();
         if let Some(contexts) = import_contexts {
             for ctx in contexts.iter() {
-                handles.push(ctx.enter());
+                ctx_handles.push(ctx.enter());
             }
         }
         let retval = f();
-        for mut handle in handles {
-            handle.exit();
+        // make sure to exit in reverse order of enter
+        for mut ctx_handle in ctx_handles.into_iter().rev() {
+            ctx_handle.exit();
         }
         retval
     }
