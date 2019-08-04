@@ -80,13 +80,12 @@ impl AssetDaemon {
         self
     }
 
-    pub fn with_importer_contexts<I>(self, contexts: I) -> Self
+    pub fn with_importer_contexts<I>(mut self, contexts: I) -> Self
     where
         I: IntoIterator<Item = Box<dyn ImporterContext>>,
     {
-        contexts.into_iter().fold(self, |this, context| {
-            this.with_importer_context(context)
-        })
+        self.importer_contexts.extend(contexts);
+        self
     }
 
     pub fn with_asset_dirs(mut self, dirs: Vec<PathBuf>) -> Self {

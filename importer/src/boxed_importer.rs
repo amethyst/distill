@@ -150,7 +150,7 @@ pub trait ImporterContextHandle {
     fn exit(&mut self);
 }
 
-pub trait ImporterContext: Send + Sync {
+pub trait ImporterContext: 'static + Send + Sync {
     fn enter(&self) -> Box<dyn ImporterContextHandle>;
 }
 /// Use [inventory::submit!] to register an importer context to be entered for import operations.

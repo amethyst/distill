@@ -74,10 +74,10 @@ impl<'a> SourcePairImport<'a> {
     pub fn source_metadata(self) -> Option<SourceMetadata> {
         self.source_metadata
     }
-    pub fn with_source_hash(&mut self, source_hash: u64) {
+    pub fn set_source_hash(&mut self, source_hash: u64) {
         self.source_hash = Some(source_hash);
     }
-    pub fn with_meta_hash(&mut self, meta_hash: u64) {
+    pub fn set_meta_hash(&mut self, meta_hash: u64) {
         self.meta_hash = Some(meta_hash);
     }
     pub fn hash_source(&mut self) -> Result<()> {
@@ -92,11 +92,11 @@ impl<'a> SourcePairImport<'a> {
         Ok(())
     }
     /// Returns true if an appropriate importer was found, otherwise false.
-    pub fn with_importer_from_map(&mut self, importers: &'a ImporterMap) -> Result<bool> {
+    pub fn set_importer_from_map(&mut self, importers: &'a ImporterMap) -> Result<bool> {
         self.importer = importers.get_by_path(&self.source);
         Ok(self.importer.is_some())
     }
-    pub fn with_importer_contexts(&mut self, importer_contexts: &'a Vec<Box<dyn ImporterContext>>) {
+    pub fn set_importer_contexts(&mut self, importer_contexts: &'a Vec<Box<dyn ImporterContext>>) {
         self.importer_contexts = Some(importer_contexts);
     }
     pub fn needs_source_import(&mut self, scratch_buf: &mut Vec<u8>) -> Result<bool> {
@@ -178,7 +178,7 @@ impl<'a> SourcePairImport<'a> {
         Ok(())
     }
 
-    fn enter_import_contexts<F, R>(import_contexts: Option<&Vec<Box<dyn ImporterContext>>>, f: F) -> R 
+    fn enter_importer_contexts<F, R>(import_contexts: Option<&Vec<Box<dyn ImporterContext>>>, f: F) -> R 
     where
         F: FnOnce() -> R {
         let mut ctx_handles = Vec::new();
@@ -203,7 +203,7 @@ impl<'a> SourcePairImport<'a> {
 
         let metadata = std::mem::replace(&mut self.source_metadata, None)
             .expect("cannot import source file without source_metadata");
-        Self::enter_import_contexts(self.importer_contexts, || {
+        Self::enter_importer_contexts(self.importer_contexts, || {
             let imported = {
                 let mut f = fs::File::open(&self.source)?;
                 importer.import_boxed(&mut f, metadata.importer_options, metadata.importer_state)?
@@ -238,8 +238,7 @@ impl<'a> SourcePairImport<'a> {
                     .assets
                     .iter()
                     .find(|a| a.id == asset.id)
-                    .map(|m| m.build_pipeline)
-                    .unwrap_or(None);
+                    .and_then(|m| m.build_pipeline);
                 imported_assets.push({
                     ImportedAsset {
                         asset_hash: utils::calc_asset_hash(&asset.id, import_hash),
@@ -354,10 +353,10 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
         } => {
             debug!("full pair {}", source.path.to_string_lossy());
             let mut import = SourcePairImport::new(source.path);
-            import.with_source_hash(source_hash);
-            import.with_meta_hash(meta_hash);
-            import.with_importer_contexts(importer_contexts);
-            if !import.with_importer_from_map(&importer_map)? {
+            import.set_source_hash(source_hash);
+            import.set_meta_hash(meta_hash);
+            import.set_importer_contexts(importer_contexts);
+            if !import.set_importer_from_map(&importer_map)? {
                 Ok(None)
             } else {
                 import.read_metadata_from_file(scratch_buf)?;
@@ -381,9 +380,9 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
         } => {
             debug!("file without meta {}", source.path.to_string_lossy());
             let mut import = SourcePairImport::new(source.path);
-            import.with_source_hash(hash);
-            import.with_importer_contexts(importer_contexts);
-            if !import.with_importer_from_map(&importer_map)? {
+            import.set_source_hash(hash);
+            import.set_importer_contexts(importer_contexts);
+            if !import.set_importer_from_map(&importer_map)? {
                 debug!("file has no importer registered");
                 Ok(Some((import, None)))
             } else {

@@ -164,18 +164,18 @@ impl LoaderData {
             .map(|h| h.refs.fetch_add(1, Ordering::Relaxed));
         handle
     }
-    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
+    fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.load_states
-            .get(load)
+            .get(&load)
             .filter(|a| match a.state {
                 LoadState::Loaded(_) => true,
                 _ => false,
             })
-            .and_then(|a| a.asset_type.map(|t| (t, *load)))
+            .and_then(|a| a.asset_type.map(|t| (t, load)))
     }
-    fn remove_ref(load_states: &DHashMap<LoadHandle, AssetLoad>, load: &LoadHandle) {
+    fn remove_ref(load_states: &DHashMap<LoadHandle, AssetLoad>, load: LoadHandle) {
         load_states
-            .get(load)
+            .get(&load)
             .map(|h| h.refs.fetch_sub(1, Ordering::Relaxed));
     }
 }
@@ -193,17 +193,17 @@ impl Loader for RpcLoader {
     fn get_load(&self, id: AssetUuid) -> Option<LoadHandle> {
         self.data.uuid_to_load.get(&id).map(|l| *l)
     }
-    fn get_load_info(&self, load: &LoadHandle) -> Option<LoadInfo> {
-        self.data.load_states.get(load).map(|s| LoadInfo {
+    fn get_load_info(&self, load: LoadHandle) -> Option<LoadInfo> {
+        self.data.load_states.get(&load).map(|s| LoadInfo {
             asset_id: s.asset_id,
             refs: s.refs.load(Ordering::Relaxed) as u32,
         })
     }
-    fn get_load_status(&self, load: &LoadHandle) -> LoadStatus {
+    fn get_load_status(&self, load: LoadHandle) -> LoadStatus {
         use LoadState::*;
         self.data
             .load_states
-            .get(load)
+            .get(&load)
             .map(|s| match s.state {
                 None => LoadStatus::NotRequested,
                 WaitingForMetadata
@@ -230,10 +230,10 @@ impl Loader for RpcLoader {
             id,
         )
     }
-    fn get_asset(&self, load: &LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
+    fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.data.get_asset(load)
     }
-    fn remove_ref(&self, load: &LoadHandle) {
+    fn remove_ref(&self, load: LoadHandle) {
         LoaderData::remove_ref(&self.data.load_states, load)
     }
     fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>> {
@@ -266,11 +266,11 @@ impl Loader for RpcLoader {
 }
 
 impl LoaderInfoProvider for (&DHashMap<AssetUuid, LoadHandle>, &DHashMap<LoadHandle, AssetLoad>, &HandleAllocator) {
-    fn get_load(&self, id: AssetUuid) -> Option<LoadHandle> {
+    fn get_load_handle(&self, id: AssetUuid) -> Option<LoadHandle> {
         self.0.get(&id).map(|l| *l)
     } 
-    fn get_asset_id(&self, load: &LoadHandle) -> Option<AssetUuid> {
-        self.1.get(load).map(|l| l.asset_id)
+    fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
+        self.1.get(&load).map(|l| l.asset_id)
     }
     fn add_ref(&self, id: AssetUuid) -> LoadHandle {
         LoaderData::add_ref(self.0, self.2, self.1, id)
@@ -332,7 +332,7 @@ impl AssetLoadResult {
 fn load_data(
     loader_info: &dyn LoaderInfoProvider,
     chan: &Arc<Sender<HandleOp>>,
-    handle: &LoadHandle,
+    handle: LoadHandle,
     state: &AssetLoad,
     reader: &artifact::Reader<'_>,
     storage: &dyn AssetStorage,
@@ -362,7 +362,7 @@ fn load_data(
         &asset_type,
         &serialized_asset.get_data()?,
         handle,
-        AssetLoadOp::new(chan.clone(), *handle),
+        AssetLoadOp::new(chan.clone(), handle),
         new_version,
     )?;
     let new_state = if state.loaded_version.is_none() {
@@ -440,7 +440,7 @@ fn process_data_requests(
                         AssetLoadResult::from_state(load.state
                             .map_asset_load_state(|_| AssetLoadState::WaitingForData))
                     } else {
-                        load_data(&(&data.uuid_to_load, &data.load_states, &data.handle_allocator), op_channel, &handle, &load, &artifacts.get(0), storage)?
+                        load_data(&(&data.uuid_to_load, &data.load_states, &data.handle_allocator), op_channel, *handle, &load, &artifacts.get(0), storage)?
                     }
                 }
                 Err(err) => {
@@ -600,7 +600,7 @@ fn commit_asset(handle: LoadHandle, load: &mut AssetLoad, asset_storage: &dyn As
                 .expect("in LoadingAsset state but asset_type is None");
             asset_storage.commit_asset_version(
                 asset_type,
-                &handle,
+                handle,
                 load.requested_version.unwrap(),
             );
             load.loaded_version = load.requested_version;
@@ -763,7 +763,7 @@ fn process_load_states(
                                 uuid_to_load.get(dependency_asset_id).as_ref()
                             {
                                 log::debug!("Removing ref from `{:?}`", *dependency_asset_id);
-                                LoaderData::remove_ref(load_states, dependency_load_handle)
+                                LoaderData::remove_ref(load_states, **dependency_load_handle)
                             } else {
                                 panic!(
                                     "Expected load handle to exist for asset `{:?}`.",

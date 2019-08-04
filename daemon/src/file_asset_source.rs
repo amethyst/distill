@@ -224,8 +224,8 @@ impl FileAssetSource {
                 _marker: std::marker::PhantomData,
             };
             let mut import = SourcePairImport::new(path);
-            import.with_importer_from_map(&self.importers)?;
-            import.with_importer_contexts(&self.importer_contexts);
+            import.set_importer_from_map(&self.importers)?;
+            import.set_importer_contexts(&self.importer_contexts);
             import.generate_source_metadata(&cache)?;
             import.hash_source()?;
             let imported_assets = import.import_source(scratch_buf)?;
