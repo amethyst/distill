@@ -8,7 +8,7 @@ pub mod rpc_loader;
 mod rpc_state;
 mod utils;
 
-pub use crate::loader::{AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader};
+pub use crate::loader::{AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader, LoaderInfoProvider};
 pub use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// A universally unique identifier for an asset.

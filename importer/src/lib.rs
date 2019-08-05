@@ -6,18 +6,18 @@ use serde::Serialize;
 use std::io::Read;
 
 pub use self::error::{Error, Result};
-// pub use crate::amethyst_formats::amethyst_formats;
 pub use crate::boxed_importer::{
     get_source_importers, AssetMetadata, BoxedImporter, SourceFileImporter, SourceMetadata,
-    SOURCEMETADATA_VERSION,
+    SOURCEMETADATA_VERSION, ImporterContext, get_importer_contexts, ImporterContextRegistration,
+    ImporterContextHandle,
 };
 pub use crate::serde_obj::SerdeObj;
 pub use inventory;
 
 /// A universally unique identifier for an asset.
-/// An asset can be an instance of any Rust type that implements 
+/// An asset can be an instance of any Rust type that implements
 /// [type_uuid::TypeUuid] + [serde::Serialize] + [Send].
-/// 
+///
 /// Note that a source file may produce multiple assets.
 pub type AssetUuid = [u8; 16];
 /// UUID of an asset's Rust type. Produced by [type_uuid::TypeUuid::UUID].
@@ -37,7 +37,7 @@ pub trait Importer: Send + 'static {
     fn version(&self) -> u32;
 
     /// Options can store settings that change importer behaviour.
-    /// Will be automatically stored in .meta files and passed to [Importer::import]. 
+    /// Will be automatically stored in .meta files and passed to [Importer::import].
     type Options: Send + 'static;
 
     /// State is maintained by the asset pipeline to enable Importers to
