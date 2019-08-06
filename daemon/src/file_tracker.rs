@@ -423,24 +423,33 @@ impl FileTracker {
     pub fn read_dirty_files<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         iter_txn: &'a V,
-    ) -> Result<Vec<FileState>> {
-        let mut file_states = Vec::new();
-        {
-            let mut cursor = iter_txn.open_ro_cursor(self.tables.dirty_files)?;
-            for (key_result, value_result) in cursor.capnp_iter_start() {
-                let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
-                let value_result = value_result?;
-                let info = value_result.get_root::<dirty_file_info::Reader<'_>>()?;
-                let source_info = info.get_source_info()?;
-                file_states.push(FileState {
-                    path: PathBuf::from(key),
-                    state: info.get_state()?,
-                    last_modified: source_info.get_last_modified(),
-                    length: source_info.get_length(),
-                });
-            }
-        }
-        Ok(file_states)
+    ) -> Vec<FileState> {
+        // TODO(happens): If we have any errors while looping over a dirty file, we
+        // should somehow be able to mark it for a retry. We can probably rely on
+        // the fact that since we skip them, they will still be dirty on the next attempt.
+        iter_txn
+            .open_ro_cursor(self.tables.dirty_files)
+            .map(|mut cursor| cursor
+                .capnp_iter_start()
+                .filter_map(|(key_res, value_res)| {
+                    // TODO(happens): Do we want logging on why things are skipped here?
+                    // We could map to Result<_> first, and then log any errors in a filter_map
+                    // that just calls ok() afterwards.
+                    let key = str::from_utf8(key_res).ok()?;
+                    let value_res = value_res.ok()?;
+                    let info = value_res.get_root::<dirty_file_info::Reader<'_>>().ok()?;
+                    let source_info = info.get_source_info().ok()?;
+
+                    Some(FileState {
+                        path: PathBuf::from(key),
+                        state: info.get_state().ok()?,
+                        last_modified: source_info.get_last_modified(),
+                        length: source_info.get_length(),
+                    })
+                })
+                .collect()
+            )
+            .unwrap_or(Vec::new())
     }
 
     pub fn read_all_files(&self, iter_txn: &RoTransaction<'_>) -> Result<Vec<FileState>> {
@@ -497,20 +506,22 @@ impl FileTracker {
         &self,
         txn: &'a V,
         path: &PathBuf,
-    ) -> Result<Option<FileState>> {
+    ) -> Option<FileState> {
+        // NOTE(happens): If we error while getting the file state, we return None,
+        // since it basically has the same meaning for us.
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        match txn.get::<source_file_info::Owned, &[u8]>(self.tables.source_files, &key)? {
+        match txn.get::<source_file_info::Owned, &[u8]>(self.tables.source_files, &key).ok()? {
             Some(value) => {
-                let info = value.get()?;
-                Ok(Some(FileState {
+                let info = value.get().ok()?;
+                Some(FileState {
                     path: path.clone(),
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
-                }))
+                })
             }
-            None => Ok(None),
+            None => None,
         }
     }
 
@@ -712,9 +723,8 @@ pub mod tests {
         let path = fs::canonicalize(&asset_dir)
             .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
         let canonical_path = path.join(name);
-        let maybe_state = t
-            .get_file_state(&txn, &canonical_path)
-            .expect("error getting file state");
+        let maybe_state = t.get_file_state(&txn, &canonical_path);
+
         assert!(
             maybe_state.is_none(),
             "expected no file state for file {}",
@@ -727,7 +737,6 @@ pub mod tests {
         let canonical_path =
             fs::canonicalize(asset_dir.join(name)).expect("failed to canonicalize");
         t.get_file_state(&txn, &canonical_path)
-            .expect("error getting file state")
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
 
@@ -764,10 +773,7 @@ pub mod tests {
 
     fn clear_dirty_file_state(t: &FileTracker) {
         let mut txn = t.get_rw_txn().expect("failed to open rw txn");
-        for f in t
-            .read_dirty_files(&txn)
-            .expect("failed to read dirty files")
-        {
+        for f in t.read_dirty_files(&txn) {
             t.delete_dirty_file_state(&mut txn, &f.path)
                 .expect("failed to delete dirty file state");
         }

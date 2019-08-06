@@ -338,7 +338,7 @@ impl FileAssetSource {
             let check_file_state = |s: &Option<&FileState>| -> Result<bool> {
                 match s {
                     Some(source) => {
-                        let source_file_state = self.tracker.get_file_state(txn, &source.path)?;
+                        let source_file_state = self.tracker.get_file_state(txn, &source.path);
                         Ok(source_file_state.map_or(false, |s| s != **source))
                     }
                     None => Ok(false),
@@ -394,10 +394,12 @@ impl FileAssetSource {
         }
         Ok(())
     }
-    fn check_for_importer_changes(&self) -> Result<bool> {
+
+    fn check_for_importer_changes(&self) -> bool {
         let mut changed_paths = Vec::new();
-        {
-            let txn = self.db.ro_txn()?;
+
+        let result = self.db.ro_txn().and_then(|txn| {
+            // TODO(happens): Simplify this loop
             for result in self.iter_metadata(&txn)? {
                 let (path, metadata) = result?;
                 let metadata = metadata.get()?;
@@ -414,213 +416,262 @@ impl FileAssetSource {
                     changed_paths.push(path);
                 }
             }
+
+            Ok(())
+        });
+
+        if let Err(err) = result {
+            error!("Error during txn: {}", err);
+            return false;
         }
+
         if !changed_paths.is_empty() {
-            let mut txn = self.db.rw_txn()?;
-            for path in changed_paths {
-                self.tracker.add_dirty_file(&mut txn, &path)?;
+            let result = self.db.rw_txn().and_then(|mut txn| {
+                for path in changed_paths {
+                    self.tracker.add_dirty_file(&mut txn, &path)?;
+                }
+
+                txn.commit()
+            });
+
+            if let Err(err) = result {
+                error!("Error during txn: {}", err);
+                return false;
             }
-            txn.commit()?;
-            return Ok(true);
+
+            true
+        } else {
+            false
         }
-        Ok(false)
     }
-    fn handle_update(&self, thread_pool: &mut Pool) -> Result<()> {
-        let start_time = PreciseTime::now();
-        let source_meta_pairs = {
-            let mut txn = self.db.rw_txn()?;
-            // Before reading the filesystem state we need to process rename events.
-            // This must be done in the same transaction to stay consistent.
-            self.handle_rename_events(&mut txn)?;
 
-            let mut source_meta_pairs: HashMap<PathBuf, SourcePair> = HashMap::new();
-            let dirty_files = self.tracker.read_dirty_files(&txn)?;
-            if !dirty_files.is_empty() {
-                for state in dirty_files.into_iter() {
-                    let mut is_meta = false;
-                    if let Some(ext) = state.path.extension() {
-                        if let Some("meta") = ext.to_str() {
-                            is_meta = true;
-                        }
-                    }
-                    let base_path = if is_meta {
-                        state.path.with_file_name(state.path.file_stem().unwrap())
-                    } else {
-                        state.path.clone()
-                    };
-                    let mut pair = source_meta_pairs.entry(base_path).or_insert(SourcePair {
-                        source: Option::None,
-                        meta: Option::None,
-                    });
-                    if is_meta {
-                        pair.meta = Some(state.clone());
-                    } else {
-                        pair.source = Some(state.clone());
-                    }
-                }
-                for (path, pair) in source_meta_pairs.iter_mut() {
-                    if pair.meta.is_none() {
-                        pair.meta = self
-                            .tracker
-                            .get_file_state(&txn, &utils::to_meta_path(&path))?;
-                    }
-                    if pair.source.is_none() {
-                        pair.source = self.tracker.get_file_state(&txn, &path)?;
-                    }
-                }
-                debug!("Processing {} changed file pairs", source_meta_pairs.len());
-            }
-            if txn.dirty {
-                txn.commit()?;
-            }
-            source_meta_pairs
-        };
+    fn handle_dirty_files(&self, txn: &mut RwTransaction<'_>) -> HashMap<PathBuf, SourcePair> {
+        // TODO(happens): Why is this suddenly throwing an error?
+        let dirty_files = self.tracker.read_dirty_files(txn);
+        let mut source_meta_pairs: HashMap<PathBuf, SourcePair> = HashMap::new();
 
-        let hashed_files = hash_files(Vec::from_iter(source_meta_pairs.values()));
-        for result in &hashed_files {
-            match result {
-                Err(err) => {
-                    error!("Hashing error: {}", err);
+        if !dirty_files.is_empty() {
+            for state in dirty_files.into_iter() {
+                let mut is_meta = false;
+                if let Some(ext) = state.path.extension() {
+                    if let Some("meta") = ext.to_str() {
+                        is_meta = true;
+                    }
                 }
-                Ok(_) => {}
+                let base_path = if is_meta {
+                    state.path.with_file_name(state.path.file_stem().unwrap())
+                } else {
+                    state.path.clone()
+                };
+                let mut pair = source_meta_pairs.entry(base_path).or_insert(SourcePair {
+                    source: Option::None,
+                    meta: Option::None,
+                });
+                if is_meta {
+                    pair.meta = Some(state.clone());
+                } else {
+                    pair.source = Some(state.clone());
+                }
             }
+
+            for (path, pair) in source_meta_pairs.iter_mut() {
+                if pair.meta.is_none() {
+                    let path = utils::to_meta_path(&path);
+                    pair.meta = self.tracker.get_file_state(txn, &path);
+                }
+
+                if pair.source.is_none() {
+                    pair.source = self.tracker.get_file_state(txn, &path);
+                }
+            }
+
+            debug!("Processing {} changed file pairs", source_meta_pairs.len());
         }
-        let hashed_files = Vec::from_iter(
-            hashed_files
-                .into_iter()
-                .filter(|f| !f.is_err())
-                .map(|e| e.unwrap()),
-        );
-        debug!("Hashed {}", hashed_files.len());
-        debug!(
-            "Hashed {} pairs in {}",
-            source_meta_pairs.len(),
-            start_time.to(PreciseTime::now())
-        );
 
-        let mut txn = self.db.rw_txn()?;
+        source_meta_pairs
+            .into_iter()
+            .filter(|(_, pair)| pair.meta.is_some() && pair.source.is_some())
+            .collect()
+    }
+
+    // TODO(happens): Return for this is asset_metadata_changed. This function needs a lot
+    // of work, and in the process it will hopefully clear up and get a name that will
+    // make the return value more obvious.
+    fn threadpool_mess(&self) -> bool {
         use std::cell::RefCell;
         thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
 
         let mut asset_metadata_changed = false;
+
         // Should get rid of this scoped_threadpool madness somehow,
         // but can't use par_iter directly since I need to process the results
         // as soon as they are completed. So essentially I want futures::stream::FuturesUnordered.
         // But I couldn't figure all that future stuff out, so here we are. Scoped threadpool.
-        thread_pool.scoped(|scope| -> Result<()> {
-            let (tx, rx) = channel::unbounded();
-            let to_process = hashed_files.len();
-            let mut import_iter = hashed_files.iter().map(|p| {
-                let processed_pair = p.clone();
-                let sender = tx.clone();
-                scope.execute(move || {
-                    SCRATCH_STORE.with(|cell| {
-                        let mut local_store = cell.borrow_mut();
-                        if local_store.is_none() {
-                            *local_store = Some(Vec::new());
-                        }
-                        match self.db.ro_txn() {
-                            Err(e) => {
-                                sender.send((processed_pair, Err(e))).unwrap();
-                            }
-                            Ok(read_txn) => {
-                                let cache = DBSourceMetadataCache {
-                                    txn: &read_txn,
-                                    file_asset_source: &self,
-                                    _marker: std::marker::PhantomData,
-                                };
-                                let result = source_pair_import::process_pair(
-                                    &cache,
-                                    &self.importers,
-                                    &processed_pair,
-                                    local_store.as_mut().unwrap(),
-                                );
-                                sender.send((processed_pair, result)).unwrap();
-                            }
-                        }
-                    });
-                });
-            });
+        // thread_pool.scoped(|scope| -> Result<()> {
+        //     let (tx, rx) = channel::unbounded();
+        //     let to_process = hashed_files.len();
+        //     let mut import_iter = hashed_files.iter().map(|p| {
+        //         let processed_pair = p.clone();
+        //         let sender = tx.clone();
+        //         scope.execute(move || {
+        //             SCRATCH_STORE.with(|cell| {
+        //                 let mut local_store = cell.borrow_mut();
+        //                 if local_store.is_none() {
+        //                     *local_store = Some(Vec::new());
+        //                 }
+        //                 match self.db.ro_txn() {
+        //                     Err(e) => {
+        //                         sender.send((processed_pair, Err(e))).unwrap();
+        //                     }
+        //                     Ok(read_txn) => {
+        //                         let cache = DBSourceMetadataCache {
+        //                             txn: &read_txn,
+        //                             file_asset_source: &self,
+        //                             _marker: std::marker::PhantomData,
+        //                         };
+        //                         let result = source_pair_import::process_pair(
+        //                             &cache,
+        //                             &self.importers,
+        //                             &processed_pair,
+        //                             local_store.as_mut().unwrap(),
+        //                         );
+        //                         sender.send((processed_pair, result)).unwrap();
+        //                     }
+        //                 }
+        //             });
+        //         });
+        //     });
 
-            let num_queued_imports = num_cpus::get() * 2;
-            for _ in 0..num_queued_imports {
-                import_iter.next();
-            }
+        //     let num_queued_imports = num_cpus::get() * 2;
+        //     for _ in 0..num_queued_imports {
+        //         import_iter.next();
+        //     }
 
-            let mut num_processed = 0;
-            let mut metadata_changes = HashMap::new();
-            while num_processed < to_process {
-                match rx.recv() {
-                    Ok((pair, maybe_result)) => {
-                        match maybe_result {
-                            // Successful import
-                            Ok(result) => {
-                                let path = &pair
-                                    .source
-                                    .as_ref()
-                                    .or_else(|| pair.meta.as_ref())
-                                    .expect(
-                                        "a successful import must have a source or meta FileState",
-                                    )
-                                    .path;
-                                self.ack_dirty_file_states(&mut txn, &pair)?;
-                                // TODO put import artifact in cache
-                                metadata_changes.insert(
-                                    path.clone(),
-                                    result.map(|r| r.0.source_metadata()).unwrap_or(None),
-                                );
-                            }
-                            Err(e) => error!("Error processing pair: {}", e),
-                        }
-                        num_processed += 1;
-                        import_iter.next();
-                    }
-                    _ => {
-                        break;
-                    }
-                }
-            }
-            let mut change_batch = asset_hub::ChangeBatch::new();
-            self.process_metadata_changes(&mut txn, metadata_changes, &mut change_batch)?;
-            asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch)?;
-            Ok(())
-        })?;
-        if txn.dirty {
-            txn.commit()?;
-            if asset_metadata_changed {
-                self.hub.notify_listeners();
-            }
-        }
-        info!(
-            "Processed {} pairs in {}",
-            source_meta_pairs.len(),
-            start_time.to(PreciseTime::now())
-        );
-        Ok(())
+        //     let mut num_processed = 0;
+        //     let mut metadata_changes = HashMap::new();
+        //     while num_processed < to_process {
+        //         match rx.recv() {
+        //             Ok((pair, maybe_result)) => {
+        //                 match maybe_result {
+        //                     // Successful import
+        //                     Ok(result) => {
+        //                         let path = &pair
+        //                             .source
+        //                             .as_ref()
+        //                             .or_else(|| pair.meta.as_ref())
+        //                             .expect(
+        //                                 "a successful import must have a source or meta FileState",
+        //                             )
+        //                             .path;
+        //                         self.ack_dirty_file_states(&mut txn, &pair)?;
+        //                         // TODO put import artifact in cache
+        //                         metadata_changes.insert(
+        //                             path.clone(),
+        //                             result.map(|r| r.0.source_metadata()).unwrap_or(None),
+        //                         );
+        //                     }
+        //                     Err(e) => error!("Error processing pair: {}", e),
+        //                 }
+        //                 num_processed += 1;
+        //                 import_iter.next();
+        //             }
+        //             _ => {
+        //                 break;
+        //             }
+        //         }
+        //     }
+        //     let mut change_batch = asset_hub::ChangeBatch::new();
+        //     self.process_metadata_changes(&mut txn, metadata_changes, &mut change_batch)?;
+        //     asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch)?;
+        //     Ok(())
+        // })?;
+
+        asset_metadata_changed
     }
 
-    pub fn run(&self) -> Result<()> {
+    fn handle_update(&self, thread_pool: &mut Pool) {
+        let start_time = PreciseTime::now();
+        let mut changed_files = Vec::new();
+
+        let result = self.db.rw_txn().and_then(|mut txn| {
+            // Before reading the filesystem state we need to process rename events.
+            // This must be done in the same transaction to guarantee database consistency.
+            self.handle_rename_events(&mut txn);
+
+            let source_meta_pairs = self.handle_dirty_files(&mut txn);
+            // This looks a little stupid, since there is no `into_values`
+            changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
+
+            if txn.dirty {
+                txn.commit()?;
+            }
+
+            Ok(())
+        });
+
+        if let Err(err) = result {
+            error!("Error during txn: {}", err);
+            return;
+        }
+
+        let hashed_files = hash_files(&changed_files);
+        debug!("Hashed {}", hashed_files.len());
+
+        let hashed_files: Vec<HashedSourcePair> = hashed_files
+            .into_iter()
+            .filter_map(|f| match f {
+                Ok(hashed_file) => Some(hashed_file),
+                Err(err) => {
+                    error!("Hashing error: {}", err);
+                    None
+                }
+            })
+            .collect();
+
+        let elapsed = start_time.to(PreciseTime::now());
+        debug!("Hashed {} pairs in {}", hashed_files.len(), elapsed);
+
+        let result = self.db.rw_txn().and_then(|mut txn| {
+            let asset_metadata_changed = self.threadpool_mess();
+
+            if txn.dirty {
+                txn.commit()?;
+
+                if asset_metadata_changed {
+                    self.hub.notify_listeners();
+                }
+            }
+
+            Ok(())
+        });
+
+        if let Err(err) = result {
+            error!("Error during txn: {}", err);
+            return;
+        }
+
+        let elapsed = start_time.to(PreciseTime::now());
+        info!("Processed {} pairs in {}", hashed_files.len(), elapsed);
+    }
+
+    pub fn run(&self) {
         let mut thread_pool = Pool::new(num_cpus::get() as u32);
         let mut started = false;
         let mut update = false;
-        loop {
-            match self.rx.recv() {
-                Ok(evt) => match evt {
-                    FileTrackerEvent::Start => {
-                        started = true;
-                        if self.check_for_importer_changes()? || update {
-                            self.handle_update(&mut thread_pool)?;
-                        }
+
+        while let Ok(evt) = self.rx.recv() {
+            match evt {
+                FileTrackerEvent::Start => {
+                    started = true;
+                    if self.check_for_importer_changes() || update {
+                        self.handle_update(&mut thread_pool);
                     }
-                    FileTrackerEvent::Update => {
-                        update = true;
-                        if started {
-                            self.handle_update(&mut thread_pool)?;
-                        }
+                }
+                FileTrackerEvent::Update => {
+                    update = true;
+                    if started {
+                        self.handle_update(&mut thread_pool);
                     }
-                },
-                Err(_) => {
-                    return Ok(());
                 }
             }
         }

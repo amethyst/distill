@@ -110,7 +110,7 @@ impl AssetDaemon {
         // create the assets folder automatically to make it easier to get started.
         // might want to remove later when watched dirs become configurable?
         let handle = thread::spawn(move || tracker.run());
-        thread::spawn(move || asset_source.run().expect("FileAssetSource.run() failed"));
+        thread::spawn(move || asset_source.run());
 
         service
             .run(self.address)
