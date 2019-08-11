@@ -1,4 +1,4 @@
-use crate::{AssetTypeId, AssetUuid};
+use atelier_core::{AssetTypeId, AssetUuid};
 use crossbeam_channel::Sender;
 use std::{error::Error, sync::Arc};
 

@@ -1,9 +1,8 @@
 use crate::{
     loader::{AssetLoadOp, AssetStorage, HandleOp, LoadHandle, LoadInfo, LoadStatus, Loader, LoaderInfoProvider},
     rpc_state::{ConnectionState, ResponsePromise, RpcState},
-    utils::make_array,
-    AssetTypeId, AssetUuid,
 };
+use atelier_core::{AssetTypeId, AssetUuid, utils::make_array};
 use atelier_schema::{
     data::{artifact, asset_metadata},
     service::asset_hub::{
@@ -892,8 +891,9 @@ impl Default for RpcLoader {
 mod tests {
     use super::*;
     use crate::TypeUuid;
+    use atelier_core::{AssetUuid};
     use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{AssetUuid, BoxedImporter, ImportedAsset, Importer, ImporterValue};
+    use atelier_importer::{BoxedImporter, ImportedAsset, Importer, ImporterValue};
     use serde::{Deserialize, Serialize};
     use std::{
         iter::FromIterator,
@@ -917,9 +917,10 @@ mod tests {
     impl AssetStorage for Storage {
         fn update_asset(
             &self,
+            _loader_info: &dyn LoaderInfoProvider,
             _asset_type: &AssetTypeId,
             data: &[u8],
-            loader_handle: &LoadHandle,
+            loader_handle: LoadHandle,
             load_op: AssetLoadOp,
             version: u32,
         ) -> Result<(), Box<dyn Error>> {
@@ -929,7 +930,7 @@ mod tests {
                 data.as_ref().len()
             );
             let mut map = self.map.write().unwrap();
-            let state = map.entry(*loader_handle).or_insert(LoadState {
+            let state = map.entry(loader_handle).or_insert(LoadState {
                 size: None,
                 commit_version: None,
                 load_version: None,
@@ -943,12 +944,12 @@ mod tests {
         fn commit_asset_version(
             &self,
             _asset_type: &AssetTypeId,
-            loader_handle: &LoadHandle,
+            loader_handle: LoadHandle,
             version: u32,
         ) {
             println!("commit asset {:?}", loader_handle,);
             let mut map = self.map.write().unwrap();
-            let state = map.get_mut(loader_handle).unwrap();
+            let state = map.get_mut(&loader_handle).unwrap();
 
             assert!(state.load_version.unwrap() == version);
             state.commit_version = Some(version);
@@ -1042,14 +1043,14 @@ mod tests {
 
     fn wait_for_status(
         status: LoadStatus,
-        handle: &LoadHandle,
+        handle: LoadHandle,
         loader: &mut RpcLoader,
         storage: &Storage,
     ) {
         loop {
-            println!("state {:?}", loader.get_load_status(&handle));
+            println!("state {:?}", loader.get_load_status(handle));
             if std::mem::discriminant(&status)
-                == std::mem::discriminant(&loader.get_load_status(&handle))
+                == std::mem::discriminant(&loader.get_load_status(handle))
             {
                 break;
             }
@@ -1079,9 +1080,9 @@ mod tests {
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
         };
-        wait_for_status(LoadStatus::Loaded, &handle, &mut loader, &storage);
-        loader.remove_ref(&handle);
-        wait_for_status(LoadStatus::NotRequested, &handle, &mut loader, &storage);
+        wait_for_status(LoadStatus::Loaded, handle, &mut loader, &storage);
+        loader.remove_ref(handle);
+        wait_for_status(LoadStatus::NotRequested, handle, &mut loader, &storage);
     }
 
     #[test]
@@ -1103,7 +1104,7 @@ mod tests {
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
         };
-        wait_for_status(LoadStatus::Loaded, &handle, &mut loader, &storage);
+        wait_for_status(LoadStatus::Loaded, handle, &mut loader, &storage);
 
         // Check that dependent assets are loaded
         let asset_handles = asset_tree()
@@ -1122,15 +1123,15 @@ mod tests {
             .for_each(|(asset_load_handle, file_name)| {
                 assert_eq!(
                     std::mem::discriminant(&LoadStatus::Loaded),
-                    std::mem::discriminant(&loader.get_load_status(&asset_load_handle)),
+                    std::mem::discriminant(&loader.get_load_status(*asset_load_handle)),
                     "Expected `{}` to be loaded.",
                     file_name
                 );
             });
 
         // Remove reference to top level asset.
-        loader.remove_ref(&handle);
-        wait_for_status(LoadStatus::NotRequested, &handle, &mut loader, &storage);
+        loader.remove_ref(handle);
+        wait_for_status(LoadStatus::NotRequested, handle, &mut loader, &storage);
 
         // Remove ref when unloading top level asset.
         asset_handles
@@ -1139,7 +1140,7 @@ mod tests {
                 println!("Waiting for {} to be `NotRequested`.", file_name);
                 wait_for_status(
                     LoadStatus::NotRequested,
-                    &asset_load_handle,
+                    *asset_load_handle,
                     &mut loader,
                     &storage,
                 );

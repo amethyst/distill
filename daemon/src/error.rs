@@ -7,6 +7,7 @@ use ron;
 use std::error::Error as StdError;
 use std::fmt;
 use std::io;
+use std::str;
 use tokio::executor::SpawnError;
 
 #[derive(Debug)]
@@ -26,6 +27,7 @@ pub enum Error {
     Exit,
     ImporterError(atelier_importer::Error),
     TokioSpawnError(SpawnError),
+    StrUtf8Error(str::Utf8Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -48,6 +50,7 @@ impl std::error::Error for Error {
             Error::Exit => "Exit",
             Error::ImporterError(ref e) => e.description(),
             Error::TokioSpawnError(ref e) => e.description(),
+            Error::StrUtf8Error(ref e) => e.description(),
         }
     }
 
@@ -68,6 +71,7 @@ impl std::error::Error for Error {
             Error::Exit => None,
             Error::ImporterError(ref e) => Some(e),
             Error::TokioSpawnError(ref e) => Some(e),
+            Error::StrUtf8Error(ref e) => Some(e),
         }
     }
 }
@@ -89,6 +93,7 @@ impl fmt::Display for Error {
             Error::Exit => f.write_str(self.description()),
             Error::ImporterError(ref e) => e.fmt(f),
             Error::TokioSpawnError(ref e) => e.fmt(f),
+            Error::StrUtf8Error(ref e) => e.fmt(f),
         }
     }
 }
@@ -155,5 +160,10 @@ impl From<atelier_importer::Error> for Error {
 impl From<SpawnError> for Error {
     fn from(err: SpawnError) -> Error {
         Error::TokioSpawnError(err)
+    }
+}
+impl From<str::Utf8Error> for Error {
+    fn from(err: str::Utf8Error) -> Error {
+        Error::StrUtf8Error(err)
     }
 }

@@ -2,26 +2,18 @@ mod boxed_importer;
 mod error;
 mod serde_obj;
 
+use atelier_core::AssetUuid;
 use serde::Serialize;
 use std::io::Read;
 
 pub use self::error::{Error, Result};
 pub use crate::boxed_importer::{
-    get_source_importers, AssetMetadata, BoxedImporter, SourceFileImporter, SourceMetadata,
-    SOURCEMETADATA_VERSION, ImporterContext, get_importer_contexts, ImporterContextRegistration,
-    ImporterContextHandle,
+    get_importer_contexts, get_source_importers, AssetMetadata, BoxedImporter, ImporterContext,
+    ImporterContextHandle, ImporterContextRegistration, SourceFileImporter, SourceMetadata,
+    SOURCEMETADATA_VERSION,
 };
 pub use crate::serde_obj::SerdeObj;
 pub use inventory;
-
-/// A universally unique identifier for an asset.
-/// An asset can be an instance of any Rust type that implements
-/// [type_uuid::TypeUuid] + [serde::Serialize] + [Send].
-///
-/// Note that a source file may produce multiple assets.
-pub type AssetUuid = [u8; 16];
-/// UUID of an asset's Rust type. Produced by [type_uuid::TypeUuid::UUID].
-pub type AssetTypeId = [u8; 16];
 
 /// Importers parse file formats and produce assets.
 pub trait Importer: Send + 'static {

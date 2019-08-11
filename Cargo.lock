@@ -431,6 +431,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "asset-uuid"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-hack 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 0.6.13 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 0.15.42 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uuid 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "atelier-cli"
 version = "0.1.0"
 dependencies = [
@@ -460,10 +470,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "atelier-core"
+version = "0.1.0"
+dependencies = [
+ "asset-uuid 0.1.0",
+ "proc-macro-hack 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uuid 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "atelier-daemon"
 version = "0.1.0"
 dependencies = [
  "amethyst 0.11.1 (git+https://github.com/kabergstrom/amethyst.git?branch=new-asset-system)",
+ "atelier-core 0.1.0",
  "atelier-importer 0.1.0",
  "atelier-schema 0.1.0",
  "bincode 1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -514,6 +534,7 @@ dependencies = [
 name = "atelier-importer"
 version = "0.1.0"
 dependencies = [
+ "atelier-core 0.1.0",
  "bincode 1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "downcast 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "erased-serde 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -548,6 +569,7 @@ dependencies = [
 name = "atelier-loader"
 version = "0.1.0"
 dependencies = [
+ "atelier-core 0.1.0",
  "atelier-daemon 0.1.0",
  "atelier-importer 0.1.0",
  "atelier-schema 0.1.0",

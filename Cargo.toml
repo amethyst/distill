@@ -7,4 +7,5 @@ members = [
     "client",
     "cli",
     "daemon",
+    "core",
 ]

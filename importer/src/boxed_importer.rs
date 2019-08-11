@@ -1,5 +1,6 @@
 use crate::error::Result;
-use crate::{AssetTypeId, AssetUuid, Importer, ImporterValue, SerdeObj};
+use crate::{Importer, ImporterValue, SerdeObj};
+use atelier_core::{AssetTypeId, AssetUuid};
 use ron;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -160,8 +161,9 @@ pub struct ImporterContextRegistration {
 }
 inventory::collect!(ImporterContextRegistration);
 
-/// Get the registered importer contexts 
-pub fn get_importer_contexts(
-) -> impl Iterator<Item = Box<dyn ImporterContext + 'static>> {
-    inventory::iter::<ImporterContextRegistration>.into_iter().map(|r| (r.instantiator)())
+/// Get the registered importer contexts
+pub fn get_importer_contexts() -> impl Iterator<Item = Box<dyn ImporterContext + 'static>> {
+    inventory::iter::<ImporterContextRegistration>
+        .into_iter()
+        .map(|r| (r.instantiator)())
 }
