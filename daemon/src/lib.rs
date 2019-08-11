@@ -10,7 +10,6 @@ mod file_asset_source;
 mod file_tracker;
 mod serialized_asset;
 mod source_pair_import;
-mod utils;
 mod watcher;
 
 pub use crate::{daemon::AssetDaemon, error::Result};

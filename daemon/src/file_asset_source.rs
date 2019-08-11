@@ -7,8 +7,8 @@ use crate::serialized_asset::SerializedAsset;
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use crate::utils;
-use atelier_importer::{AssetMetadata, AssetUuid, BoxedImporter, ImporterContext};
+use atelier_core::{AssetUuid, utils};
+use atelier_importer::{AssetMetadata, BoxedImporter, ImporterContext};
 use atelier_schema::data::{self, source_metadata};
 use bincode;
 use crossbeam_channel::{self as channel, Receiver};

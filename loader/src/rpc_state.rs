@@ -1,4 +1,4 @@
-use crate::{utils, AssetUuid};
+use atelier_core::{AssetUuid, utils};
 use atelier_schema::{data::asset_change_event, service::asset_hub};
 use capnp::{message::ReaderOptions, Result as CapnpResult};
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};

@@ -2,8 +2,8 @@ use crate::daemon::ImporterMap;
 use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
 use crate::serialized_asset::SerializedAsset;
-use crate::utils;
 use crate::watcher::file_metadata;
+use atelier_core::utils;
 use atelier_importer::{
     AssetMetadata, BoxedImporter, SerdeObj, SourceMetadata as ImporterSourceMetadata,
     SOURCEMETADATA_VERSION, ImporterContext,

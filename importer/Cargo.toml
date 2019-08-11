@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+atelier-core = { path = "../core" }
 uuid = { version = "0.7", features = ["v4", "serde"] }
 downcast = "0.10"
 serde = "1.0"
