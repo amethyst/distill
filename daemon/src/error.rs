@@ -22,6 +22,7 @@ pub enum Error {
     RonDeError(ron::de::Error),
     SetLoggerError(log::SetLoggerError),
     UuidBytesError(uuid::BytesError),
+    Utf8Error(std::str::Utf8Error),
     RecvError,
     Exit,
     ImporterError(atelier_importer::Error),
@@ -44,6 +45,7 @@ impl std::error::Error for Error {
             Error::RonDeError(ref e) => e.description(),
             Error::SetLoggerError(ref e) => e.description(),
             Error::UuidBytesError(ref e) => e.description(),
+            Error::Utf8Error(ref e) => e.description(),
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
             Error::ImporterError(ref e) => e.description(),
@@ -64,6 +66,7 @@ impl std::error::Error for Error {
             Error::RonDeError(ref e) => Some(e),
             Error::SetLoggerError(ref e) => Some(e),
             Error::UuidBytesError(ref e) => Some(e),
+            Error::Utf8Error(ref e) => Some(e),
             Error::RecvError => None,
             Error::Exit => None,
             Error::ImporterError(ref e) => Some(e),
@@ -85,6 +88,7 @@ impl fmt::Display for Error {
             Error::RonDeError(ref e) => e.fmt(f),
             Error::SetLoggerError(ref e) => e.fmt(f),
             Error::UuidBytesError(ref e) => e.fmt(f),
+            Error::Utf8Error(ref e) => e.fmt(f),
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
             Error::ImporterError(ref e) => e.fmt(f),
@@ -95,6 +99,11 @@ impl fmt::Display for Error {
 impl From<notify::Error> for Error {
     fn from(err: notify::Error) -> Error {
         Error::Notify(err)
+    }
+}
+impl From<std::str::Utf8Error> for Error {
+    fn from(err: std::str::Utf8Error) -> Error {
+        Error::Utf8Error(err)
     }
 }
 impl From<io::Error> for Error {

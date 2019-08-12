@@ -357,12 +357,12 @@ impl FileTracker {
         self.watch_dirs.iter()
     }
 
-    pub fn get_rw_txn<'a>(&'a self) -> Result<RwTransaction<'a>> {
-        Ok(self.db.rw_txn()?)
+    pub fn get_rw_txn<'a>(&'a self) -> RwTransaction<'a> {
+        self.db.rw_txn().expect("Failed to open rw txn")
     }
 
-    pub fn get_ro_txn<'a>(&'a self) -> Result<RoTransaction<'a>> {
-        Ok(self.db.ro_txn()?)
+    pub fn get_ro_txn<'a>(&'a self) -> RoTransaction<'a> {
+        self.db.ro_txn().expect("Failed to open ro txn")
     }
 
     pub fn read_rename_events<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -380,12 +380,8 @@ impl FileTracker {
                 rename_events.push((
                     seq_num,
                     RenameFileEvent {
-                        src: PathBuf::from(
-                            str::from_utf8(evt.get_src()?).expect("failed to parse key as utf8"),
-                        ),
-                        dst: PathBuf::from(
-                            str::from_utf8(evt.get_dst()?).expect("failed to parse key as utf8"),
-                        ),
+                        src: PathBuf::from(str::from_utf8(evt.get_src()?)?),
+                        dst: PathBuf::from(str::from_utf8(evt.get_dst()?)?),
                     },
                 ));
             }
@@ -429,33 +425,35 @@ impl FileTracker {
         // the fact that since we skip them, they will still be dirty on the next attempt.
         iter_txn
             .open_ro_cursor(self.tables.dirty_files)
-            .map(|mut cursor| cursor
-                .capnp_iter_start()
-                .filter_map(|(key_res, value_res)| {
-                    // TODO(happens): Do we want logging on why things are skipped here?
-                    // We could map to Result<_> first, and then log any errors in a filter_map
-                    // that just calls ok() afterwards.
-                    let key = str::from_utf8(key_res).ok()?;
-                    let value_res = value_res.ok()?;
-                    let info = value_res.get_root::<dirty_file_info::Reader<'_>>().ok()?;
-                    let source_info = info.get_source_info().ok()?;
+            .expect("Failed to open ro cursor for dirty_files table")
+            .capnp_iter_start()
+            .filter_map(|(key_res, value_res)| {
+                // TODO(happens): Do we want logging on why things are skipped here?
+                // We could map to Result<_> first, and then log any errors in a filter_map
+                // that just calls ok() afterwards.
+                let key = str::from_utf8(key_res).ok()?;
+                let value_res = value_res.ok()?;
+                let info = value_res.get_root::<dirty_file_info::Reader<'_>>().ok()?;
+                let source_info = info.get_source_info().ok()?;
 
-                    Some(FileState {
-                        path: PathBuf::from(key),
-                        state: info.get_state().ok()?,
-                        last_modified: source_info.get_last_modified(),
-                        length: source_info.get_length(),
-                    })
+                Some(FileState {
+                    path: PathBuf::from(key),
+                    state: info.get_state().ok()?,
+                    last_modified: source_info.get_last_modified(),
+                    length: source_info.get_length(),
                 })
-                .collect()
-            )
-            .unwrap_or(Vec::new())
+            })
+            .collect()
     }
 
     pub fn read_all_files(&self, iter_txn: &RoTransaction<'_>) -> Result<Vec<FileState>> {
         let mut file_states = Vec::new();
+
         {
-            let mut cursor = iter_txn.open_ro_cursor(self.tables.source_files)?;
+            let mut cursor = iter_txn
+                .open_ro_cursor(self.tables.source_files)
+                .expect("Failed to open ro cursor for source_files table");
+
             for (key_result, value_result) in cursor.capnp_iter_start() {
                 let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
                 let value_result = value_result?;
@@ -468,6 +466,7 @@ impl FileTracker {
                 });
             }
         }
+
         Ok(file_states)
     }
 
@@ -719,7 +718,7 @@ pub mod tests {
     }
 
     fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let txn = t.get_ro_txn();
         let path = fs::canonicalize(&asset_dir)
             .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
         let canonical_path = path.join(name);
@@ -733,7 +732,7 @@ pub mod tests {
     }
 
     fn expect_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let txn = t.get_ro_txn();
         let canonical_path =
             fs::canonicalize(asset_dir.join(name)).expect("failed to canonicalize");
         t.get_file_state(&txn, &canonical_path)
@@ -762,7 +761,7 @@ pub mod tests {
     }
 
     fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let txn = t.get_ro_txn();
         let path = fs::canonicalize(&asset_dir)
             .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
         let canonical_path = path.join(name);

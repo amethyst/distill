@@ -160,16 +160,18 @@ impl FileAssetSource {
     pub fn iter_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-    ) -> Result<impl Iterator<Item = Result<(PathBuf, MessageReader<'a, source_metadata::Owned>)>>>
+    ) -> impl Iterator<Item = Result<(PathBuf, MessageReader<'a, source_metadata::Owned>)>>
     {
-        Ok(txn
-            .open_ro_cursor(self.tables.path_to_metadata)?
+        txn
+            .open_ro_cursor(self.tables.path_to_metadata)
+            .expect("Failed to open ro cursor for path_to_metadata table")
             .capnp_iter_start()
             .map(|(key, value)| {
+                // TODO(happens): Can we just skip things that we fail to parse here?
                 let evt = value?.into_typed::<source_metadata::Owned>();
-                let path = PathBuf::from(str::from_utf8(key).expect("failed to parse key as utf8"));
+                let path = PathBuf::from(str::from_utf8(key)?);
                 Ok((path, evt))
-            }))
+            })
     }
 
     fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Result<bool> {
@@ -398,55 +400,39 @@ impl FileAssetSource {
     fn check_for_importer_changes(&self) -> bool {
         let mut changed_paths = Vec::new();
 
-        let result = self.db.ro_txn().and_then(|txn| {
-            // TODO(happens): Simplify this loop
-            for result in self.iter_metadata(&txn)? {
-                let (path, metadata) = result?;
-                let metadata = metadata.get()?;
-                let changed = if let Some(importer) = self.importers.get_by_path(&path) {
-                    metadata.get_importer_version() != importer.version()
-                        || metadata.get_importer_options_type()?
-                            != importer.default_options().uuid()
-                        || metadata.get_importer_state_type()? != importer.default_state().uuid()
-                        || metadata.get_importer_type()? != importer.uuid()
-                } else {
-                    false
-                };
-                if changed {
-                    changed_paths.push(path);
-                }
+        let txn = self.db.ro_txn().expect("Failed to open ro txn");
+
+        // TODO(happens): Simplify this loop
+        for result in self.iter_metadata(&txn) {
+            let (path, metadata) = result.expect("TODO");
+            let metadata = metadata.get().expect("TODO");
+            let changed = if let Some(importer) = self.importers.get_by_path(&path) {
+                metadata.get_importer_version() != importer.version()
+                    || metadata.get_importer_options_type().expect("TODO")
+                        != importer.default_options().uuid()
+                    || metadata.get_importer_state_type().expect("TODO") != importer.default_state().uuid()
+                    || metadata.get_importer_type().expect("TODO") != importer.uuid()
+            } else {
+                false
+            };
+            if changed {
+                changed_paths.push(path);
             }
-
-            Ok(())
-        });
-
-        if let Err(err) = result {
-            error!("Error during txn: {}", err);
-            return false;
         }
 
-        if !changed_paths.is_empty() {
-            let result = self.db.rw_txn().and_then(|mut txn| {
-                for path in changed_paths {
-                    self.tracker.add_dirty_file(&mut txn, &path)?;
-                }
+        let has_changed_paths = !changed_paths.is_empty();
 
-                txn.commit()
-            });
-
-            if let Err(err) = result {
-                error!("Error during txn: {}", err);
-                return false;
-            }
-
-            true
-        } else {
-            false
+        if has_changed_paths {
+            // TODO(happens): Log errors here
+            let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
+            changed_paths.iter().for_each(|p| { self.tracker.add_dirty_file(&mut txn, &p); });
+            txn.commit().expect("Failed to commit txn");
         }
+
+        has_changed_paths
     }
 
     fn handle_dirty_files(&self, txn: &mut RwTransaction<'_>) -> HashMap<PathBuf, SourcePair> {
-        // TODO(happens): Why is this suddenly throwing an error?
         let dirty_files = self.tracker.read_dirty_files(txn);
         let mut source_meta_pairs: HashMap<PathBuf, SourcePair> = HashMap::new();
 
@@ -593,25 +579,18 @@ impl FileAssetSource {
         let start_time = PreciseTime::now();
         let mut changed_files = Vec::new();
 
-        let result = self.db.rw_txn().and_then(|mut txn| {
-            // Before reading the filesystem state we need to process rename events.
-            // This must be done in the same transaction to guarantee database consistency.
-            self.handle_rename_events(&mut txn);
+        let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
 
-            let source_meta_pairs = self.handle_dirty_files(&mut txn);
-            // This looks a little stupid, since there is no `into_values`
-            changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
+        // Before reading the filesystem state we need to process rename events.
+        // This must be done in the same transaction to guarantee database consistency.
+        self.handle_rename_events(&mut txn);
+        let source_meta_pairs = self.handle_dirty_files(&mut txn);
 
-            if txn.dirty {
-                txn.commit()?;
-            }
+        // This looks a little stupid, since there is no `into_values`
+        changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
 
-            Ok(())
-        });
-
-        if let Err(err) = result {
-            error!("Error during txn: {}", err);
-            return;
+        if txn.dirty {
+            txn.commit().expect("Failed to commit txn");
         }
 
         let hashed_files = hash_files(&changed_files);
@@ -631,23 +610,15 @@ impl FileAssetSource {
         let elapsed = start_time.to(PreciseTime::now());
         debug!("Hashed {} pairs in {}", hashed_files.len(), elapsed);
 
-        let result = self.db.rw_txn().and_then(|mut txn| {
-            let asset_metadata_changed = self.threadpool_mess();
+        let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
+        let asset_metadata_changed = self.threadpool_mess();
 
-            if txn.dirty {
-                txn.commit()?;
+        if txn.dirty {
+            txn.commit().expect("Failed to commit txn");
 
-                if asset_metadata_changed {
-                    self.hub.notify_listeners();
-                }
+            if asset_metadata_changed {
+                self.hub.notify_listeners();
             }
-
-            Ok(())
-        });
-
-        if let Err(err) = result {
-            error!("Error during txn: {}", err);
-            return;
         }
 
         let elapsed = start_time.to(PreciseTime::now());
