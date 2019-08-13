@@ -557,40 +557,46 @@ impl FileTracker {
         is_running: &mut bool,
         rx: &Receiver<FileEvent>,
         scan_stack: &mut Vec<ScanContext>,
-    ) -> Result<Vec<FileTrackerEvent>> {
+    ) -> Vec<FileTrackerEvent> {
         let mut txn = None;
         let mut output_evts = Vec::new();
+        let timeout = Duration::from_millis(100);
+
         while *is_running {
-            let timeout = Duration::from_millis(100);
             select! {
                 recv(rx) -> evt => {
                     if let Ok(evt) = evt {
-                        if txn.is_none() {
-                            txn = Some(self.db.rw_txn()?);
-                        }
-                        let txn = txn.as_mut().unwrap();
-                        if let Some(evt) = events::handle_file_event(txn, &self.tables, evt, scan_stack)? {
-                            output_evts.push(evt);
-                        }
+                        renew_txn(&mut txn, self.db);
+                        let txn = txn.as_mut().expect("Failed to get txn");
+
+                        events::handle_file_event(txn, &self.tables, evt, scan_stack)
+                            .ok()
+                            .and_then(|evt| evt)
+                            .map(|evt| output_evts.push(evt))
+                            .unwrap_or(());
                     } else {
                         error!("Receive error");
                         *is_running = false;
                         break;
                     }
                 }
+
                 recv(channel::after(timeout)) -> _msg => {
                     break;
                 }
             }
         }
+
         if let Some(txn) = txn {
             if txn.dirty {
-                txn.commit()?;
-                debug!("Commit");
+                txn.commit().expect("Failed to commit txn");
+                debug!("Commit read file events txn");
+
                 output_evts.push(FileTrackerEvent::Update);
             }
         }
-        Ok(output_evts)
+
+        output_evts
     }
 
     pub fn run(&self) -> Result<()> {
@@ -612,7 +618,8 @@ impl FileTracker {
         while self.is_running.load(Ordering::Acquire) {
             let mut scan_stack = Vec::new();
             let mut is_running = true;
-            let events = self.read_file_events(&mut is_running, &rx, &mut scan_stack)?;
+            let events = self.read_file_events(&mut is_running, &rx, &mut scan_stack);
+
             select! {
                 recv(self.listener_rx) -> listener => {
                     if let Ok(listener) = listener {
@@ -638,6 +645,12 @@ impl FileTracker {
         stop_handle.stop();
         handle.join().expect("thread panicked")?;
         Ok(())
+    }
+}
+
+fn renew_txn<'a>(txn: &mut Option<RwTransaction<'a>>, db: Arc<Environment>) {
+    if txn.is_none() {
+        txn = &mut Some(db.rw_txn().expect("Failed to renew rw txn"));
     }
 }
 
@@ -673,8 +686,7 @@ pub mod tests {
                     .as_str(),
                 ),
             );
-            let tracker =
-                Arc::new(FileTracker::new(db, asset_paths).expect("failed to create tracker"));
+            let tracker = Arc::new(FileTracker::new(db, asset_paths));
             let (tx, rx) = channel::unbounded();
             tracker.register_listener(tx);
 
@@ -782,15 +794,13 @@ pub mod tests {
             .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
         let canonical_path = path.join(name);
         t.get_dirty_file_state(&txn, &canonical_path)
-            .expect("error getting dirty file state")
             .unwrap_or_else(|| panic!("expected dirty file state for file {}", name));
     }
 
     fn clear_dirty_file_state(t: &FileTracker) {
-        let mut txn = t.get_rw_txn().expect("failed to open rw txn");
+        let mut txn = t.get_rw_txn();
         for f in t.read_dirty_files(&txn) {
-            t.delete_dirty_file_state(&mut txn, &f.path)
-                .expect("failed to delete dirty file state");
+            t.delete_dirty_file_state(&mut txn, &f.path);
         }
     }
 
