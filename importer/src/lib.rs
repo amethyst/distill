@@ -1,6 +1,7 @@
 mod boxed_importer;
 mod error;
 mod serde_obj;
+mod ron_importer;
 
 use atelier_core::AssetUuid;
 use serde::Serialize;
@@ -12,7 +13,7 @@ pub use crate::boxed_importer::{
     ImporterContextHandle, ImporterContextRegistration, SourceFileImporter, SourceMetadata,
     SOURCEMETADATA_VERSION,
 };
-pub use crate::serde_obj::SerdeObj;
+pub use crate::serde_obj::{SerdeObj, IntoSerdeObj};
 pub use inventory;
 
 /// Importers parse file formats and produce assets.
