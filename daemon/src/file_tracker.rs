@@ -332,8 +332,6 @@ impl FileTracker {
         I: IntoIterator<Item = &'a str, IntoIter = T>,
         T: Iterator<Item = &'a str>,
     {
-        let mut watch_dirs = Vec::new();
-
         let watch_dirs: Vec<PathBuf> = to_watch
             .into_iter()
             .map(fs::canonicalize)
@@ -566,7 +564,14 @@ impl FileTracker {
             select! {
                 recv(rx) -> evt => {
                     if let Ok(evt) = evt {
-                        renew_txn(&mut txn, self.db);
+                        if txn.is_none() {
+                            let new_txn = self.db
+                                .rw_txn()
+                                .expect("Failed to renew rw txn");
+
+                            txn = Some(new_txn);
+                        }
+
                         let txn = txn.as_mut().expect("Failed to get txn");
 
                         events::handle_file_event(txn, &self.tables, evt, scan_stack)
@@ -645,12 +650,6 @@ impl FileTracker {
         stop_handle.stop();
         handle.join().expect("thread panicked")?;
         Ok(())
-    }
-}
-
-fn renew_txn<'a>(txn: &mut Option<RwTransaction<'a>>, db: Arc<Environment>) {
-    if txn.is_none() {
-        txn = &mut Some(db.rw_txn().expect("Failed to renew rw txn"));
     }
 }
 

@@ -87,8 +87,7 @@ impl AssetDaemon {
             FileTracker::new(
                 asset_db.clone(),
                 self.asset_dirs.iter().map(|p| p.to_str().unwrap()),
-            )
-            .expect("failed to create tracker"),
+            ),
         );
 
         let hub = Arc::new(

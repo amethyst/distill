@@ -16,7 +16,7 @@ use log::{debug, error, info};
 use rayon::prelude::*;
 use scoped_threadpool::Pool;
 use std::collections::HashMap;
-use std::{iter::FromIterator, path::PathBuf, str, sync::Arc};
+use std::{path::PathBuf, str, sync::Arc};
 use time::PreciseTime;
 
 pub(crate) struct FileAssetSource {
@@ -352,18 +352,18 @@ impl FileAssetSource {
         if !skip_ack_dirty {
             if pair.source.is_some() {
                 self.tracker
-                    .delete_dirty_file_state(txn, pair.source.as_ref().map(|p| &p.path).unwrap())?;
+                    .delete_dirty_file_state(txn, pair.source.as_ref().map(|p| &p.path).unwrap());
             }
             if pair.meta.is_some() {
                 self.tracker
-                    .delete_dirty_file_state(txn, pair.meta.as_ref().map(|p| &p.path).unwrap())?;
+                    .delete_dirty_file_state(txn, pair.meta.as_ref().map(|p| &p.path).unwrap());
             }
         }
         Ok(())
     }
 
     fn handle_rename_events(&self, txn: &mut RwTransaction<'_>) -> Result<()> {
-        let rename_events = self.tracker.read_rename_events(txn)?;
+        let rename_events = self.tracker.read_rename_events(txn);
         debug!("rename events");
         for (_, evt) in rename_events.iter() {
             let dst_str = evt.dst.to_string_lossy();
