@@ -12,12 +12,14 @@ use serde::Serialize;
 use std::io::Read;
 
 pub use self::error::{Error, Result};
-pub use crate::boxed_importer::{
-    get_importer_contexts, get_source_importers, AssetMetadata, BoxedImporter, ImporterContext,
-    ImporterContextHandle, ImporterContextRegistration, SourceFileImporter, SourceMetadata,
-    SOURCEMETADATA_VERSION,
+pub use crate::{
+    boxed_importer::{
+        get_importer_contexts, get_source_importers, AssetMetadata, BoxedImporter, ImporterContext,
+        ImporterContextHandle, ImporterContextRegistration, SourceFileImporter, SourceMetadata,
+        SOURCEMETADATA_VERSION,
+    },
+    serde_obj::{IntoSerdeObj, SerdeImportable, SerdeObj},
 };
-pub use crate::serde_obj::{SerdeObj, IntoSerdeObj, SerdeImportable};
 pub use inventory;
 
 /// Importers parse file formats and produce assets.

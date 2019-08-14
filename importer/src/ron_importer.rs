@@ -1,9 +1,11 @@
-use crate::{Importer, ImporterValue, ImportedAsset, IntoSerdeObj, SourceFileImporter, SerdeImportable};
-use atelier_core::{AssetUuid};
-use serde::{Serialize, Deserialize};
+use crate::{
+    ImportedAsset, Importer, ImporterValue, SerdeImportable, SourceFileImporter,
+};
+use atelier_core::AssetUuid;
 use ron::de::from_reader;
-use type_uuid::TypeUuid;
+use serde::{Deserialize, Serialize};
 use std::io::Read;
+use type_uuid::TypeUuid;
 
 #[derive(Default, Deserialize, Serialize, TypeUuid, Clone, Copy)]
 #[uuid = "f3cd048a-2c98-4e4b-95a2-d7c0ee6f7beb"]
@@ -19,7 +21,7 @@ pub struct RonImporterState {
 
 #[derive(Default, TypeUuid)]
 #[uuid = "162ede20-6fdd-44c1-8387-8f93983c067c"]
-pub struct RonImporter{}
+pub struct RonImporter {}
 
 impl Importer for RonImporter {
     type State = RonImporterState;
@@ -54,7 +56,7 @@ impl Importer for RonImporter {
                 instantiate_deps: Vec::new(),
                 asset_data: de.into_serde_obj(),
                 build_pipeline: None,
-             }],
+            }],
         })
     }
 }
@@ -78,7 +80,7 @@ mod tests {
 
     #[typetag::serde(name = "36fb2083-7195-4583-8af9-0965f10ae60d")]
     impl SerdeImportable for A {}
-    
+
     #[uuid = "d4b83227-d3f8-47f5-b026-db615fb41d31"]
     #[derive(Serialize, Deserialize, TypeUuid, PartialEq)]
     struct B {
@@ -99,10 +101,23 @@ mod tests {
                         (
                            x: 30,
                         )
-                     }".as_bytes();
-        
-        let a_boxed_res = importer.import_boxed(&mut a, Box::new(RonImporterOptions{}), Box::new(RonImporterState{id: None})).unwrap();
-        let a_serde_obj = a_boxed_res.value.assets.into_iter().nth(0).unwrap().asset_data;
+                     }"
+        .as_bytes();
+
+        let a_boxed_res = importer
+            .import_boxed(
+                &mut a,
+                Box::new(RonImporterOptions {}),
+                Box::new(RonImporterState { id: None }),
+            )
+            .unwrap();
+        let a_serde_obj = a_boxed_res
+            .value
+            .assets
+            .into_iter()
+            .nth(0)
+            .unwrap()
+            .asset_data;
         let a = a_serde_obj.downcast::<A>().unwrap();
 
         assert_eq!(a.x, 30);
@@ -124,10 +139,23 @@ mod tests {
                                 \"dolor\": \"sim\",
                             }
                         )
-                     }".as_bytes();
-        
-        let b_boxed_res = importer.import_boxed(&mut b, Box::new(RonImporterOptions{}), Box::new(RonImporterState{id: None})).unwrap();
-        let b_serde_obj = b_boxed_res.value.assets.into_iter().nth(0).unwrap().asset_data;
+                     }"
+        .as_bytes();
+
+        let b_boxed_res = importer
+            .import_boxed(
+                &mut b,
+                Box::new(RonImporterOptions {}),
+                Box::new(RonImporterState { id: None }),
+            )
+            .unwrap();
+        let b_serde_obj = b_boxed_res
+            .value
+            .assets
+            .into_iter()
+            .nth(0)
+            .unwrap()
+            .asset_data;
         let b = b_serde_obj.downcast::<B>().unwrap();
 
         assert_eq!(b.s, "Ferris");
