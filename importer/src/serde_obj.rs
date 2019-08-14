@@ -21,5 +21,9 @@ impl<T: SerdeObj> IntoSerdeObj for T {
     }
 }
 
+#[cfg(feature = "serde_importers")]
+#[typetag::serde]
+pub trait SerdeImportable: SerdeObj + IntoSerdeObj {}
+
 serialize_trait_object!(SerdeObj);
 downcast!(dyn SerdeObj);

@@ -5,9 +5,6 @@ use ron::de::from_reader;
 use type_uuid::TypeUuid;
 use std::io::Read;
 
-#[typetag::serde]
-pub trait RonImportable: SerdeObj + IntoSerdeObj {}
-
 #[derive(Default, Deserialize, Serialize, TypeUuid, Clone, Copy)]
 #[uuid = "f3cd048a-2c98-4e4b-95a2-d7c0ee6f7beb"]
 pub struct RonImporterOptions {}
@@ -46,7 +43,7 @@ impl Importer for RonImporter {
             state.id = Some(*uuid::Uuid::new_v4().as_bytes());
         }
 
-        let de: Box<dyn RonImportable> = from_reader(source)?;
+        let de: Box<dyn SerdeImportable> = from_reader(source)?;
 
         Ok(ImporterValue {
             assets: vec![ImportedAsset {
@@ -80,7 +77,7 @@ mod tests {
     }
 
     #[typetag::serde(name = "36fb2083-7195-4583-8af9-0965f10ae60d")]
-    impl RonImportable for A {}
+    impl SerdeImportable for A {}
     
     #[uuid = "d4b83227-d3f8-47f5-b026-db615fb41d31"]
     #[derive(Serialize, Deserialize, TypeUuid, PartialEq)]
@@ -91,7 +88,7 @@ mod tests {
     }
 
     #[typetag::serde(name = "d4b83227-d3f8-47f5-b026-db615fb41d31")]
-    impl RonImportable for B {}
+    impl SerdeImportable for B {}
 
     #[test]
     fn ron_importer_simple_test() {

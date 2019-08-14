@@ -16,5 +16,5 @@ inventory = "0.1"
 typetag = { version = "0.1", optional = true }
 
 [features]
-default = ["ron_importer"]
-ron_importer = ["typetag"]
+default = ["serde_importers"]
+serde_importers = ["typetag"]
