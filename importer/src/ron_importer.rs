@@ -22,7 +22,7 @@ pub struct RonImporterState {
 
 #[derive(Default, TypeUuid)]
 #[uuid = "162ede20-6fdd-44c1-8387-8f93983c067c"]
-struct RonImporter{}
+pub struct RonImporter{}
 
 impl Importer for RonImporter {
     type State = RonImporterState;

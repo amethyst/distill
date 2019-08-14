@@ -1,7 +1,11 @@
 mod boxed_importer;
 mod error;
 mod serde_obj;
+
+#[cfg(feature = "ron_importer")]
 mod ron_importer;
+#[cfg(feature = "ron_importer")]
+pub use crate::ron_importer::{RonImportable, RonImporter, RonImporterOptions, RonImporterState};
 
 use atelier_core::AssetUuid;
 use serde::Serialize;
