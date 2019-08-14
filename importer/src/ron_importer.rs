@@ -5,8 +5,12 @@ use ron::de::from_reader;
 use type_uuid::TypeUuid;
 use std::io::Read;
 
-#[typetag::serde(tag = "type_uuid")]
+#[typetag::serde]
 pub trait RonImportable: SerdeObj + IntoSerdeObj {}
+
+#[derive(Default, Deserialize, Serialize, TypeUuid, Clone, Copy)]
+#[uuid = "f3cd048a-2c98-4e4b-95a2-d7c0ee6f7beb"]
+pub struct RonImporterOptions {}
 
 /// A simple state for Importer to retain the same UUID between imports
 /// for all single-asset source files
@@ -22,7 +26,7 @@ struct RonImporter{}
 
 impl Importer for RonImporter {
     type State = RonImporterState;
-    type Options = ();
+    type Options = RonImporterOptions;
 
     fn version_static() -> u32 {
         1
@@ -60,5 +64,79 @@ impl Importer for RonImporter {
 
 inventory::submit!(SourceFileImporter {
     extension: ".ron",
-    instantiator: || Box::<RonImporter>::new(Default::default())
+    instantiator: || Box::new(RonImporter::default())
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::BoxedImporter;
+    use std::collections::HashMap;
+
+    #[uuid = "36fb2083-7195-4583-8af9-0965f10ae60d"]
+    #[derive(Serialize, Deserialize, TypeUuid, PartialEq)]
+    struct A {
+        x: u32,
+    }
+
+    #[typetag::serde(name = "36fb2083-7195-4583-8af9-0965f10ae60d")]
+    impl RonImportable for A {}
+    
+    #[uuid = "d4b83227-d3f8-47f5-b026-db615fb41d31"]
+    #[derive(Serialize, Deserialize, TypeUuid, PartialEq)]
+    struct B {
+        s: String,
+        a: A,
+        m: HashMap<String, String>,
+    }
+
+    #[typetag::serde(name = "d4b83227-d3f8-47f5-b026-db615fb41d31")]
+    impl RonImportable for B {}
+
+    #[test]
+    fn ron_importer_simple_test() {
+        let importer: Box<dyn BoxedImporter> = Box::new(RonImporter::default());
+
+        let mut a = "{
+                       \"36fb2083-7195-4583-8af9-0965f10ae60d\": 
+                        (
+                           x: 30,
+                        )
+                     }".as_bytes();
+        
+        let a_boxed_res = importer.import_boxed(&mut a, Box::new(RonImporterOptions{}), Box::new(RonImporterState{id: None})).unwrap();
+        let a_serde_obj = a_boxed_res.value.assets.into_iter().nth(0).unwrap().asset_data;
+        let a = a_serde_obj.downcast::<A>().unwrap();
+
+        assert_eq!(a.x, 30);
+    }
+
+    #[test]
+    fn ron_importer_complex_test() {
+        let importer: Box<dyn BoxedImporter> = Box::new(RonImporter::default());
+
+        let mut b = "{
+                       \"d4b83227-d3f8-47f5-b026-db615fb41d31\": 
+                        (
+                            s: \"Ferris\",
+                            a: (
+                                x: 30
+                               ),
+                            m: {
+                                \"lorem\": \"ipsum\",
+                                \"dolor\": \"sim\",
+                            }
+                        )
+                     }".as_bytes();
+        
+        let b_boxed_res = importer.import_boxed(&mut b, Box::new(RonImporterOptions{}), Box::new(RonImporterState{id: None})).unwrap();
+        let b_serde_obj = b_boxed_res.value.assets.into_iter().nth(0).unwrap().asset_data;
+        let b = b_serde_obj.downcast::<B>().unwrap();
+
+        assert_eq!(b.s, "Ferris");
+        assert_eq!(b.a.x, 30);
+        assert_eq!(b.m["lorem"], "ipsum");
+        assert_eq!(b.m["dolor"], "sim");
+        assert_eq!(b.m.len(), 2);
+    }
+}
