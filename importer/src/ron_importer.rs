@@ -1,4 +1,4 @@
-use crate::{Importer, ImporterValue, SerdeObj, ImportedAsset, IntoSerdeObj, SourceFileImporter};
+use crate::{Importer, ImporterValue, ImportedAsset, IntoSerdeObj, SourceFileImporter, SerdeImportable};
 use atelier_core::{AssetUuid};
 use serde::{Serialize, Deserialize};
 use ron::de::from_reader;
