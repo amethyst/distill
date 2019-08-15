@@ -10,12 +10,12 @@ use atelier_importer::{
 };
 use atelier_schema::data::{self, CompressionType};
 use bincode;
-use log::{debug, info};
+use log::{debug, error, info};
 use ron;
 use std::{
     fs,
     hash::{Hash, Hasher},
-    io::{self, BufRead, Read, Write},
+    io::{BufRead, Read, Write},
     path::PathBuf,
 };
 use time::PreciseTime;
@@ -79,22 +79,26 @@ impl<'a> SourcePairImport<'a> {
     pub fn with_meta_hash(&mut self, meta_hash: u64) {
         self.meta_hash = Some(meta_hash);
     }
-    pub fn hash_source(&mut self) -> Result<()> {
-        let (_, hash) = hash_file(&FileState {
+
+    pub fn hash_source(&mut self) {
+        let state = FileState {
             path: self.source.clone(),
             state: data::FileState::Exists,
             last_modified: 0,
             length: 0,
-        })?;
-        self.source_hash =
-            Some(hash.ok_or_else(|| Error::IO(io::Error::from(io::ErrorKind::NotFound)))?);
-        Ok(())
+        };
+
+        hash_file(&state)
+            .map(|(_, hash)| self.source_hash = hash)
+            .unwrap_or_else(|err| error!("Failed to hash file: {}", err));
     }
+
     /// Returns true if an appropriate importer was found, otherwise false.
-    pub fn with_importer_from_map(&mut self, importers: &'a ImporterMap) -> Result<bool> {
+    pub fn with_importer_from_map(&mut self, importers: &'a ImporterMap) -> bool {
         self.importer = importers.get_by_path(&self.source);
-        Ok(self.importer.is_some())
+        self.importer.is_some()
     }
+
     pub fn needs_source_import(&mut self, scratch_buf: &mut Vec<u8>) -> Result<bool> {
         if let Some(ref metadata) = self.source_metadata {
             if metadata.import_hash.is_none() {
@@ -114,6 +118,7 @@ impl<'a> SourcePairImport<'a> {
             Ok(true)
         }
     }
+
     fn calc_import_hash(
         &self,
         options: &dyn SerdeObj,
@@ -153,13 +158,12 @@ impl<'a> SourcePairImport<'a> {
         Ok(())
     }
 
-    pub fn generate_source_metadata<C: SourceMetadataCache>(
-        &mut self,
-        metadata_cache: &C,
-    ) -> Result<()> {
+    pub fn generate_source_metadata<C: SourceMetadataCache>(&mut self, metadata_cache: &C) {
         let importer = self
             .importer
+            // TODO(happens): Do we need to handle this?
             .expect("cannot create metadata without an importer");
+
         let mut default_metadata = SourceMetadata {
             version: SOURCEMETADATA_VERSION,
             importer_version: importer.version(),
@@ -169,9 +173,12 @@ impl<'a> SourcePairImport<'a> {
             import_hash: None,
             assets: Vec::new(),
         };
-        metadata_cache.restore_metadata(&self.source, importer, &mut default_metadata)?;
-        self.source_metadata = Some(default_metadata);
-        Ok(())
+
+        let restored =
+            metadata_cache.restore_metadata(&self.source, importer, &mut default_metadata);
+        if let Ok(_) = restored {
+            self.source_metadata = Some(default_metadata);
+        }
     }
 
     pub fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<Vec<ImportedAssetVec>> {
@@ -332,7 +339,7 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
             let mut import = SourcePairImport::new(source.path);
             import.with_source_hash(source_hash);
             import.with_meta_hash(meta_hash);
-            if !import.with_importer_from_map(&importer_map)? {
+            if !import.with_importer_from_map(&importer_map) {
                 Ok(None)
             } else {
                 import.read_metadata_from_file(scratch_buf)?;
@@ -357,11 +364,11 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
             debug!("file without meta {}", source.path.to_string_lossy());
             let mut import = SourcePairImport::new(source.path);
             import.with_source_hash(hash);
-            if !import.with_importer_from_map(&importer_map)? {
+            if !import.with_importer_from_map(&importer_map) {
                 debug!("file has no importer registered");
                 Ok(Some((import, None)))
             } else {
-                import.generate_source_metadata(metadata_cache)?;
+                import.generate_source_metadata(metadata_cache);
                 if import.needs_source_import(scratch_buf)? {
                     let imported_assets = import.import_source(scratch_buf)?;
                     import.write_metadata()?;

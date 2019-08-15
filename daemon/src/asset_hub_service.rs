@@ -178,7 +178,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
                             txn,
                             &id,
                             &mut scratch_buf,
-                        )? {
+                        ) {
                             let capnp_artifact = build_serialized_asset_message(&artifact);
                             artifacts.push((id, hash, capnp_artifact));
                         }
@@ -253,7 +253,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut asset_paths = Vec::new();
         for id in params.get_assets()? {
             let asset_uuid = utils::uuid_from_slice(id.get_id()?)?;
-            let path = ctx.file_source.get_asset_path(txn, &asset_uuid)?;
+            let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
             if let Some(path) = path {
                 asset_paths.push((id, path));
             }
@@ -299,14 +299,14 @@ impl<'a> AssetHubSnapshotImpl<'a> {
             if path.is_relative() {
                 for dir in ctx.file_tracker.get_watch_dirs() {
                     if let Ok(canonicalized) = fs::canonicalize(dir.join(&path)) {
-                        metadata = ctx.file_source.get_metadata(txn, &canonicalized)?;
+                        metadata = ctx.file_source.get_metadata(txn, &canonicalized);
                         if metadata.is_some() {
                             break;
                         }
                     }
                 }
             } else if let Ok(canonicalized) = fs::canonicalize(&path) {
-                metadata = ctx.file_source.get_metadata(txn, &canonicalized)?
+                metadata = ctx.file_source.get_metadata(txn, &canonicalized)
             }
             if let Some(metadata) = metadata {
                 metadatas.push((request_path, metadata));

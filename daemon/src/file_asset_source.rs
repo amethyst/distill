@@ -151,19 +151,18 @@ impl FileAssetSource {
         &self,
         txn: &'a V,
         path: &PathBuf,
-    ) -> Result<Option<MessageReader<'a, source_metadata::Owned>>> {
+    ) -> Option<MessageReader<'a, source_metadata::Owned>> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        Ok(txn.get::<source_metadata::Owned, &[u8]>(self.tables.path_to_metadata, &key)?)
+        txn.get::<source_metadata::Owned, &[u8]>(self.tables.path_to_metadata, &key)
+            .expect("Failed to get source metadata from path_to_metadata table")
     }
 
     pub fn iter_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-    ) -> impl Iterator<Item = Result<(PathBuf, MessageReader<'a, source_metadata::Owned>)>>
-    {
-        txn
-            .open_ro_cursor(self.tables.path_to_metadata)
+    ) -> impl Iterator<Item = Result<(PathBuf, MessageReader<'a, source_metadata::Owned>)>> {
+        txn.open_ro_cursor(self.tables.path_to_metadata)
             .expect("Failed to open ro cursor for path_to_metadata table")
             .capnp_iter_start()
             .map(|(key, value)| {
@@ -174,10 +173,11 @@ impl FileAssetSource {
             })
     }
 
-    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Result<bool> {
+    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> bool {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        Ok(txn.delete(self.tables.path_to_metadata, &key)?)
+        txn.delete(self.tables.path_to_metadata, &key)
+            .expect("Failed to delete metadata from path_to_metadata table")
     }
 
     fn put_asset_path<'a>(
@@ -185,28 +185,30 @@ impl FileAssetSource {
         txn: &'a mut RwTransaction<'_>,
         asset_id: &AssetUuid,
         path: &PathBuf,
-    ) -> Result<()> {
+    ) {
         let path_str = path.to_string_lossy();
         let path = path_str.as_bytes();
-        txn.put_bytes(self.tables.asset_id_to_path, asset_id, &path)?;
-        Ok(())
+        txn.put_bytes(self.tables.asset_id_to_path, asset_id, &path)
+            .expect("Failed to put asset path to asset_id_to_path table");
     }
 
     pub fn get_asset_path<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
         asset_id: &AssetUuid,
-    ) -> Result<Option<PathBuf>> {
-        match txn.get_as_bytes(self.tables.asset_id_to_path, asset_id)? {
-            Some(p) => Ok(Some(PathBuf::from(
-                str::from_utf8(p).expect("Encoded key was invalid utf8"),
-            ))),
-            None => Ok(None),
-        }
+    ) -> Option<PathBuf> {
+        txn.get_as_bytes(self.tables.asset_id_to_path, asset_id)
+            .expect("Failed to get asset_id from asset_id_to_path table")
+            .and_then(|p| {
+                // TODO(happens): Handle invalid UTF8 error
+                let path_str = str::from_utf8(p).ok()?;
+                Some(PathBuf::from(path_str))
+            })
     }
 
-    fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUuid) -> Result<bool> {
-        Ok(txn.delete(self.tables.asset_id_to_path, asset_id)?)
+    fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUuid) -> bool {
+        txn.delete(self.tables.asset_id_to_path, asset_id)
+            .expect("Failed to delete asset_id from asset_id_to_path table")
     }
 
     pub fn regenerate_import_artifact<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -214,30 +216,35 @@ impl FileAssetSource {
         txn: &'a V,
         id: &AssetUuid,
         scratch_buf: &mut Vec<u8>,
-    ) -> Result<Option<(u64, SerializedAssetVec)>> {
-        let path = self.get_asset_path(txn, id)?;
-        if let Some(path) = path {
+    ) -> Option<(u64, SerializedAssetVec)> {
+        self.get_asset_path(txn, id).and_then(|path| {
             let cache = DBSourceMetadataCache {
                 txn,
                 file_asset_source: self,
                 _marker: std::marker::PhantomData,
             };
+
             let mut import = SourcePairImport::new(path);
-            import.with_importer_from_map(&self.importers)?;
-            import.generate_source_metadata(&cache)?;
-            import.hash_source()?;
-            let imported_assets = import.import_source(scratch_buf)?;
-            Ok(imported_assets
+            import.with_importer_from_map(&self.importers);
+            import.generate_source_metadata(&cache);
+            import.hash_source();
+
+            let imported_assets = import.import_source(scratch_buf).ok()?;
+
+            imported_assets
                 .into_iter()
                 .find(|a| a.metadata.id == *id)
                 .map(|a| {
-                    a.asset
-                        .map(|a| (utils::calc_asset_hash(id, import.import_hash().unwrap()), a))
+                    let import_hash = import
+                        .import_hash()
+                        .expect("Invalid: Import path should exist");
+
+                    let hash = utils::calc_asset_hash(id, import_hash);
+
+                    a.asset.map(|a| (hash, a))
                 })
-                .unwrap_or(None))
-        } else {
-            Ok(None)
-        }
+                .unwrap_or(None)
+        })
     }
 
     fn process_metadata_changes(
@@ -245,47 +252,73 @@ impl FileAssetSource {
         txn: &mut RwTransaction<'_>,
         changes: HashMap<PathBuf, Option<SourceMetadata>>,
         change_batch: &mut asset_hub::ChangeBatch,
-    ) -> Result<()> {
+    ) {
         let mut affected_assets = HashMap::new();
+
         for (path, _) in changes.iter().filter(|(_, change)| change.is_none()) {
             debug!("deleting metadata for {}", path.to_string_lossy());
-            let mut to_remove = Vec::new();
-            {
-                let existing_metadata = self.get_metadata(txn, path)?;
-                if let Some(ref existing_metadata) = existing_metadata {
-                    for asset in existing_metadata.get()?.get_assets()? {
-                        to_remove.push(utils::uuid_from_slice(asset.get_id()?)?);
-                    }
+            if let Some(existing) = self.get_metadata(txn, path) {
+                let to_remove: Vec<uuid::Bytes> = existing
+                    .get()
+                    .ok()
+                    .and_then(|existing| existing.get_assets().ok())
+                    .map(|assets| {
+                        assets
+                            .iter()
+                            .filter_map(|asset| {
+                                let slice = asset.get_id().ok()?;
+                                utils::uuid_from_slice(slice).ok()
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                for asset in to_remove {
+                    debug!("remove asset {:?}", asset);
+                    affected_assets.entry(asset).or_insert(None);
+                    self.delete_asset_path(txn, &asset);
                 }
             }
-            for asset in to_remove {
-                debug!("remove asset {:?}", asset);
-                affected_assets.entry(asset).or_insert(None);
-                self.delete_asset_path(txn, &asset)?;
-            }
-            self.delete_metadata(txn, path)?;
+
+            self.delete_metadata(txn, path);
         }
+
         for (path, metadata) in changes.iter().filter(|(_, change)| change.is_some()) {
             let metadata = metadata.as_ref().unwrap();
             debug!("imported {}", path.to_string_lossy());
-            let mut to_remove = Vec::new();
-            if let Some(existing_metadata) = self.get_metadata(txn, path)? {
-                for asset in existing_metadata.get()?.get_assets()? {
-                    let id = utils::uuid_from_slice(asset.get_id()?)?;
-                    if metadata.assets.iter().all(|a| a.id != id) {
-                        to_remove.push(id);
-                    }
+
+            if let Some(existing) = self.get_metadata(txn, path) {
+                let to_remove: Vec<uuid::Bytes> = existing
+                    .get()
+                    .ok()
+                    .and_then(|existing| existing.get_assets().ok())
+                    .map(|assets| {
+                        assets
+                            .iter()
+                            .filter_map(|asset| {
+                                let slice = asset.get_id().ok()?;
+                                utils::uuid_from_slice(slice).ok()
+                            })
+                            .filter(|id| metadata.assets.iter().all(|a| a.id != *id))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                for asset in to_remove {
+                    debug!("removing deleted asset {:?}", asset);
+                    self.delete_asset_path(txn, &asset);
+                    affected_assets.entry(asset).or_insert(None);
                 }
             }
-            for asset in to_remove {
-                debug!("removing deleted asset {:?}", asset);
-                self.delete_asset_path(txn, &asset)?;
-                affected_assets.entry(asset).or_insert(None);
-            }
-            self.put_metadata(txn, path, &metadata)?;
+
+            // TODO(happens): Log/handle this error
+            self.put_metadata(txn, path, &metadata)
+                .unwrap_or_else(|err| error!("Failed to put metadata: {}", err));
+
             for asset in metadata.assets.iter() {
                 debug!("updating asset {:?}", uuid::Uuid::from_bytes(asset.id));
-                match self.get_asset_path(txn, &asset.id)? {
+
+                match self.get_asset_path(txn, &asset.id) {
                     Some(ref old_path) if old_path != path => {
                         error!(
                             "asset {:?} already in DB with path {} expected {}",
@@ -295,39 +328,46 @@ impl FileAssetSource {
                         );
                     }
                     Some(_) => {} // asset already in DB with correct path
-                    _ => self.put_asset_path(txn, &asset.id, path)?,
+                    _ => self.put_asset_path(txn, &asset.id, path),
                 }
+
                 affected_assets.insert(asset.id, Some(asset));
             }
         }
+
         for (asset, maybe_metadata) in affected_assets {
-            match self.get_asset_path(txn, &asset)? {
+            match self.get_asset_path(txn, &asset) {
                 Some(ref path) => {
                     let asset_metadata =
                         maybe_metadata.expect("metadata exists in DB but not in hashmap");
-                    self.hub.update_asset(
-                        txn,
-                        utils::calc_asset_hash(
-                            &asset,
-                            changes
-                                .get(path)
-                                .expect("path in affected set but no change in hashmap")
-                                .as_ref()
-                                .unwrap()
-                                .import_hash
-                                .expect("path changed but no import hash present"),
-                        ),
-                        &asset_metadata,
-                        data::AssetSource::File,
-                        change_batch,
-                    )?;
+                    self.hub
+                        .update_asset(
+                            txn,
+                            utils::calc_asset_hash(
+                                &asset,
+                                changes
+                                    .get(path)
+                                    .expect("path in affected set but no change in hashmap")
+                                    .as_ref()
+                                    .unwrap()
+                                    .import_hash
+                                    .expect("path changed but no import hash present"),
+                            ),
+                            &asset_metadata,
+                            data::AssetSource::File,
+                            change_batch,
+                        )
+                        // TODO(happens): Handle this error
+                        .expect("Failed to update asset in hub");
                 }
                 None => {
-                    self.hub.remove_asset(txn, &asset, change_batch)?;
+                    // TODO(happens): Handle this error
+                    self.hub
+                        .remove_asset(txn, &asset, change_batch)
+                        .expect("Failed to remove asset");
                 }
             }
         }
-        Ok(())
     }
 
     fn ack_dirty_file_states(
@@ -371,7 +411,7 @@ impl FileAssetSource {
             let mut asset_ids = Vec::new();
             let mut existing_metadata = None;
             {
-                let metadata = self.get_metadata(txn, &evt.src)?;
+                let metadata = self.get_metadata(txn, &evt.src);
                 if let Some(metadata) = metadata {
                     let metadata = metadata.get()?;
                     let mut copy = capnp::message::Builder::new_default();
@@ -387,7 +427,7 @@ impl FileAssetSource {
                 txn.put_bytes(self.tables.asset_id_to_path, &asset, &dst)?;
             }
             if let Some(existing_metadata) = existing_metadata {
-                self.delete_metadata(txn, &evt.src)?;
+                self.delete_metadata(txn, &evt.src);
                 txn.put(self.tables.path_to_metadata, &dst, &existing_metadata)?;
             }
         }
@@ -410,7 +450,8 @@ impl FileAssetSource {
                 metadata.get_importer_version() != importer.version()
                     || metadata.get_importer_options_type().expect("TODO")
                         != importer.default_options().uuid()
-                    || metadata.get_importer_state_type().expect("TODO") != importer.default_state().uuid()
+                    || metadata.get_importer_state_type().expect("TODO")
+                        != importer.default_state().uuid()
                     || metadata.get_importer_type().expect("TODO") != importer.uuid()
             } else {
                 false
@@ -425,7 +466,12 @@ impl FileAssetSource {
         if has_changed_paths {
             // TODO(happens): Log errors here
             let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
-            changed_paths.iter().for_each(|p| { self.tracker.add_dirty_file(&mut txn, &p); });
+            changed_paths.iter().for_each(|p| {
+                // TODO(happens): Handle this error
+                self.tracker
+                    .add_dirty_file(&mut txn, &p)
+                    .unwrap_or_else(|err| error!("Failed to add dirty file, {}", err));
+            });
             txn.commit().expect("Failed to commit txn");
         }
 
@@ -483,7 +529,12 @@ impl FileAssetSource {
     // TODO(happens): Return for this is asset_metadata_changed. This function needs a lot
     // of work, and in the process it will hopefully clear up and get a name that will
     // make the return value more obvious.
-    fn threadpool_mess(&self) -> bool {
+    fn process_asset_metadata(
+        &self,
+        thread_pool: &mut Pool,
+        txn: &mut RwTransaction<'_>,
+        hashed_files: &[HashedSourcePair],
+    ) -> bool {
         use std::cell::RefCell;
         thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
 
@@ -493,84 +544,87 @@ impl FileAssetSource {
         // but can't use par_iter directly since I need to process the results
         // as soon as they are completed. So essentially I want futures::stream::FuturesUnordered.
         // But I couldn't figure all that future stuff out, so here we are. Scoped threadpool.
-        // thread_pool.scoped(|scope| -> Result<()> {
-        //     let (tx, rx) = channel::unbounded();
-        //     let to_process = hashed_files.len();
-        //     let mut import_iter = hashed_files.iter().map(|p| {
-        //         let processed_pair = p.clone();
-        //         let sender = tx.clone();
-        //         scope.execute(move || {
-        //             SCRATCH_STORE.with(|cell| {
-        //                 let mut local_store = cell.borrow_mut();
-        //                 if local_store.is_none() {
-        //                     *local_store = Some(Vec::new());
-        //                 }
-        //                 match self.db.ro_txn() {
-        //                     Err(e) => {
-        //                         sender.send((processed_pair, Err(e))).unwrap();
-        //                     }
-        //                     Ok(read_txn) => {
-        //                         let cache = DBSourceMetadataCache {
-        //                             txn: &read_txn,
-        //                             file_asset_source: &self,
-        //                             _marker: std::marker::PhantomData,
-        //                         };
-        //                         let result = source_pair_import::process_pair(
-        //                             &cache,
-        //                             &self.importers,
-        //                             &processed_pair,
-        //                             local_store.as_mut().unwrap(),
-        //                         );
-        //                         sender.send((processed_pair, result)).unwrap();
-        //                     }
-        //                 }
-        //             });
-        //         });
-        //     });
+        // TODO(happens): Handle errors inside of this scope
+        thread_pool
+            .scoped(|scope| -> Result<()> {
+                let (tx, rx) = channel::unbounded();
+                let to_process = hashed_files.len();
+                let mut import_iter = hashed_files.iter().map(|p| {
+                    let processed_pair = p.clone();
+                    let sender = tx.clone();
+                    scope.execute(move || {
+                        SCRATCH_STORE.with(|cell| {
+                            let mut local_store = cell.borrow_mut();
+                            if local_store.is_none() {
+                                *local_store = Some(Vec::new());
+                            }
+                            match self.db.ro_txn() {
+                                Err(e) => {
+                                    sender.send((processed_pair, Err(e))).unwrap();
+                                }
+                                Ok(read_txn) => {
+                                    let cache = DBSourceMetadataCache {
+                                        txn: &read_txn,
+                                        file_asset_source: &self,
+                                        _marker: std::marker::PhantomData,
+                                    };
+                                    let result = source_pair_import::process_pair(
+                                        &cache,
+                                        &self.importers,
+                                        &processed_pair,
+                                        local_store.as_mut().unwrap(),
+                                    );
+                                    sender.send((processed_pair, result)).unwrap();
+                                }
+                            }
+                        });
+                    });
+                });
 
-        //     let num_queued_imports = num_cpus::get() * 2;
-        //     for _ in 0..num_queued_imports {
-        //         import_iter.next();
-        //     }
+                let num_queued_imports = num_cpus::get() * 2;
+                for _ in 0..num_queued_imports {
+                    import_iter.next();
+                }
 
-        //     let mut num_processed = 0;
-        //     let mut metadata_changes = HashMap::new();
-        //     while num_processed < to_process {
-        //         match rx.recv() {
-        //             Ok((pair, maybe_result)) => {
-        //                 match maybe_result {
-        //                     // Successful import
-        //                     Ok(result) => {
-        //                         let path = &pair
-        //                             .source
-        //                             .as_ref()
-        //                             .or_else(|| pair.meta.as_ref())
-        //                             .expect(
-        //                                 "a successful import must have a source or meta FileState",
-        //                             )
-        //                             .path;
-        //                         self.ack_dirty_file_states(&mut txn, &pair)?;
-        //                         // TODO put import artifact in cache
-        //                         metadata_changes.insert(
-        //                             path.clone(),
-        //                             result.map(|r| r.0.source_metadata()).unwrap_or(None),
-        //                         );
-        //                     }
-        //                     Err(e) => error!("Error processing pair: {}", e),
-        //                 }
-        //                 num_processed += 1;
-        //                 import_iter.next();
-        //             }
-        //             _ => {
-        //                 break;
-        //             }
-        //         }
-        //     }
-        //     let mut change_batch = asset_hub::ChangeBatch::new();
-        //     self.process_metadata_changes(&mut txn, metadata_changes, &mut change_batch)?;
-        //     asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch)?;
-        //     Ok(())
-        // })?;
+                let mut num_processed = 0;
+                let mut metadata_changes = HashMap::new();
+                while num_processed < to_process {
+                    match rx.recv() {
+                        Ok((pair, maybe_result)) => {
+                            match maybe_result {
+                                // Successful import
+                                Ok(result) => {
+                                    let path = &pair
+                                    .source
+                                    .as_ref()
+                                    .or_else(|| pair.meta.as_ref())
+                                    .expect(
+                                        "a successful import must have a source or meta FileState",
+                                    )
+                                    .path;
+                                    self.ack_dirty_file_states(txn, &pair)?;
+                                    // TODO put import artifact in cache
+                                    metadata_changes.insert(
+                                        path.clone(),
+                                        result.map(|r| r.0.source_metadata()).unwrap_or(None),
+                                    );
+                                }
+                                Err(e) => error!("Error processing pair: {}", e),
+                            }
+                            num_processed += 1;
+                            import_iter.next();
+                        }
+                        _ => {
+                            break;
+                        }
+                    }
+                }
+                let mut change_batch = asset_hub::ChangeBatch::new();
+                self.process_metadata_changes(txn, metadata_changes, &mut change_batch);
+                asset_metadata_changed = self.hub.add_changes(txn, change_batch)?;
+                Ok(())
+            })
+            .unwrap_or_else(|err| error!("error while processing: {}", err));
 
         asset_metadata_changed
     }
@@ -583,7 +637,9 @@ impl FileAssetSource {
 
         // Before reading the filesystem state we need to process rename events.
         // This must be done in the same transaction to guarantee database consistency.
-        self.handle_rename_events(&mut txn);
+        self.handle_rename_events(&mut txn)
+            .unwrap_or_else(|err| error!("Failed to handle rename events: {}", err));
+
         let source_meta_pairs = self.handle_dirty_files(&mut txn);
 
         // This looks a little stupid, since there is no `into_values`
@@ -611,7 +667,8 @@ impl FileAssetSource {
         debug!("Hashed {} pairs in {}", hashed_files.len(), elapsed);
 
         let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
-        let asset_metadata_changed = self.threadpool_mess();
+        let asset_metadata_changed =
+            self.process_asset_metadata(thread_pool, &mut txn, &hashed_files);
 
         if txn.dirty {
             txn.commit().expect("Failed to commit txn");
@@ -664,7 +721,7 @@ impl<'a, 'b, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>
         importer: &dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()> {
-        let saved_metadata = self.file_asset_source.get_metadata(self.txn, path)?;
+        let saved_metadata = self.file_asset_source.get_metadata(self.txn, path);
         if let Some(saved_metadata) = saved_metadata {
             let saved_metadata = saved_metadata.get()?;
             let mut build_pipelines = HashMap::new();
