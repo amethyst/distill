@@ -6,6 +6,9 @@ mod serde_obj;
 mod ron_importer;
 #[cfg(feature = "serde_importers")]
 pub use crate::ron_importer::{RonImporter, RonImporterOptions, RonImporterState};
+#[doc(hidden)]
+#[cfg(feature = "serde_importers")]
+pub use crate::serde_obj::typetag;
 
 use atelier_core::AssetUuid;
 use serde::Serialize;

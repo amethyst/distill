@@ -16,7 +16,7 @@ pub struct RonImporterOptions {}
 #[derive(Default, Deserialize, Serialize, TypeUuid)]
 #[uuid = "fabe2809-dcc0-4463-b741-a456ca6b28ed"]
 pub struct RonImporterState {
-    id: Option<AssetUuid>,
+    pub id: Option<AssetUuid>,
 }
 
 #[derive(Default, TypeUuid)]
@@ -69,28 +69,23 @@ inventory::submit!(SourceFileImporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::BoxedImporter;
+    use crate::*;
     use std::collections::HashMap;
+    use crate as atelier_importer;
 
+    #[derive(Serialize, Deserialize, TypeUuid, SerdeImportable, PartialEq, Eq)]
     #[uuid = "36fb2083-7195-4583-8af9-0965f10ae60d"]
-    #[derive(Serialize, Deserialize, TypeUuid, PartialEq)]
     struct A {
         x: u32,
     }
 
-    #[typetag::serde(name = "36fb2083-7195-4583-8af9-0965f10ae60d")]
-    impl SerdeImportable for A {}
-
+    #[derive(Serialize, Deserialize, TypeUuid, SerdeImportable, PartialEq)]
     #[uuid = "d4b83227-d3f8-47f5-b026-db615fb41d31"]
-    #[derive(Serialize, Deserialize, TypeUuid, PartialEq)]
     struct B {
         s: String,
         a: A,
         m: HashMap<String, String>,
     }
-
-    #[typetag::serde(name = "d4b83227-d3f8-47f5-b026-db615fb41d31")]
-    impl SerdeImportable for B {}
 
     #[test]
     fn ron_importer_simple_test() {
