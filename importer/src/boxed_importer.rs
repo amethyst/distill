@@ -7,7 +7,7 @@ use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Serializable metadata for an asset.
 /// Stored in .meta files and metadata DB.
-#[derive(Clone, Serialize, Deserialize, Hash, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Default)]
 pub struct AssetMetadata {
     /// UUID for the asset to uniquely identify it
     pub id: AssetUuid,
@@ -148,6 +148,9 @@ pub fn get_source_importers(
 
 pub trait ImporterContextHandle {
     fn exit(&mut self);
+    fn begin_serialize_asset(&mut self, asset: AssetUuid);
+    /// Returns any registered dependencies
+    fn end_serialize_asset(&mut self, asset: AssetUuid) -> Vec<AssetUuid>;
 }
 
 pub trait ImporterContext: 'static + Send + Sync {

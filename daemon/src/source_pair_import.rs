@@ -5,7 +5,7 @@ use crate::serialized_asset::SerializedAsset;
 use crate::watcher::file_metadata;
 use atelier_core::utils;
 use atelier_importer::{
-    AssetMetadata, BoxedImporter, ImporterContext, SerdeObj,
+    AssetMetadata, AssetUuid, BoxedImporter, ImporterContext, ImporterContextHandle, SerdeObj,
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
 use atelier_schema::data::{self, CompressionType};
@@ -13,6 +13,7 @@ use bincode;
 use log::{debug, error, info};
 use ron;
 use std::{
+    collections::HashSet,
     fs,
     hash::{Hash, Hasher},
     io::{BufRead, Read, Write},
@@ -62,6 +63,24 @@ pub(crate) trait SourceMetadataCache {
         importer: &'a dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()>;
+}
+
+struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);
+impl ImporterContextHandleSet {
+    fn begin_serialize_asset(&mut self, id: AssetUuid) {
+        for handle in self.0.iter_mut() {
+            handle.begin_serialize_asset(id);
+        }
+    }
+    fn end_serialize_asset(&mut self, id: AssetUuid) -> HashSet<AssetUuid> {
+        let mut deps = HashSet::new();
+        for handle in self.0.iter_mut() {
+            for dep in handle.end_serialize_asset(id) {
+                deps.insert(dep);
+            }
+        }
+        deps
+    }
 }
 
 impl<'a> SourcePairImport<'a> {
@@ -191,7 +210,7 @@ impl<'a> SourcePairImport<'a> {
         f: F,
     ) -> R
     where
-        F: FnOnce() -> R,
+        F: FnOnce(&mut ImporterContextHandleSet) -> R,
     {
         let mut ctx_handles = Vec::new();
         if let Some(contexts) = import_contexts {
@@ -199,9 +218,10 @@ impl<'a> SourcePairImport<'a> {
                 ctx_handles.push(ctx.enter());
             }
         }
-        let retval = f();
+        let mut handle_set = ImporterContextHandleSet(ctx_handles);
+        let retval = f(&mut handle_set);
         // make sure to exit in reverse order of enter
-        for mut ctx_handle in ctx_handles.into_iter().rev() {
+        for mut ctx_handle in handle_set.0.into_iter().rev() {
             ctx_handle.exit();
         }
         retval
@@ -215,7 +235,7 @@ impl<'a> SourcePairImport<'a> {
 
         let metadata = std::mem::replace(&mut self.source_metadata, None)
             .expect("cannot import source file without source_metadata");
-        Self::enter_importer_contexts(self.importer_contexts, || {
+        Self::enter_importer_contexts(self.importer_contexts, |ctx| {
             let imported = {
                 let mut f = fs::File::open(&self.source)?;
                 importer.import_boxed(&mut f, metadata.importer_options, metadata.importer_state)?
@@ -244,16 +264,21 @@ impl<'a> SourcePairImport<'a> {
                     ),
                 ));
                 let asset_data = &asset.asset_data;
+                ctx.begin_serialize_asset(asset.id);
                 let serialized_asset = SerializedAsset::create(
                     asset_data.as_ref(),
                     CompressionType::None,
                     scratch_buf,
                 )?;
+                let mut deps = ctx.end_serialize_asset(asset.id);
                 let build_pipeline = metadata
                     .assets
                     .iter()
                     .find(|a| a.id == asset.id)
                     .and_then(|m| m.build_pipeline);
+                for load_dep in asset.load_deps {
+                    deps.insert(load_dep);
+                }
                 imported_assets.push({
                     ImportedAsset {
                         asset_hash: utils::calc_asset_hash(&asset.id, import_hash),
@@ -261,7 +286,7 @@ impl<'a> SourcePairImport<'a> {
                             id: asset.id,
                             search_tags: asset.search_tags,
                             build_deps: asset.build_deps,
-                            load_deps: asset.load_deps,
+                            load_deps: deps.into_iter().collect(),
                             instantiate_deps: asset.instantiate_deps,
                             build_pipeline,
                             import_asset_type: asset_data.uuid(),

@@ -30,7 +30,7 @@ use tokio::prelude::*;
 /// Describes the state of an asset load operation
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum LoadState {
-    /// Indeterminate state - may transition into a lod, or result in removal if ref count is < 0
+    /// Indeterminate state - may transition into a load, or result in removal if ref count is < 0
     None,
     /// The load operation needs metadata to progress
     WaitingForMetadata,
@@ -279,9 +279,6 @@ impl LoaderInfoProvider
     }
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
         self.1.get(&load).map(|l| l.asset_id)
-    }
-    fn add_ref(&self, id: AssetUuid) -> LoadHandle {
-        LoaderData::add_ref(self.0, self.2, self.1, id)
     }
 }
 
