@@ -699,9 +699,7 @@ pub mod tests {
             let handle = {
                 let run_tracker = tracker.clone();
                 thread::spawn(move || {
-                    run_tracker
-                        .clone()
-                        .run();
+                    run_tracker.clone().run();
                 })
             };
             while !tracker.is_running() {
