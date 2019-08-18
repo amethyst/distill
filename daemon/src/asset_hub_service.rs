@@ -475,16 +475,17 @@ impl AssetHubService {
         let _ = std::fs::remove_file(endpoint());
         let ipc = Endpoint::new(endpoint());
 
-        let ipc_future = ipc
-            .incoming(&tokio::reactor::Handle::default())
-            .expect("failed to listen for incoming IPC connections")
-            .for_each(move |(stream, _id)| {
-                let (reader, writer) = stream.split();
-                spawn_rpc(reader, writer, self.ctx.clone());
-                Ok(())
-            });
+        // let ipc_future = ipc
+        //     .incoming(&tokio::reactor::Handle::default())
+        //     .expect("failed to listen for incoming IPC connections")
+        //     .for_each(move |(stream, _id)| {
+        //         let (reader, writer) = stream.split();
+        //         spawn_rpc(reader, writer, self.ctx.clone());
+        //         Ok(())
+        //     });
 
-        runtime.block_on(tcp_future.join(ipc_future))?;
+        runtime.block_on(tcp_future)?;
+        // runtime.block_on(tcp_future.join(ipc_future))?;
         Ok(())
     }
 }

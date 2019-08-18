@@ -2,6 +2,7 @@
     version: 1,
     import_hash: Some(5294496694179974904),
     importer_version: 1,
+    importer_type: (250, 80, 224, 140, 175, 108, 74, 218, 174, 209, 68, 124, 17, 109, 99, 188),
     importer_options: (),
     importer_state: (
         id: Some((96, 53, 32, 66, 97, 111, 70, 14, 171, 210, 84, 97, 149, 192, 96, 254)),

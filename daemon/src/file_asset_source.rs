@@ -102,8 +102,10 @@ impl FileAssetSource {
         metadata: &SourceMetadata,
     ) -> Result<()> {
         let mut value_builder = capnp::message::Builder::new_default();
+
         {
             let mut value = value_builder.init_root::<source_metadata::Builder<'_>>();
+
             {
                 value.set_importer_version(metadata.importer_version);
                 value.set_importer_type(&metadata.importer_type);
@@ -116,10 +118,13 @@ impl FileAssetSource {
                 bincode::serialize_into(&mut options_buf, &metadata.importer_options)?;
                 value.set_importer_options(&options_buf);
             }
+
             let mut assets = value.reborrow().init_assets(metadata.assets.len() as u32);
+
             for (idx, asset) in metadata.assets.iter().enumerate() {
                 assets.reborrow().get(idx as u32).set_id(&asset.id);
             }
+
             let assets_with_pipelines: Vec<&AssetMetadata> = metadata
                 .assets
                 .iter()
@@ -128,6 +133,7 @@ impl FileAssetSource {
             let mut build_pipelines = value
                 .reborrow()
                 .init_build_pipelines(assets_with_pipelines.len() as u32);
+
             for (idx, asset) in assets_with_pipelines.iter().enumerate() {
                 build_pipelines
                     .reborrow()
@@ -141,9 +147,13 @@ impl FileAssetSource {
                     .set_id(&asset.build_pipeline.unwrap());
             }
         }
+
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        txn.put(self.tables.path_to_metadata, &key, &value_builder)?;
+
+        txn.put(self.tables.path_to_metadata, &key, &value_builder)
+            .expect("Failed to put value to path_to_metadata");
+
         Ok(())
     }
 
@@ -161,15 +171,15 @@ impl FileAssetSource {
     pub fn iter_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-    ) -> impl Iterator<Item = Result<(PathBuf, MessageReader<'a, source_metadata::Owned>)>> {
+    ) -> impl Iterator<Item = (PathBuf, MessageReader<'a, source_metadata::Owned>)> {
         txn.open_ro_cursor(self.tables.path_to_metadata)
             .expect("Failed to open ro cursor for path_to_metadata table")
             .capnp_iter_start()
-            .map(|(key, value)| {
+            .filter_map(|(key, value)| {
                 // TODO(happens): Can we just skip things that we fail to parse here?
-                let evt = value?.into_typed::<source_metadata::Owned>();
-                let path = PathBuf::from(str::from_utf8(key)?);
-                Ok((path, evt))
+                let evt = value.ok()?.into_typed::<source_metadata::Owned>();
+                let path = PathBuf::from(str::from_utf8(key).ok()?);
+                Some((path, evt))
             })
     }
 
@@ -438,31 +448,39 @@ impl FileAssetSource {
     }
 
     fn check_for_importer_changes(&self) -> bool {
-        let mut changed_paths = Vec::new();
-
         let txn = self.db.ro_txn().expect("Failed to open ro txn");
 
-        // TODO(happens): Simplify this loop
-        for result in self.iter_metadata(&txn) {
-            let (path, metadata) = result.expect("TODO");
-            let metadata = metadata.get().expect("TODO");
-            let changed = if let Some(importer) = self.importers.get_by_path(&path) {
-                metadata.get_importer_version() != importer.version()
-                    || metadata.get_importer_options_type().expect("TODO")
-                        != importer.default_options().uuid()
-                    || metadata.get_importer_state_type().expect("TODO")
-                        != importer.default_state().uuid()
-                    || metadata.get_importer_type().expect("TODO") != importer.uuid()
-            } else {
-                false
-            };
-            if changed {
-                changed_paths.push(path);
-            }
-        }
+        let changed_paths: Vec<PathBuf> = self
+            .iter_metadata(&txn)
+            .filter_map(|(path, metadata)| {
+                let metadata = metadata.get().ok()?;
+                let changed = self
+                    .importers
+                    .get_by_path(&path)
+                    .and_then(|importer| {
+                        let importer_version = metadata.get_importer_version();
+                        let options_type = metadata.get_importer_options_type().ok()?;
+                        let state_type = metadata.get_importer_state_type().ok()?;
+                        let importer_type = metadata.get_importer_type().ok()?;
+
+                        Some(
+                            importer_version != importer.version()
+                                || options_type != importer.default_options().uuid()
+                                || state_type != importer.default_state().uuid()
+                                || importer_type != importer.uuid(),
+                        )
+                    })
+                    .unwrap_or(false);
+
+                if changed {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         let has_changed_paths = !changed_paths.is_empty();
-
         if has_changed_paths {
             // TODO(happens): Log errors here
             let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
