@@ -3,9 +3,9 @@ use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
 use crate::serialized_asset::SerializedAsset;
 use crate::watcher::file_metadata;
-use atelier_core::utils;
+use atelier_core::{AssetUuid, utils};
 use atelier_importer::{
-    AssetMetadata, AssetUuid, BoxedImporter, ImporterContext, ImporterContextHandle, SerdeObj,
+    AssetMetadata, BoxedImporter, ImporterContext, ImporterContextHandle, SerdeObj,
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
 use atelier_schema::data::{self, CompressionType};
