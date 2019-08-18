@@ -174,11 +174,10 @@ impl<'a> AssetHubSnapshotImpl<'a> {
                 match metadata.get_source()? {
                     AssetSource::File => {
                         // TODO run build pipeline
-                        if let Some((hash, artifact)) = ctx.file_source.regenerate_import_artifact(
-                            txn,
-                            &id,
-                            &mut scratch_buf,
-                        ) {
+                        if let Some((hash, artifact)) =
+                            ctx.file_source
+                                .regenerate_import_artifact(txn, &id, &mut scratch_buf)
+                        {
                             let capnp_artifact = build_serialized_asset_message(&artifact);
                             artifacts.push((id, hash, capnp_artifact));
                         }
@@ -464,8 +463,7 @@ impl AssetHubService {
 
         let mut runtime = Runtime::new().unwrap();
 
-        let tcp = ::tokio::net::TcpListener::bind(&addr)
-            .expect("Failed to bind tcp socket");
+        let tcp = ::tokio::net::TcpListener::bind(&addr).expect("Failed to bind tcp socket");
 
         let tcp_future = tcp.incoming().for_each(move |stream| {
             stream.set_nodelay(true)?;
@@ -492,7 +490,9 @@ impl AssetHubService {
 
         // NOTE(happens): This will only fail if we can't set the stream
         // parameters on startup, which is a cause for panic in any case.
-        runtime.block_on(tcp_future).expect("Failed to run tcp listener");
+        runtime
+            .block_on(tcp_future)
+            .expect("Failed to run tcp listener");
 
         // runtime.block_on(tcp_future.join(ipc_future))?;
     }

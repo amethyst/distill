@@ -171,7 +171,7 @@ pub trait Loader {
     ///
     /// * `id`: UUID of the asset.
     fn get_load(&self, id: AssetUuid) -> Option<LoadHandle>;
-    
+
     /// Returns the number of references to an asset.
     ///
     /// **Note:** The information is true at the time the `LoadInfo` is retrieved. The actual number

@@ -1139,5 +1139,4 @@ mod tests {
             })
             .expect("Failed to spawn `atelier-daemon` thread.")
     }
-
 }
