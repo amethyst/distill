@@ -427,7 +427,7 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
 ) {
     thread::spawn(move || {
         let mut runtime = Runtime::new().unwrap();
-        let service_impl = AssetHubImpl { ctx: ctx };
+        let service_impl = AssetHubImpl { ctx };
         let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
 
         let network = twoparty::VatNetwork::new(
@@ -459,8 +459,6 @@ impl AssetHubService {
     }
 
     pub fn run(&self, addr: std::net::SocketAddr) {
-        use parity_tokio_ipc::Endpoint;
-
         let mut runtime = Runtime::new().unwrap();
 
         let tcp = ::tokio::net::TcpListener::bind(&addr).expect("Failed to bind tcp socket");
@@ -477,8 +475,8 @@ impl AssetHubService {
         });
 
         let _ = std::fs::remove_file(endpoint());
-        let ipc = Endpoint::new(endpoint());
 
+        // let ipc = Endpoint::new(endpoint());
         // let ipc_future = ipc
         //     .incoming(&tokio::reactor::Handle::default())
         //     .expect("failed to listen for incoming IPC connections")

@@ -701,8 +701,7 @@ pub mod tests {
                 thread::spawn(move || {
                     run_tracker
                         .clone()
-                        .run()
-                        .expect("error running file tracker");
+                        .run();
                 })
             };
             while !tracker.is_running() {
