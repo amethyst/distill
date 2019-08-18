@@ -458,7 +458,7 @@ impl AssetHubService {
             }),
         }
     }
-    pub fn run(&self, addr: std::net::SocketAddr) -> Result<()> {
+    pub fn run(&self, addr: std::net::SocketAddr) {
         use parity_tokio_ipc::Endpoint;
 
         let mut runtime = Runtime::new().unwrap();

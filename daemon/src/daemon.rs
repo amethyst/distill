@@ -78,28 +78,32 @@ impl AssetDaemon {
     }
 
     pub fn run(self) {
+        use asset_hub::AssetHub;
+        use asset_hub_service::AssetHubService;
+        use file_asset_source::FileAssetSource;
+
         let _ = fs::create_dir(&self.db_dir);
         for dir in self.asset_dirs.iter() {
             let _ = fs::create_dir_all(dir);
         }
-        let asset_db = Arc::new(Environment::new(&self.db_dir).expect("failed to create asset db"));
-        let tracker = Arc::new(
-            FileTracker::new(
-                asset_db.clone(),
-                self.asset_dirs.iter().map(|p| p.to_str().unwrap()),
-            ),
-        );
 
-        let hub = Arc::new(
-            asset_hub::AssetHub::new(asset_db.clone()).expect("failed to create asset hub"),
-        );
+        let asset_db = Environment::new(&self.db_dir).expect("failed to create asset db");
+        let asset_db = Arc::new(asset_db);
+
+        let to_watch = self.asset_dirs.iter().map(|p| p.to_str().unwrap());
+        let tracker = FileTracker::new(asset_db.clone(), to_watch);
+        let tracker = Arc::new(tracker);
+
+        let hub = AssetHub::new(asset_db.clone()).expect("failed to create asset hub");
+        let hub = Arc::new(hub);
+
         let importers = Arc::new(self.importers);
 
-        let asset_source = Arc::new(
-            file_asset_source::FileAssetSource::new(&tracker, &hub, &asset_db, &importers)
-                .expect("failed to create asset source"),
-        );
-        let service = asset_hub_service::AssetHubService::new(
+        let asset_source = FileAssetSource::new(&tracker, &hub, &asset_db, &importers)
+            .expect("failed to create asset source");
+        let asset_source = Arc::new(asset_source);
+
+        let service = AssetHubService::new(
             asset_db.clone(),
             hub.clone(),
             asset_source.clone(),
@@ -110,14 +114,8 @@ impl AssetDaemon {
         // might want to remove later when watched dirs become configurable?
         let handle = thread::spawn(move || tracker.run());
         thread::spawn(move || asset_source.run());
+        service.run(self.address);
 
-        service
-            .run(self.address)
-            .expect("Assed hub service failed to run");
-
-        handle
-            .join()
-            .expect("file tracker thread panicked")
-            .expect("file tracker returned error");
+        handle.join().expect("file tracker thread panicked");
     }
 }

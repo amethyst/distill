@@ -604,7 +604,7 @@ impl FileTracker {
         output_evts
     }
 
-    pub fn run(&self) -> Result<()> {
+    pub fn run(&self) {
         if self
             .is_running
             .compare_and_swap(false, true, Ordering::AcqRel)
