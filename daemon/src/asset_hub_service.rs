@@ -458,20 +458,26 @@ impl AssetHubService {
             }),
         }
     }
+
     pub fn run(&self, addr: std::net::SocketAddr) {
         use parity_tokio_ipc::Endpoint;
 
         let mut runtime = Runtime::new().unwrap();
 
-        let tcp = ::tokio::net::TcpListener::bind(&addr)?;
+        let tcp = ::tokio::net::TcpListener::bind(&addr)
+            .expect("Failed to bind tcp socket");
+
         let tcp_future = tcp.incoming().for_each(move |stream| {
             stream.set_nodelay(true)?;
             stream.set_send_buffer_size(1 << 22)?;
             stream.set_recv_buffer_size(1 << 22)?;
+
             let (reader, writer) = stream.split();
             spawn_rpc(reader, writer, self.ctx.clone());
+
             Ok(())
         });
+
         let _ = std::fs::remove_file(endpoint());
         let ipc = Endpoint::new(endpoint());
 
@@ -484,9 +490,11 @@ impl AssetHubService {
         //         Ok(())
         //     });
 
-        runtime.block_on(tcp_future)?;
+        // NOTE(happens): This will only fail if we can't set the stream
+        // parameters on startup, which is a cause for panic in any case.
+        runtime.block_on(tcp_future).expect("Failed to run tcp listener");
+
         // runtime.block_on(tcp_future.join(ipc_future))?;
-        Ok(())
     }
 }
 

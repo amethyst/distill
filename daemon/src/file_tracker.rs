@@ -605,20 +605,27 @@ impl FileTracker {
     }
 
     pub fn run(&self) {
-        if self
+        let already_running = self
             .is_running
-            .compare_and_swap(false, true, Ordering::AcqRel)
-        {
-            return Ok(());
+            .compare_and_swap(false, true, Ordering::AcqRel);
+
+        if already_running {
+            return;
         }
+
         let (tx, rx) = channel::unbounded();
-        let mut watcher = watcher::DirWatcher::from_path_iter(
-            self.watch_dirs.iter().map(|p| p.to_str().unwrap()),
-            tx,
-        )?;
+        let to_watch = self
+            .watch_dirs
+            .iter()
+            .map(|p| p.to_str().expect("Invalid path"));
+
+        // NOTE(happens): If we can't watch the dir, we want to abort
+        let mut watcher = watcher::DirWatcher::from_path_iter(to_watch, tx)
+            .expect("Failed to watch specified path");
 
         let stop_handle = watcher.stop_handle();
         let handle = thread::spawn(move || watcher.run());
+
         let mut listeners = vec![];
         while self.is_running.load(Ordering::Acquire) {
             let mut scan_stack = Vec::new();
@@ -647,9 +654,9 @@ impl FileTracker {
                 self.is_running.store(false, Ordering::Release);
             }
         }
+
         stop_handle.stop();
-        handle.join().expect("thread panicked")?;
-        Ok(())
+        handle.join().expect("File watcher thread panicked");
     }
 }
 
