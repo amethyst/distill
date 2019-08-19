@@ -2,7 +2,10 @@ use crate::{error::Result, Importer, ImporterValue, SerdeObj};
 use atelier_core::{AssetTypeId, AssetUuid};
 use ron;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+use std::{
+    io::Read,
+    collections::HashSet,
+};
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Serializable metadata for an asset.
@@ -150,7 +153,7 @@ pub trait ImporterContextHandle {
     fn exit(&mut self);
     fn begin_serialize_asset(&mut self, asset: AssetUuid);
     /// Returns any registered dependencies
-    fn end_serialize_asset(&mut self, asset: AssetUuid) -> Vec<AssetUuid>;
+    fn end_serialize_asset(&mut self, asset: AssetUuid) -> HashSet<AssetUuid>;
 }
 
 pub trait ImporterContext: 'static + Send + Sync {
