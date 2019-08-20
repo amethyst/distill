@@ -13,3 +13,9 @@ erased-serde = "0.3"
 ron = "0.4"
 bincode = "1.1"
 inventory = "0.1"
+typetag = { version = "0.1", optional = true }
+serde-importable-derive = { path = "./serde-importable-derive", optional = true }
+
+[features]
+default = ["serde_importers"]
+serde_importers = ["typetag", "serde-importable-derive"]

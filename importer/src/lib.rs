@@ -2,17 +2,27 @@ mod boxed_importer;
 mod error;
 mod serde_obj;
 
+#[cfg(feature = "serde_importers")]
+mod ron_importer;
+#[cfg(feature = "serde_importers")]
+pub use crate::ron_importer::{RonImporter, RonImporterOptions, RonImporterState};
+#[doc(hidden)]
+#[cfg(feature = "serde_importers")]
+pub use crate::serde_obj::typetag;
+
 use atelier_core::AssetUuid;
 use serde::Serialize;
 use std::io::Read;
 
 pub use self::error::{Error, Result};
-pub use crate::boxed_importer::{
-    get_importer_contexts, get_source_importers, AssetMetadata, BoxedImporter, ImporterContext,
-    ImporterContextHandle, ImporterContextRegistration, SourceFileImporter, SourceMetadata,
-    SOURCEMETADATA_VERSION,
+pub use crate::{
+    boxed_importer::{
+        get_importer_contexts, get_source_importers, AssetMetadata, BoxedImporter, ImporterContext,
+        ImporterContextHandle, ImporterContextRegistration, SourceFileImporter, SourceMetadata,
+        SOURCEMETADATA_VERSION,
+    },
+    serde_obj::{IntoSerdeObj, SerdeImportable, SerdeObj},
 };
-pub use crate::serde_obj::SerdeObj;
 pub use inventory;
 
 /// Importers parse file formats and produce assets.

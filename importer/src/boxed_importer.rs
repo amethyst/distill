@@ -1,5 +1,4 @@
-use crate::error::Result;
-use crate::{Importer, ImporterValue, SerdeObj};
+use crate::{error::Result, Importer, ImporterValue, SerdeObj};
 use atelier_core::{AssetTypeId, AssetUuid};
 use ron;
 use serde::{Deserialize, Serialize};
