@@ -136,10 +136,21 @@ impl AssetDaemon {
 
         // create the assets folder automatically to make it easier to get started.
         // might want to remove later when watched dirs become configurable?
-        let handle = thread::spawn(move || tracker.run());
-        thread::spawn(move || asset_source.run());
-        service.run(self.address);
+        let tracker_handle = thread::spawn(move || tracker.run());
+        let asset_source_handle = thread::spawn(move || asset_source.run());
+        let service_handle = thread::spawn(move || service.run(self.address));
 
-        handle.join().expect("file tracker thread panicked");
+        // NOTE(happens): We need to run all of these in threads since in order to catch any
+        // potential panics, we can't have any of these block the main thread. The only way
+        // to make sure all threads shut down when a panic occurs is to immediately bail
+        // using `std::process::abort`.
+        tracker_handle.join().unwrap_or_else(bail);
+        asset_source_handle.join().unwrap_or_else(bail);
+        service_handle.join().unwrap_or_else(bail);
     }
+}
+
+fn bail() {
+    error!("Something unexpected happened - bailing out to prevent corrupt state");
+    std::process::abort();
 }
