@@ -158,6 +158,7 @@ where
     Ok(())
 }
 
+// TODO(happens): Improve error handling for event handlers
 mod events {
     use super::*;
     fn handle_update(
@@ -341,15 +342,15 @@ impl FileTracker {
 
         let source_files = db
             .create_db(Some("source_files"), lmdb::DatabaseFlags::default())
-            .expect("Failed to create source_files table");
+            .expect("db: Failed to create source_files table");
 
         let dirty_files = db
             .create_db(Some("dirty_files"), lmdb::DatabaseFlags::default())
-            .expect("Failed to create dirty_files table");
+            .expect("db: Failed to create dirty_files table");
 
         let rename_file_events = db
             .create_db(Some("rename_file_events"), lmdb::DatabaseFlags::INTEGER_KEY)
-            .expect("Failed to create rename_file_events table");
+            .expect("db: Failed to create rename_file_events table");
 
         let (listener_tx, listener_rx) = channel::unbounded();
 
@@ -372,11 +373,11 @@ impl FileTracker {
     }
 
     pub fn get_rw_txn<'a>(&'a self) -> RwTransaction<'a> {
-        self.db.rw_txn().expect("Failed to open rw txn")
+        self.db.rw_txn().expect("db: Failed to open rw txn")
     }
 
     pub fn get_ro_txn<'a>(&'a self) -> RoTransaction<'a> {
-        self.db.ro_txn().expect("Failed to open ro txn")
+        self.db.ro_txn().expect("db: Failed to open ro txn")
     }
 
     pub fn read_rename_events<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -385,7 +386,7 @@ impl FileTracker {
     ) -> Vec<(u64, RenameFileEvent)> {
         iter_txn
             .open_ro_cursor(self.tables.rename_file_events)
-            .expect("Failed to open ro cursor for rename_file_events table")
+            .expect("db: Failed to open ro cursor for rename_file_events table")
             .capnp_iter_start()
             .filter_map(|(key, val)| {
                 let val = val.ok()?;
@@ -435,21 +436,23 @@ impl FileTracker {
         &self,
         iter_txn: &'a V,
     ) -> Vec<FileState> {
-        // TODO(happens): If we have any errors while looping over a dirty file, we
+        // NOTE(happens): If we have any errors while looping over a dirty file, we
         // should somehow be able to mark it for a retry. We can probably rely on
         // the fact that since we skip them, they will still be dirty on the next attempt.
         iter_txn
             .open_ro_cursor(self.tables.dirty_files)
-            .expect("Failed to open ro cursor for dirty_files table")
+            .expect("db: Failed to open ro cursor for dirty_files table")
             .capnp_iter_start()
             .filter_map(|(key, val)| {
                 // TODO(happens): Do we want logging on why things are skipped here?
                 // We could map to Result<_> first, and then log any errors in a filter_map
                 // that just calls ok() afterwards.
-                let key = str::from_utf8(key).ok()?;
-                let val = val.ok()?;
+                let key = str::from_utf8(key).expect("utf8: Failed to parse file path");
+                let val = val.expect("capnp: Failed to get value in iterator");
                 let info = val.get_root::<dirty_file_info::Reader<'_>>().ok()?;
-                let source_info = info.get_source_info().ok()?;
+                let source_info = info
+                    .get_source_info()
+                    .expect("capnp: Failed to get source info");
 
                 Some(FileState {
                     path: PathBuf::from(key),
@@ -464,11 +467,11 @@ impl FileTracker {
     pub fn read_all_files(&self, iter_txn: &RoTransaction<'_>) -> Vec<FileState> {
         iter_txn
             .open_ro_cursor(self.tables.source_files)
-            .expect("Failed to open ro cursor for source_files table")
+            .expect("db: Failed to open ro cursor for source_files table")
             .capnp_iter_start()
             .filter_map(|(key, val)| {
-                let key = str::from_utf8(key).ok()?;
-                let val = val.ok()?;
+                let key = str::from_utf8(key).expect("utf8: Failed to parse file path");
+                let val = val.expect("capnp: Failed to get value in iterator");
                 let info = val.get_root::<source_file_info::Reader<'_>>().ok()?;
 
                 Some(FileState {
@@ -490,7 +493,7 @@ impl FileTracker {
         let key = key_str.as_bytes();
 
         txn.delete(self.tables.dirty_files, &key)
-            .expect("Failed to delete entry from dirty_files table")
+            .expect("db: Failed to delete entry from dirty_files table")
     }
 
     pub fn get_dirty_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -502,17 +505,20 @@ impl FileTracker {
         let key = key_str.as_bytes();
 
         txn.get::<dirty_file_info::Owned, &[u8]>(self.tables.dirty_files, &key)
-            .expect("Failed to get entry from dirty_files table")
-            .and_then(|value| {
-                let value = value.get().ok()?;
-                let info = value.get_source_info().ok()?;
+            .expect("db: Failed to get entry from dirty_files table")
+            .map(|value| {
+                let value = value.get().expect("capnp: Failed to get dirty file info");
 
-                Some(FileState {
+                let info = value
+                    .get_source_info()
+                    .expect("capnp: Failed to get source info");
+
+                FileState {
                     path: path.clone(),
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
-                })
+                }
             })
     }
 
@@ -525,16 +531,16 @@ impl FileTracker {
         let key = key_str.as_bytes();
 
         txn.get::<source_file_info::Owned, &[u8]>(self.tables.source_files, &key)
-            .expect("Failed to get entry from source_files table")
-            .and_then(|value| {
-                let info = value.get().ok()?;
+            .expect("db: Failed to get entry from source_files table")
+            .map(|value| {
+                let info = value.get().expect("capnp: Failed to get source file info");
 
-                Some(FileState {
+                FileState {
                     path: path.clone(),
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
-                })
+                }
             })
     }
 
@@ -567,18 +573,16 @@ impl FileTracker {
                         if txn.is_none() {
                             let new_txn = self.db
                                 .rw_txn()
-                                .expect("Failed to renew rw txn");
+                                .expect("db: Failed to renew rw txn");
 
                             txn = Some(new_txn);
                         }
 
-                        let txn = txn.as_mut().expect("Failed to get txn");
-
-                        events::handle_file_event(txn, &self.tables, evt, scan_stack)
-                            .ok()
-                            .and_then(|evt| evt)
-                            .map(|evt| output_evts.push(evt))
-                            .unwrap_or(());
+                        let txn = txn.as_mut().expect("db: Failed to get txn");
+                        match events::handle_file_event(txn, &self.tables, evt, scan_stack) {
+                            Ok(evt) => evt.map(|evt| output_evts.push(evt)).unwrap_or(()),
+                            Err(err) => error!("Error while handling file event"),
+                        }
                     } else {
                         error!("Receive error");
                         *is_running = false;
@@ -594,7 +598,7 @@ impl FileTracker {
 
         if let Some(txn) = txn {
             if txn.dirty {
-                txn.commit().expect("Failed to commit txn");
+                txn.commit().expect("db: Failed to commit txn");
                 debug!("Commit read file events txn");
 
                 output_evts.push(FileTrackerEvent::Update);
@@ -621,7 +625,7 @@ impl FileTracker {
 
         // NOTE(happens): If we can't watch the dir, we want to abort
         let mut watcher = watcher::DirWatcher::from_path_iter(to_watch, tx)
-            .expect("Failed to watch specified path");
+            .expect("watcher: Failed to watch specified path");
 
         let stop_handle = watcher.stop_handle();
         let handle = thread::spawn(move || watcher.run());
