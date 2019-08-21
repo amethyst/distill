@@ -152,7 +152,7 @@ impl FileAssetSource {
         let key = key_str.as_bytes();
 
         txn.put(self.tables.path_to_metadata, &key, &value_builder)
-            .expect("Failed to put value to path_to_metadata");
+            .expect("db: Failed to put value to path_to_metadata");
 
         Ok(())
     }
@@ -165,7 +165,7 @@ impl FileAssetSource {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         txn.get::<source_metadata::Owned, &[u8]>(self.tables.path_to_metadata, &key)
-            .expect("Failed to get source metadata from path_to_metadata table")
+            .expect("db: Failed to get source metadata from path_to_metadata table")
     }
 
     pub fn iter_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -173,11 +173,12 @@ impl FileAssetSource {
         txn: &'a V,
     ) -> impl Iterator<Item = (PathBuf, MessageReader<'a, source_metadata::Owned>)> {
         txn.open_ro_cursor(self.tables.path_to_metadata)
-            .expect("Failed to open ro cursor for path_to_metadata table")
+            .expect("db: Failed to open ro cursor for path_to_metadata table")
             .capnp_iter_start()
             .filter_map(|(key, value)| {
-                // TODO(happens): Can we just skip things that we fail to parse here?
-                let evt = value.ok()?.into_typed::<source_metadata::Owned>();
+                let evt = value
+                    .expect("capnp: Failed to read event")
+                    .into_typed::<source_metadata::Owned>();
                 let path = PathBuf::from(str::from_utf8(key).ok()?);
                 Some((path, evt))
             })
@@ -187,7 +188,7 @@ impl FileAssetSource {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         txn.delete(self.tables.path_to_metadata, &key)
-            .expect("Failed to delete metadata from path_to_metadata table")
+            .expect("db: Failed to delete metadata from path_to_metadata table")
     }
 
     fn put_asset_path<'a>(
@@ -199,7 +200,7 @@ impl FileAssetSource {
         let path_str = path.to_string_lossy();
         let path = path_str.as_bytes();
         txn.put_bytes(self.tables.asset_id_to_path, asset_id, &path)
-            .expect("Failed to put asset path to asset_id_to_path table");
+            .expect("db: Failed to put asset path to asset_id_to_path table");
     }
 
     pub fn get_asset_path<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -208,17 +209,13 @@ impl FileAssetSource {
         asset_id: &AssetUuid,
     ) -> Option<PathBuf> {
         txn.get_as_bytes(self.tables.asset_id_to_path, asset_id)
-            .expect("Failed to get asset_id from asset_id_to_path table")
-            .and_then(|p| {
-                // TODO(happens): Handle invalid UTF8 error
-                let path_str = str::from_utf8(p).ok()?;
-                Some(PathBuf::from(path_str))
-            })
+            .expect("db: Failed to get asset_id from asset_id_to_path table")
+            .map(|p| PathBuf::from(str::from_utf8(p).expect("utf8: Failed to parse path")))
     }
 
     fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUuid) -> bool {
         txn.delete(self.tables.asset_id_to_path, asset_id)
-            .expect("Failed to delete asset_id from asset_id_to_path table")
+            .expect("db: Failed to delete asset_id from asset_id_to_path table")
     }
 
     pub fn regenerate_import_artifact<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -267,27 +264,29 @@ impl FileAssetSource {
 
         for (path, _) in changes.iter().filter(|(_, change)| change.is_none()) {
             debug!("deleting metadata for {}", path.to_string_lossy());
-            if let Some(existing) = self.get_metadata(txn, path) {
-                let to_remove: Vec<uuid::Bytes> = existing
-                    .get()
-                    .ok()
-                    .and_then(|existing| existing.get_assets().ok())
-                    .map(|assets| {
-                        assets
-                            .iter()
-                            .filter_map(|asset| {
-                                let slice = asset.get_id().ok()?;
-                                utils::uuid_from_slice(slice).ok()
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+            let to_remove: Vec<uuid::Bytes> = self
+                .get_metadata(txn, path)
+                .map(|existing| {
+                    let assets = existing
+                        .get()
+                        .expect("capnp: Failed to read metadata")
+                        .get_assets()
+                        .expect("capnp: Failed to get assets");
 
-                for asset in to_remove {
-                    debug!("remove asset {:?}", asset);
-                    affected_assets.entry(asset).or_insert(None);
-                    self.delete_asset_path(txn, &asset);
-                }
+                    assets
+                        .iter()
+                        .filter_map(|asset| {
+                            let slice = asset.get_id().ok()?;
+                            utils::uuid_from_slice(slice).ok()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            for asset in to_remove {
+                debug!("remove asset {:?}", asset);
+                affected_assets.entry(asset).or_insert(None);
+                self.delete_asset_path(txn, &asset);
             }
 
             self.delete_metadata(txn, path);
@@ -297,33 +296,34 @@ impl FileAssetSource {
             let metadata = metadata.as_ref().unwrap();
             debug!("imported {}", path.to_string_lossy());
 
-            if let Some(existing) = self.get_metadata(txn, path) {
-                let to_remove: Vec<uuid::Bytes> = existing
-                    .get()
-                    .ok()
-                    .and_then(|existing| existing.get_assets().ok())
-                    .map(|assets| {
-                        assets
-                            .iter()
-                            .filter_map(|asset| {
-                                let slice = asset.get_id().ok()?;
-                                utils::uuid_from_slice(slice).ok()
-                            })
-                            .filter(|id| metadata.assets.iter().all(|a| a.id != *id))
-                            .collect()
-                    })
-                    .unwrap_or_default();
+            let to_remove: Vec<uuid::Bytes> = self
+                .get_metadata(txn, path)
+                .map(|existing| {
+                    let assets = existing
+                        .get()
+                        .expect("capnp: Failed to read metadata")
+                        .get_assets()
+                        .expect("capnp: Failed to get assets");
 
-                for asset in to_remove {
-                    debug!("removing deleted asset {:?}", asset);
-                    self.delete_asset_path(txn, &asset);
-                    affected_assets.entry(asset).or_insert(None);
-                }
+                    assets
+                        .iter()
+                        .filter_map(|asset| {
+                            let slice = asset.get_id().expect("capnp: Failed to read id");
+                            utils::uuid_from_slice(slice).ok()
+                        })
+                        .filter(|id| metadata.assets.iter().all(|a| a.id != *id))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            for asset in to_remove {
+                debug!("removing deleted asset {:?}", asset);
+                self.delete_asset_path(txn, &asset);
+                affected_assets.entry(asset).or_insert(None);
             }
 
-            // TODO(happens): Log/handle this error
             self.put_metadata(txn, path, &metadata)
-                .unwrap_or_else(|err| error!("Failed to put metadata: {}", err));
+                .expect("Failed to put metadata");
 
             for asset in metadata.assets.iter() {
                 debug!("updating asset {:?}", uuid::Uuid::from_bytes(asset.id));
@@ -367,108 +367,123 @@ impl FileAssetSource {
                             data::AssetSource::File,
                             change_batch,
                         )
-                        // TODO(happens): Handle this error
-                        .expect("Failed to update asset in hub");
+                        .expect("hub: Failed to update asset in hub");
                 }
                 None => {
-                    // TODO(happens): Handle this error
                     self.hub
                         .remove_asset(txn, &asset, change_batch)
-                        .expect("Failed to remove asset");
+                        .expect("hub: Failed to remove asset");
                 }
             }
         }
     }
 
-    fn ack_dirty_file_states(
-        &self,
-        txn: &mut RwTransaction<'_>,
-        pair: &HashedSourcePair,
-    ) -> Result<()> {
+    fn ack_dirty_file_states(&self, txn: &mut RwTransaction<'_>, pair: &HashedSourcePair) {
         let mut skip_ack_dirty = false;
+
         {
-            let check_file_state = |s: &Option<&FileState>| -> Result<bool> {
+            let check_file_state = |s: &Option<&FileState>| -> bool {
                 match s {
                     Some(source) => {
                         let source_file_state = self.tracker.get_file_state(txn, &source.path);
-                        Ok(source_file_state.map_or(false, |s| s != **source))
+                        source_file_state.map_or(false, |s| s != **source)
                     }
-                    None => Ok(false),
+                    None => false,
                 }
             };
-            skip_ack_dirty |= check_file_state(&pair.source.as_ref().map(|f| f))?;
-            skip_ack_dirty |= check_file_state(&pair.meta.as_ref().map(|f| f))?;
+
+            skip_ack_dirty |= check_file_state(&pair.source.as_ref().map(|f| f));
+            skip_ack_dirty |= check_file_state(&pair.meta.as_ref().map(|f| f));
         }
+
         if !skip_ack_dirty {
             if pair.source.is_some() {
                 self.tracker
                     .delete_dirty_file_state(txn, pair.source.as_ref().map(|p| &p.path).unwrap());
             }
+
             if pair.meta.is_some() {
                 self.tracker
                     .delete_dirty_file_state(txn, pair.meta.as_ref().map(|p| &p.path).unwrap());
             }
         }
-        Ok(())
     }
 
-    fn handle_rename_events(&self, txn: &mut RwTransaction<'_>) -> Result<()> {
+    fn handle_rename_events(&self, txn: &mut RwTransaction<'_>) {
         let rename_events = self.tracker.read_rename_events(txn);
         debug!("rename events");
+
         for (_, evt) in rename_events.iter() {
             let dst_str = evt.dst.to_string_lossy();
             let dst = dst_str.as_bytes();
             let mut asset_ids = Vec::new();
             let mut existing_metadata = None;
+
             {
                 let metadata = self.get_metadata(txn, &evt.src);
                 if let Some(metadata) = metadata {
-                    let metadata = metadata.get()?;
+                    let metadata = metadata.get().expect("capnp: Failed to get metadata");
                     let mut copy = capnp::message::Builder::new_default();
-                    copy.set_root(metadata)?;
+                    copy.set_root(metadata)
+                        .expect("capnp: Failed to set root for metadata");
+
                     existing_metadata = Some(copy);
-                    for asset in metadata.get_assets()? {
-                        asset_ids.push(Vec::from(asset.get_id()?));
+                    for asset in metadata.get_assets().expect("capnp: Failed to get assets") {
+                        let id = asset.get_id().expect("capnp: Failed to get asset id");
+                        asset_ids.push(Vec::from(id));
                     }
                 }
             }
+
             for asset in asset_ids {
-                txn.delete(self.tables.asset_id_to_path, &asset)?;
-                txn.put_bytes(self.tables.asset_id_to_path, &asset, &dst)?;
+                txn.delete(self.tables.asset_id_to_path, &asset)
+                    .expect("db: Failed to delete from asset_id_to_path table");
+
+                txn.put_bytes(self.tables.asset_id_to_path, &asset, &dst)
+                    .expect("db: Failed to put to asset_id_to_path table");
             }
+
             if let Some(existing_metadata) = existing_metadata {
                 self.delete_metadata(txn, &evt.src);
-                txn.put(self.tables.path_to_metadata, &dst, &existing_metadata)?;
+                txn.put(self.tables.path_to_metadata, &dst, &existing_metadata)
+                    .expect("db: Failed to put to path_to_metadata table");
             }
         }
+
         if !rename_events.is_empty() {
-            self.tracker.clear_rename_events(txn)?;
+            self.tracker.clear_rename_events(txn);
         }
-        Ok(())
     }
 
     fn check_for_importer_changes(&self) -> bool {
-        let txn = self.db.ro_txn().expect("Failed to open ro txn");
+        let txn = self.db.ro_txn().expect("db: Failed to open ro txn");
 
         let changed_paths: Vec<PathBuf> = self
             .iter_metadata(&txn)
             .filter_map(|(path, metadata)| {
-                let metadata = metadata.get().ok()?;
+                let metadata = metadata.get().expect("capnp: Failed to get metadata");
                 let changed = self
                     .importers
                     .get_by_path(&path)
-                    .and_then(|importer| {
+                    .map(|importer| {
                         let importer_version = metadata.get_importer_version();
-                        let options_type = metadata.get_importer_options_type().ok()?;
-                        let state_type = metadata.get_importer_state_type().ok()?;
-                        let importer_type = metadata.get_importer_type().ok()?;
 
-                        Some(
-                            importer_version != importer.version()
-                                || options_type != importer.default_options().uuid()
-                                || state_type != importer.default_state().uuid()
-                                || importer_type != importer.uuid(),
-                        )
+                        let options_type = metadata
+                            .get_importer_options_type()
+                            .expect("capnp: Failed to get importer options type");
+
+                        let state_type = metadata
+                            .get_importer_state_type()
+                            .expect("capnp: Failed to get importer state type");
+
+                        let importer_type = metadata
+                            .get_importer_type()
+                            .expect("capnp: Failed to get importer type");
+
+                        importer_version != importer.version()
+                            || options_type != importer.default_options().uuid()
+                            || state_type != importer.default_state().uuid()
+                            || importer_type != importer.uuid()
                     })
                     .unwrap_or(false);
 
@@ -482,10 +497,8 @@ impl FileAssetSource {
 
         let has_changed_paths = !changed_paths.is_empty();
         if has_changed_paths {
-            // TODO(happens): Log errors here
             let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
             changed_paths.iter().for_each(|p| {
-                // TODO(happens): Handle this error
                 self.tracker
                     .add_dirty_file(&mut txn, &p)
                     .unwrap_or_else(|err| error!("Failed to add dirty file, {}", err));
@@ -620,7 +633,7 @@ impl FileAssetSource {
                                         "a successful import must have a source or meta FileState",
                                     )
                                     .path;
-                                    self.ack_dirty_file_states(txn, &pair)?;
+                                    self.ack_dirty_file_states(txn, &pair);
                                     // TODO put import artifact in cache
                                     metadata_changes.insert(
                                         path.clone(),
@@ -642,7 +655,7 @@ impl FileAssetSource {
                 asset_metadata_changed = self.hub.add_changes(txn, change_batch)?;
                 Ok(())
             })
-            .unwrap_or_else(|err| error!("error while processing: {}", err));
+            .expect("threadpool: Failed to process metadata changes");
 
         asset_metadata_changed
     }
@@ -655,9 +668,7 @@ impl FileAssetSource {
 
         // Before reading the filesystem state we need to process rename events.
         // This must be done in the same transaction to guarantee database consistency.
-        self.handle_rename_events(&mut txn)
-            .unwrap_or_else(|err| error!("Failed to handle rename events: {}", err));
-
+        self.handle_rename_events(&mut txn);
         let source_meta_pairs = self.handle_dirty_files(&mut txn);
 
         // This looks a little stupid, since there is no `into_values`

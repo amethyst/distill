@@ -404,9 +404,9 @@ impl FileTracker {
             .collect()
     }
 
-    pub fn clear_rename_events(&self, txn: &mut RwTransaction<'_>) -> Result<()> {
-        txn.clear_db(self.tables.rename_file_events)?;
-        Ok(())
+    pub fn clear_rename_events(&self, txn: &mut RwTransaction<'_>) {
+        txn.clear_db(self.tables.rename_file_events)
+            .expect("db: Failed to clear rename_file_events table");
     }
 
     pub fn add_dirty_file(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Result<()> {
