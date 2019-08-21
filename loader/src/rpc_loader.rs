@@ -1,8 +1,11 @@
 use crate::{
-    loader::{AssetLoadOp, AssetStorage, HandleOp, LoadHandle, LoadInfo, LoadStatus, Loader, LoaderInfoProvider},
+    loader::{
+        AssetLoadOp, AssetStorage, HandleOp, LoadHandle, LoadInfo, LoadStatus, Loader,
+        LoaderInfoProvider,
+    },
     rpc_state::{ConnectionState, ResponsePromise, RpcState},
 };
-use atelier_core::{AssetTypeId, AssetUuid, utils::make_array};
+use atelier_core::{utils::make_array, AssetTypeId, AssetUuid};
 use atelier_schema::{
     data::{artifact, asset_metadata},
     service::asset_hub::{
@@ -264,10 +267,16 @@ impl Loader for RpcLoader {
     }
 }
 
-impl LoaderInfoProvider for (&DHashMap<AssetUuid, LoadHandle>, &DHashMap<LoadHandle, AssetLoad>, &HandleAllocator) {
+impl LoaderInfoProvider
+    for (
+        &DHashMap<AssetUuid, LoadHandle>,
+        &DHashMap<LoadHandle, AssetLoad>,
+        &HandleAllocator,
+    )
+{
     fn get_load_handle(&self, id: AssetUuid) -> Option<LoadHandle> {
         self.0.get(&id).map(|l| *l)
-    } 
+    }
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
         self.1.get(&load).map(|l| l.asset_id)
     }
@@ -354,7 +363,7 @@ fn load_data(
     if let Some(prev_type) = state.asset_type {
         // TODO handle asset type changing?
         assert!(prev_type == asset_type);
-    } 
+    }
     let new_version = state.requested_version.unwrap_or(0) + 1;
     storage.update_asset(
         loader_info,
@@ -436,10 +445,23 @@ fn process_data_requests(
                             "asset data request did not return any data for asset {:?}",
                             load.asset_id
                         );
-                        AssetLoadResult::from_state(load.state
-                            .map_asset_load_state(|_| AssetLoadState::WaitingForData))
+                        AssetLoadResult::from_state(
+                            load.state
+                                .map_asset_load_state(|_| AssetLoadState::WaitingForData),
+                        )
                     } else {
-                        load_data(&(&data.uuid_to_load, &data.load_states, &data.handle_allocator), op_channel, *handle, &load, &artifacts.get(0), storage)?
+                        load_data(
+                            &(
+                                &data.uuid_to_load,
+                                &data.load_states,
+                                &data.handle_allocator,
+                            ),
+                            op_channel,
+                            *handle,
+                            &load,
+                            &artifacts.get(0),
+                            storage,
+                        )?
                     }
                 }
                 Err(err) => {
@@ -447,8 +469,10 @@ fn process_data_requests(
                         "asset data request failed for asset {:?}: {}",
                         load.asset_id, err
                     );
-                    AssetLoadResult::from_state(load.state
-                        .map_asset_load_state(|_| AssetLoadState::WaitingForData))
+                    AssetLoadResult::from_state(
+                        load.state
+                            .map_asset_load_state(|_| AssetLoadState::WaitingForData),
+                    )
                 }
             }
         };
@@ -597,11 +621,7 @@ fn commit_asset(handle: LoadHandle, load: &mut AssetLoad, asset_storage: &dyn As
                 .asset_type
                 .as_ref()
                 .expect("in LoadingAsset state but asset_type is None");
-            asset_storage.commit_asset_version(
-                asset_type,
-                handle,
-                load.requested_version.unwrap(),
-            );
+            asset_storage.commit_asset_version(asset_type, handle, load.requested_version.unwrap());
             load.loaded_version = load.requested_version;
             load.state = LoadState::Loaded(AssetLoadState::Loaded);
         }
@@ -891,7 +911,7 @@ impl Default for RpcLoader {
 mod tests {
     use super::*;
     use crate::TypeUuid;
-    use atelier_core::{AssetUuid};
+    use atelier_core::AssetUuid;
     use atelier_daemon::{init_logging, AssetDaemon};
     use atelier_importer::{BoxedImporter, ImportedAsset, Importer, ImporterValue};
     use serde::{Deserialize, Serialize};
@@ -1186,5 +1206,4 @@ mod tests {
             })
             .expect("Failed to spawn `atelier-daemon` thread.")
     }
-
 }

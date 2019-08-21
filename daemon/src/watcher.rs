@@ -146,15 +146,15 @@ impl DirWatcher {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self) {
         for dir in &self.dirs.clone() {
-            let err = self.scan_directory(&dir, &|path| DebouncedEvent::Create(path));
-            if err.is_err() {
+            if let Err(err) = self.scan_directory(&dir, &|path| DebouncedEvent::Create(path)) {
                 self.asset_tx
-                    .send(FileEvent::FileError(err.unwrap_err()))
-                    .unwrap();
+                    .send(FileEvent::FileError(err))
+                    .expect("Failed to send file error event. Ironic...");
             }
         }
+
         loop {
             match self.rx.recv() {
                 Ok(event) => match self.handle_notify_event(event, false) {
@@ -166,32 +166,31 @@ impl DirWatcher {
                     Err(err) => match err {
                         Error::RescanRequired => {
                             for dir in &self.dirs.clone() {
-                                let err =
-                                    self.scan_directory(&dir, &|path| DebouncedEvent::Create(path));
-                                if err.is_err() {
+                                if let Err(err) =
+                                    self.scan_directory(&dir, &|path| DebouncedEvent::Create(path))
+                                {
                                     self.asset_tx
-                                        .send(FileEvent::FileError(err.unwrap_err()))
-                                        .unwrap();
+                                        .send(FileEvent::FileError(err))
+                                        .expect("Failed to send file error event");
                                 }
                             }
                         }
-                        Error::Exit => {
-                            break;
-                        }
-                        _ => {
-                            self.asset_tx.send(FileEvent::FileError(err)).unwrap();
-                        }
+                        Error::Exit => break,
+                        _ => self
+                            .asset_tx
+                            .send(FileEvent::FileError(err))
+                            .expect("Failed to send file error event"),
                     },
                 },
                 Err(_) => {
                     self.asset_tx
                         .send(FileEvent::FileError(Error::RecvError))
-                        .unwrap();
-                    return Ok(());
+                        .expect("Failed to send file error event");
+
+                    return;
                 }
             }
         }
-        Ok(())
     }
 
     fn watch(&mut self, path: &PathBuf) -> Result<bool> {

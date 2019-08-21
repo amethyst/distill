@@ -7,5 +7,7 @@ pub mod rpc_loader;
 #[cfg(feature = "rpc_loader")]
 mod rpc_state;
 
-pub use crate::loader::{AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader, LoaderInfoProvider};
+pub use crate::loader::{
+    AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader, LoaderInfoProvider,
+};
 pub use type_uuid::{TypeUuid, TypeUuidDynamic};

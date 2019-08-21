@@ -1,7 +1,7 @@
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
-use atelier_core::{AssetUuid, utils};
-use atelier_importer::{AssetMetadata};
+use atelier_core::{utils, AssetUuid};
+use atelier_importer::AssetMetadata;
 use atelier_schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},

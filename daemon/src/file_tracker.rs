@@ -11,7 +11,7 @@ use log::{debug, error, info};
 use std::{
     cmp::PartialEq,
     collections::{HashMap, HashSet},
-    fs,
+    fs, io,
     iter::FromIterator,
     ops::IndexMut,
     path::PathBuf,
@@ -158,6 +158,7 @@ where
     Ok(())
 }
 
+// TODO(happens): Improve error handling for event handlers
 mod events {
     use super::*;
     fn handle_update(
@@ -327,75 +328,86 @@ mod events {
 }
 
 impl FileTracker {
-    pub fn new<'a, I, T>(db: Arc<Environment>, to_watch: I) -> Result<FileTracker>
+    pub fn new<'a, I, T>(db: Arc<Environment>, to_watch: I) -> FileTracker
     where
         I: IntoIterator<Item = &'a str, IntoIter = T>,
         T: Iterator<Item = &'a str>,
     {
-        let mut watch_dirs = Vec::new();
-        for path in to_watch {
-            let path = fs::canonicalize(path)?;
-            watch_dirs.push(path);
-        }
-        let (tx, rx) = channel::unbounded();
-        Ok(FileTracker {
+        let watch_dirs: Vec<PathBuf> = to_watch
+            .into_iter()
+            .map(fs::canonicalize)
+            // TODO(happens): Log which paths could not be added
+            .filter_map(io::Result::ok)
+            .collect();
+
+        let source_files = db
+            .create_db(Some("source_files"), lmdb::DatabaseFlags::default())
+            .expect("db: Failed to create source_files table");
+
+        let dirty_files = db
+            .create_db(Some("dirty_files"), lmdb::DatabaseFlags::default())
+            .expect("db: Failed to create dirty_files table");
+
+        let rename_file_events = db
+            .create_db(Some("rename_file_events"), lmdb::DatabaseFlags::INTEGER_KEY)
+            .expect("db: Failed to create rename_file_events table");
+
+        let (listener_tx, listener_rx) = channel::unbounded();
+
+        FileTracker {
+            is_running: AtomicBool::new(false),
             tables: FileTrackerTables {
-                source_files: db.create_db(Some("source_files"), lmdb::DatabaseFlags::default())?,
-                dirty_files: db.create_db(Some("dirty_files"), lmdb::DatabaseFlags::default())?,
-                rename_file_events: db
-                    .create_db(Some("rename_file_events"), lmdb::DatabaseFlags::INTEGER_KEY)?,
+                source_files,
+                dirty_files,
+                rename_file_events,
             },
             db,
-            listener_rx: rx,
-            listener_tx: tx,
-            is_running: AtomicBool::new(false),
+            listener_rx,
+            listener_tx,
             watch_dirs,
-        })
+        }
     }
 
     pub fn get_watch_dirs(&self) -> impl Iterator<Item = &'_ PathBuf> {
         self.watch_dirs.iter()
     }
 
-    pub fn get_rw_txn<'a>(&'a self) -> Result<RwTransaction<'a>> {
-        Ok(self.db.rw_txn()?)
+    pub fn get_rw_txn<'a>(&'a self) -> RwTransaction<'a> {
+        self.db.rw_txn().expect("db: Failed to open rw txn")
     }
 
-    pub fn get_ro_txn<'a>(&'a self) -> Result<RoTransaction<'a>> {
-        Ok(self.db.ro_txn()?)
+    pub fn get_ro_txn<'a>(&'a self) -> RoTransaction<'a> {
+        self.db.ro_txn().expect("db: Failed to open ro txn")
     }
 
     pub fn read_rename_events<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         iter_txn: &'a V,
-    ) -> Result<Vec<(u64, RenameFileEvent)>> {
-        let mut rename_events = Vec::new();
-        {
-            let mut cursor = iter_txn.open_ro_cursor(self.tables.rename_file_events)?;
-            for (key_result, value_result) in cursor.capnp_iter_start() {
-                let value_result = value_result?;
-                let evt = value_result.into_typed::<rename_file_event::Owned>();
-                let evt = evt.get()?;
-                let seq_num = u64::from_le_bytes(utils::make_array(key_result));
-                rename_events.push((
-                    seq_num,
-                    RenameFileEvent {
-                        src: PathBuf::from(
-                            str::from_utf8(evt.get_src()?).expect("failed to parse key as utf8"),
-                        ),
-                        dst: PathBuf::from(
-                            str::from_utf8(evt.get_dst()?).expect("failed to parse key as utf8"),
-                        ),
-                    },
-                ));
-            }
-        }
-        Ok(rename_events)
+    ) -> Vec<(u64, RenameFileEvent)> {
+        iter_txn
+            .open_ro_cursor(self.tables.rename_file_events)
+            .expect("db: Failed to open ro cursor for rename_file_events table")
+            .capnp_iter_start()
+            .filter_map(|(key, val)| {
+                let val = val.ok()?;
+                let evt = val.into_typed::<rename_file_event::Owned>();
+                let evt = evt.get().ok()?;
+                let seq_num = u64::from_le_bytes(utils::make_array(key));
+
+                let src_raw = evt.get_src().ok()?;
+                let src = PathBuf::from(str::from_utf8(src_raw).ok()?);
+
+                let dst_raw = evt.get_dst().ok()?;
+                let dst = PathBuf::from(str::from_utf8(dst_raw).ok()?);
+
+                Some((seq_num, RenameFileEvent { src, dst }))
+            })
+            .collect()
     }
 
-    pub fn clear_rename_events(&self, txn: &mut RwTransaction<'_>) -> Result<()> {
-        txn.clear_db(self.tables.rename_file_events)?;
-        Ok(())
+    pub fn clear_rename_events(&self, txn: &mut RwTransaction<'_>) {
+        txn.clear_db(self.tables.rename_file_events)
+            .expect("db: Failed to clear rename_file_events table");
     }
 
     pub fn add_dirty_file(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Result<()> {
@@ -423,95 +435,113 @@ impl FileTracker {
     pub fn read_dirty_files<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         iter_txn: &'a V,
-    ) -> Result<Vec<FileState>> {
-        let mut file_states = Vec::new();
-        {
-            let mut cursor = iter_txn.open_ro_cursor(self.tables.dirty_files)?;
-            for (key_result, value_result) in cursor.capnp_iter_start() {
-                let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
-                let value_result = value_result?;
-                let info = value_result.get_root::<dirty_file_info::Reader<'_>>()?;
-                let source_info = info.get_source_info()?;
-                file_states.push(FileState {
+    ) -> Vec<FileState> {
+        // NOTE(happens): If we have any errors while looping over a dirty file, we
+        // should somehow be able to mark it for a retry. We can probably rely on
+        // the fact that since we skip them, they will still be dirty on the next attempt.
+        iter_txn
+            .open_ro_cursor(self.tables.dirty_files)
+            .expect("db: Failed to open ro cursor for dirty_files table")
+            .capnp_iter_start()
+            .filter_map(|(key, val)| {
+                // TODO(happens): Do we want logging on why things are skipped here?
+                // We could map to Result<_> first, and then log any errors in a filter_map
+                // that just calls ok() afterwards.
+                let key = str::from_utf8(key).expect("utf8: Failed to parse file path");
+                let val = val.expect("capnp: Failed to get value in iterator");
+                let info = val.get_root::<dirty_file_info::Reader<'_>>().ok()?;
+                let source_info = info
+                    .get_source_info()
+                    .expect("capnp: Failed to get source info");
+
+                Some(FileState {
                     path: PathBuf::from(key),
-                    state: info.get_state()?,
+                    state: info.get_state().ok()?,
                     last_modified: source_info.get_last_modified(),
                     length: source_info.get_length(),
-                });
-            }
-        }
-        Ok(file_states)
+                })
+            })
+            .collect()
     }
 
-    pub fn read_all_files(&self, iter_txn: &RoTransaction<'_>) -> Result<Vec<FileState>> {
-        let mut file_states = Vec::new();
-        {
-            let mut cursor = iter_txn.open_ro_cursor(self.tables.source_files)?;
-            for (key_result, value_result) in cursor.capnp_iter_start() {
-                let key = str::from_utf8(key_result).expect("Failed to parse key as utf8");
-                let value_result = value_result?;
-                let info = value_result.get_root::<source_file_info::Reader<'_>>()?;
-                file_states.push(FileState {
+    pub fn read_all_files(&self, iter_txn: &RoTransaction<'_>) -> Vec<FileState> {
+        iter_txn
+            .open_ro_cursor(self.tables.source_files)
+            .expect("db: Failed to open ro cursor for source_files table")
+            .capnp_iter_start()
+            .filter_map(|(key, val)| {
+                let key = str::from_utf8(key).expect("utf8: Failed to parse file path");
+                let val = val.expect("capnp: Failed to get value in iterator");
+                let info = val.get_root::<source_file_info::Reader<'_>>().ok()?;
+
+                Some(FileState {
                     path: PathBuf::from(key),
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
-                });
-            }
-        }
-        Ok(file_states)
+                })
+            })
+            .collect()
     }
 
     pub fn delete_dirty_file_state<'a>(
         &self,
         txn: &'a mut RwTransaction<'_>,
         path: &PathBuf,
-    ) -> Result<bool> {
+    ) -> bool {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        Ok(txn.delete(self.tables.dirty_files, &key)?)
+
+        txn.delete(self.tables.dirty_files, &key)
+            .expect("db: Failed to delete entry from dirty_files table")
     }
 
     pub fn get_dirty_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
         path: &PathBuf,
-    ) -> Result<Option<FileState>> {
+    ) -> Option<FileState> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        match txn.get::<dirty_file_info::Owned, &[u8]>(self.tables.dirty_files, &key)? {
-            Some(value) => {
-                let info = value.get()?.get_source_info()?;
-                Ok(Some(FileState {
+
+        txn.get::<dirty_file_info::Owned, &[u8]>(self.tables.dirty_files, &key)
+            .expect("db: Failed to get entry from dirty_files table")
+            .map(|value| {
+                let value = value.get().expect("capnp: Failed to get dirty file info");
+
+                let info = value
+                    .get_source_info()
+                    .expect("capnp: Failed to get source info");
+
+                FileState {
                     path: path.clone(),
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
-                }))
-            }
-            None => Ok(None),
-        }
+                }
+            })
     }
 
     pub fn get_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
         path: &PathBuf,
-    ) -> Result<Option<FileState>> {
+    ) -> Option<FileState> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
-        match txn.get::<source_file_info::Owned, &[u8]>(self.tables.source_files, &key)? {
-            Some(value) => {
-                let info = value.get()?;
-                Ok(Some(FileState {
+
+        txn.get::<source_file_info::Owned, &[u8]>(self.tables.source_files, &key)
+            .expect("db: Failed to get entry from source_files table")
+            .map(|value| {
+                let info = value.get().expect("capnp: Failed to get source file info");
+
+                FileState {
                     path: path.clone(),
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
-                }))
-            }
-            None => Ok(None),
-        }
+                }
+            })
     }
 
     pub fn register_listener(&self, sender: Sender<FileTrackerEvent>) {
@@ -531,20 +561,27 @@ impl FileTracker {
         is_running: &mut bool,
         rx: &Receiver<FileEvent>,
         scan_stack: &mut Vec<ScanContext>,
-    ) -> Result<Vec<FileTrackerEvent>> {
+    ) -> Vec<FileTrackerEvent> {
         let mut txn = None;
         let mut output_evts = Vec::new();
+        let timeout = Duration::from_millis(100);
+
         while *is_running {
-            let timeout = Duration::from_millis(100);
             select! {
                 recv(rx) -> evt => {
                     if let Ok(evt) = evt {
                         if txn.is_none() {
-                            txn = Some(self.db.rw_txn()?);
+                            let new_txn = self.db
+                                .rw_txn()
+                                .expect("db: Failed to renew rw txn");
+
+                            txn = Some(new_txn);
                         }
-                        let txn = txn.as_mut().unwrap();
-                        if let Some(evt) = events::handle_file_event(txn, &self.tables, evt, scan_stack)? {
-                            output_evts.push(evt);
+
+                        let txn = txn.as_mut().expect("db: Failed to get txn");
+                        match events::handle_file_event(txn, &self.tables, evt, scan_stack) {
+                            Ok(evt) => evt.map(|evt| output_evts.push(evt)).unwrap_or(()),
+                            Err(err) => error!("Error while handling file event"),
                         }
                     } else {
                         error!("Receive error");
@@ -552,41 +589,53 @@ impl FileTracker {
                         break;
                     }
                 }
+
                 recv(channel::after(timeout)) -> _msg => {
                     break;
                 }
             }
         }
+
         if let Some(txn) = txn {
             if txn.dirty {
-                txn.commit()?;
-                debug!("Commit");
+                txn.commit().expect("db: Failed to commit txn");
+                debug!("Commit read file events txn");
+
                 output_evts.push(FileTrackerEvent::Update);
             }
         }
-        Ok(output_evts)
+
+        output_evts
     }
 
-    pub fn run(&self) -> Result<()> {
-        if self
+    pub fn run(&self) {
+        let already_running = self
             .is_running
-            .compare_and_swap(false, true, Ordering::AcqRel)
-        {
-            return Ok(());
+            .compare_and_swap(false, true, Ordering::AcqRel);
+
+        if already_running {
+            return;
         }
+
         let (tx, rx) = channel::unbounded();
-        let mut watcher = watcher::DirWatcher::from_path_iter(
-            self.watch_dirs.iter().map(|p| p.to_str().unwrap()),
-            tx,
-        )?;
+        let to_watch = self
+            .watch_dirs
+            .iter()
+            .map(|p| p.to_str().expect("Invalid path"));
+
+        // NOTE(happens): If we can't watch the dir, we want to abort
+        let mut watcher = watcher::DirWatcher::from_path_iter(to_watch, tx)
+            .expect("watcher: Failed to watch specified path");
 
         let stop_handle = watcher.stop_handle();
         let handle = thread::spawn(move || watcher.run());
+
         let mut listeners = vec![];
         while self.is_running.load(Ordering::Acquire) {
             let mut scan_stack = Vec::new();
             let mut is_running = true;
-            let events = self.read_file_events(&mut is_running, &rx, &mut scan_stack)?;
+            let events = self.read_file_events(&mut is_running, &rx, &mut scan_stack);
+
             select! {
                 recv(self.listener_rx) -> listener => {
                     if let Ok(listener) = listener {
@@ -609,9 +658,9 @@ impl FileTracker {
                 self.is_running.store(false, Ordering::Release);
             }
         }
+
         stop_handle.stop();
-        handle.join().expect("thread panicked")?;
-        Ok(())
+        handle.join().expect("File watcher thread panicked");
     }
 }
 
@@ -647,18 +696,14 @@ pub mod tests {
                     .as_str(),
                 ),
             );
-            let tracker =
-                Arc::new(FileTracker::new(db, asset_paths).expect("failed to create tracker"));
+            let tracker = Arc::new(FileTracker::new(db, asset_paths));
             let (tx, rx) = channel::unbounded();
             tracker.register_listener(tx);
 
             let handle = {
                 let run_tracker = tracker.clone();
                 thread::spawn(move || {
-                    run_tracker
-                        .clone()
-                        .run()
-                        .expect("error running file tracker");
+                    run_tracker.clone().run();
                 })
             };
             while !tracker.is_running() {
@@ -708,13 +753,12 @@ pub mod tests {
     }
 
     fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let txn = t.get_ro_txn();
         let path = fs::canonicalize(&asset_dir)
             .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
         let canonical_path = path.join(name);
-        let maybe_state = t
-            .get_file_state(&txn, &canonical_path)
-            .expect("error getting file state");
+        let maybe_state = t.get_file_state(&txn, &canonical_path);
+
         assert!(
             maybe_state.is_none(),
             "expected no file state for file {}",
@@ -723,11 +767,10 @@ pub mod tests {
     }
 
     fn expect_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let txn = t.get_ro_txn();
         let canonical_path =
             fs::canonicalize(asset_dir.join(name)).expect("failed to canonicalize");
         t.get_file_state(&txn, &canonical_path)
-            .expect("error getting file state")
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
 
@@ -753,23 +796,18 @@ pub mod tests {
     }
 
     fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().expect("failed to open ro txn");
+        let txn = t.get_ro_txn();
         let path = fs::canonicalize(&asset_dir)
             .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
         let canonical_path = path.join(name);
         t.get_dirty_file_state(&txn, &canonical_path)
-            .expect("error getting dirty file state")
             .unwrap_or_else(|| panic!("expected dirty file state for file {}", name));
     }
 
     fn clear_dirty_file_state(t: &FileTracker) {
-        let mut txn = t.get_rw_txn().expect("failed to open rw txn");
-        for f in t
-            .read_dirty_files(&txn)
-            .expect("failed to read dirty files")
-        {
-            t.delete_dirty_file_state(&mut txn, &f.path)
-                .expect("failed to delete dirty file state");
+        let mut txn = t.get_rw_txn();
+        for f in t.read_dirty_files(&txn) {
+            t.delete_dirty_file_state(&mut txn, &f.path);
         }
     }
 

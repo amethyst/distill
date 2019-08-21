@@ -2,15 +2,16 @@ use crate::{
     asset_hub, asset_hub_service, capnp_db::Environment, file_asset_source,
     file_tracker::FileTracker,
 };
-use atelier_importer::{ImporterContext, BoxedImporter, get_importer_contexts};
+use atelier_importer::{get_importer_contexts, BoxedImporter, ImporterContext};
+use log::error;
 use std::{
     collections::HashMap,
     fs,
+    iter::FromIterator,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
-    iter::FromIterator,
 };
 
 #[derive(Default)]
@@ -94,30 +95,35 @@ impl AssetDaemon {
     }
 
     pub fn run(self) {
+        use asset_hub::AssetHub;
+        use asset_hub_service::AssetHubService;
+        use file_asset_source::FileAssetSource;
+        use std::panic;
+
         let _ = fs::create_dir(&self.db_dir);
         for dir in self.asset_dirs.iter() {
             let _ = fs::create_dir_all(dir);
         }
-        let asset_db = Arc::new(Environment::new(&self.db_dir).expect("failed to create asset db"));
-        let tracker = Arc::new(
-            FileTracker::new(
-                asset_db.clone(),
-                self.asset_dirs.iter().map(|p| p.to_str().unwrap()),
-            )
-            .expect("failed to create tracker"),
-        );
 
-        let hub = Arc::new(
-            asset_hub::AssetHub::new(asset_db.clone()).expect("failed to create asset hub"),
-        );
+        let asset_db = Environment::new(&self.db_dir).expect("failed to create asset db");
+        let asset_db = Arc::new(asset_db);
+
+        let to_watch = self.asset_dirs.iter().map(|p| p.to_str().unwrap());
+        let tracker = FileTracker::new(asset_db.clone(), to_watch);
+        let tracker = Arc::new(tracker);
+
+        let hub = AssetHub::new(asset_db.clone()).expect("failed to create asset hub");
+        let hub = Arc::new(hub);
+
         let importers = Arc::new(self.importers);
-        let importer_contexts = Arc::new(self.importer_contexts);
+        let ctxs = Arc::new(self.importer_contexts);
 
-        let asset_source = Arc::new(
-            file_asset_source::FileAssetSource::new(&tracker, &hub, &asset_db, &importers, importer_contexts)
-                .expect("failed to create asset source"),
-        );
-        let service = asset_hub_service::AssetHubService::new(
+        let asset_source = FileAssetSource::new(&tracker, &hub, &asset_db, &importers, ctxs)
+            .expect("failed to create asset source");
+
+        let asset_source = Arc::new(asset_source);
+
+        let service = AssetHubService::new(
             asset_db.clone(),
             hub.clone(),
             asset_source.clone(),
@@ -126,16 +132,56 @@ impl AssetDaemon {
 
         // create the assets folder automatically to make it easier to get started.
         // might want to remove later when watched dirs become configurable?
-        let handle = thread::spawn(move || tracker.run());
-        thread::spawn(move || asset_source.run().expect("FileAssetSource.run() failed"));
+        let tracker_handle = thread::spawn(move || {
+            let result = panic::catch_unwind(|| tracker.run());
+            if let Err(err) = result {
+                bail(err);
+            }
+        });
 
-        service
-            .run(self.address)
-            .expect("Assed hub service failed to run");
+        // NOTE(happens): We have to do a silly little dance here because of the way
+        // unwind boundaries work. Since `Cell`s and other pointer types can provide
+        // interior mutability, they're not allowed to cross `catch_unwind` boundaries.
+        // However, Mutexes implement poisoning and can be passed, so we basically
+        // wrap these in a useless Mutex that gets locked instantly. This lets us catch
+        // any panic and abort after logging the error.
+        let asset_source_handle = thread::spawn(move || {
+            let asset_source = Mutex::new(asset_source);
+            let result = panic::catch_unwind(|| asset_source.lock().unwrap().run());
 
-        handle
+            if let Err(err) = result {
+                bail(err);
+            }
+        });
+
+        let addr = self.address;
+        let service_handle = thread::spawn(move || {
+            let service = Mutex::new(service);
+            let result = panic::catch_unwind(|| service.lock().unwrap().run(addr));
+            if let Err(err) = result {
+                bail(err);
+            }
+        });
+
+        tracker_handle
             .join()
-            .expect("file tracker thread panicked")
-            .expect("file tracker returned error");
+            .expect("Invalid: Thread panic should be caught");
+
+        asset_source_handle
+            .join()
+            .expect("Invalid: Thread panic should be caught");
+
+        service_handle
+            .join()
+            .expect("Invalid: Thread panic should be caught");
     }
+}
+
+fn bail(err: std::boxed::Box<dyn std::any::Any + std::marker::Send>) {
+    error!("Something unexpected happened - bailing out to prevent corrupt state");
+    if let Ok(msg) = err.downcast::<&'static str>() {
+        error!("panic: {}", msg);
+    }
+
+    std::process::exit(1);
 }

@@ -91,12 +91,7 @@ pub trait AssetStorage {
     /// * `asset_type_id`: UUID of the asset type.
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of a particular asset.
     /// * `version`: Runtime load version of this asset, increments each time the asset is updated.
-    fn commit_asset_version(
-        &self,
-        asset_type: &AssetTypeId,
-        load_handle: LoadHandle,
-        version: u32,
-    );
+    fn commit_asset_version(&self, asset_type: &AssetTypeId, load_handle: LoadHandle, version: u32);
 
     /// Frees the asset identified by the load handle.
     ///
@@ -209,7 +204,6 @@ pub trait Loader {
 /// Provides information about mappings between `AssetUuid` and `LoadHandle`.
 /// Intended to be used for `Handle` serde.
 pub trait LoaderInfoProvider {
-
     /// Returns the load handle for the asset with the given UUID, if present.
     ///
     /// This will only return `Some(..)` if there has been a previous call to [`Loader::add_ref`].

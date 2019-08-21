@@ -1,6 +1,4 @@
-use crate::{
-    ImportedAsset, Importer, ImporterValue, SerdeImportable, SourceFileImporter,
-};
+use crate::{ImportedAsset, Importer, ImporterValue, SerdeImportable, SourceFileImporter};
 use atelier_core::AssetUuid;
 use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
@@ -69,9 +67,9 @@ inventory::submit!(SourceFileImporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as atelier_importer;
     use crate::*;
     use std::collections::HashMap;
-    use crate as atelier_importer;
 
     #[derive(Serialize, Deserialize, TypeUuid, SerdeImportable, PartialEq, Eq)]
     #[uuid = "36fb2083-7195-4583-8af9-0965f10ae60d"]

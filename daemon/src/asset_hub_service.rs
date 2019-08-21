@@ -174,11 +174,10 @@ impl<'a> AssetHubSnapshotImpl<'a> {
                 match metadata.get_source()? {
                     AssetSource::File => {
                         // TODO run build pipeline
-                        if let Some((hash, artifact)) = ctx.file_source.regenerate_import_artifact(
-                            txn,
-                            &id,
-                            &mut scratch_buf,
-                        )? {
+                        if let Some((hash, artifact)) =
+                            ctx.file_source
+                                .regenerate_import_artifact(txn, &id, &mut scratch_buf)
+                        {
                             let capnp_artifact = build_serialized_asset_message(&artifact);
                             artifacts.push((id, hash, capnp_artifact));
                         }
@@ -253,7 +252,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut asset_paths = Vec::new();
         for id in params.get_assets()? {
             let asset_uuid = utils::uuid_from_slice(id.get_id()?)?;
-            let path = ctx.file_source.get_asset_path(txn, &asset_uuid)?;
+            let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
             if let Some(path) = path {
                 asset_paths.push((id, path));
             }
@@ -299,14 +298,14 @@ impl<'a> AssetHubSnapshotImpl<'a> {
             if path.is_relative() {
                 for dir in ctx.file_tracker.get_watch_dirs() {
                     if let Ok(canonicalized) = fs::canonicalize(dir.join(&path)) {
-                        metadata = ctx.file_source.get_metadata(txn, &canonicalized)?;
+                        metadata = ctx.file_source.get_metadata(txn, &canonicalized);
                         if metadata.is_some() {
                             break;
                         }
                     }
                 }
             } else if let Ok(canonicalized) = fs::canonicalize(&path) {
-                metadata = ctx.file_source.get_metadata(txn, &canonicalized)?
+                metadata = ctx.file_source.get_metadata(txn, &canonicalized)
             }
             if let Some(metadata) = metadata {
                 metadatas.push((request_path, metadata));
@@ -428,7 +427,7 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
 ) {
     thread::spawn(move || {
         let mut runtime = Runtime::new().unwrap();
-        let service_impl = AssetHubImpl { ctx: ctx };
+        let service_impl = AssetHubImpl { ctx };
         let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
 
         let network = twoparty::VatNetwork::new(
@@ -458,34 +457,42 @@ impl AssetHubService {
             }),
         }
     }
-    pub fn run(&self, addr: std::net::SocketAddr) -> Result<()> {
-        use parity_tokio_ipc::Endpoint;
 
+    pub fn run(&self, addr: std::net::SocketAddr) {
         let mut runtime = Runtime::new().unwrap();
 
-        let tcp = ::tokio::net::TcpListener::bind(&addr)?;
+        let tcp = ::tokio::net::TcpListener::bind(&addr).expect("Failed to bind tcp socket");
+
         let tcp_future = tcp.incoming().for_each(move |stream| {
             stream.set_nodelay(true)?;
             stream.set_send_buffer_size(1 << 22)?;
             stream.set_recv_buffer_size(1 << 22)?;
+
             let (reader, writer) = stream.split();
             spawn_rpc(reader, writer, self.ctx.clone());
+
             Ok(())
         });
+
         let _ = std::fs::remove_file(endpoint());
-        let ipc = Endpoint::new(endpoint());
 
-        let ipc_future = ipc
-            .incoming(&tokio::reactor::Handle::default())
-            .expect("failed to listen for incoming IPC connections")
-            .for_each(move |(stream, _id)| {
-                let (reader, writer) = stream.split();
-                spawn_rpc(reader, writer, self.ctx.clone());
-                Ok(())
-            });
+        // let ipc = Endpoint::new(endpoint());
+        // let ipc_future = ipc
+        //     .incoming(&tokio::reactor::Handle::default())
+        //     .expect("failed to listen for incoming IPC connections")
+        //     .for_each(move |(stream, _id)| {
+        //         let (reader, writer) = stream.split();
+        //         spawn_rpc(reader, writer, self.ctx.clone());
+        //         Ok(())
+        //     });
 
-        runtime.block_on(tcp_future.join(ipc_future))?;
-        Ok(())
+        // NOTE(happens): This will only fail if we can't set the stream
+        // parameters on startup, which is a cause for panic in any case.
+        runtime
+            .block_on(tcp_future)
+            .expect("Failed to run tcp listener");
+
+        // runtime.block_on(tcp_future.join(ipc_future))?;
     }
 }
 
