@@ -2,10 +2,11 @@ use crate::{
     asset_hub, asset_hub_service, capnp_db::Environment, file_asset_source,
     file_tracker::FileTracker,
 };
-use atelier_importer::BoxedImporter;
+use atelier_importer::{get_importer_contexts, BoxedImporter, ImporterContext};
 use std::{
     collections::HashMap,
     fs,
+    iter::FromIterator,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
@@ -33,6 +34,7 @@ pub struct AssetDaemon {
     db_dir: PathBuf,
     address: SocketAddr,
     importers: ImporterMap,
+    importer_contexts: Vec<Box<dyn ImporterContext>>,
     asset_dirs: Vec<PathBuf>,
 }
 
@@ -42,6 +44,7 @@ impl Default for AssetDaemon {
             db_dir: PathBuf::from(".assets_db"),
             address: "127.0.0.1:9999".parse().unwrap(),
             importers: Default::default(),
+            importer_contexts: Vec::from_iter(get_importer_contexts()),
             asset_dirs: vec![PathBuf::from("assets")],
         }
     }
@@ -72,6 +75,19 @@ impl AssetDaemon {
         })
     }
 
+    pub fn with_importer_context(mut self, context: Box<dyn ImporterContext>) -> Self {
+        self.importer_contexts.push(context);
+        self
+    }
+
+    pub fn with_importer_contexts<I>(mut self, contexts: I) -> Self
+    where
+        I: IntoIterator<Item = Box<dyn ImporterContext>>,
+    {
+        self.importer_contexts.extend(contexts);
+        self
+    }
+
     pub fn with_asset_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
         self.asset_dirs = dirs;
         self
@@ -98,12 +114,20 @@ impl AssetDaemon {
         let hub = Arc::new(hub);
 
         let importers = Arc::new(self.importers);
+        let importer_contexts = Arc::new(self.importer_contexts);
 
-        let asset_source = FileAssetSource::new(&tracker, &hub, &asset_db, &importers)
-            .expect("failed to create asset source");
+        let asset_source = file_asset_source::FileAssetSource::new(
+            &tracker,
+            &hub,
+            &asset_db,
+            &importers,
+            importer_contexts,
+        )
+        .expect("failed to create asset source");
+
         let asset_source = Arc::new(asset_source);
 
-        let service = AssetHubService::new(
+        let service = asset_hub_service::AssetHubService::new(
             asset_db.clone(),
             hub.clone(),
             asset_source.clone(),

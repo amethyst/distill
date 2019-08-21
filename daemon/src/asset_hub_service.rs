@@ -5,8 +5,8 @@ use crate::{
     file_asset_source::FileAssetSource,
     file_tracker::FileTracker,
     serialized_asset::SerializedAsset,
-    utils,
 };
+use atelier_core::utils;
 use atelier_schema::{
     data::{asset_change_log_entry, asset_metadata, serialized_asset, AssetSource},
     service::asset_hub,
@@ -27,7 +27,7 @@ use tokio::runtime::current_thread::Runtime;
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
-type Result<T> = std::result::Result<T, capnp::Error>;
+type Result<T> = std::result::Result<T, Error>;
 
 struct ServiceContext {
     hub: Arc<AssetHub>,

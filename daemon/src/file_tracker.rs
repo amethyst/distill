@@ -2,8 +2,8 @@ use crate::capnp_db::{
     CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
 };
 use crate::error::{Error, Result};
-use crate::utils;
 use crate::watcher::{self, FileEvent, FileMetadata};
+use atelier_core::utils;
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use crossbeam_channel::{self as channel, select, Receiver, Sender};
 use lmdb::Cursor;

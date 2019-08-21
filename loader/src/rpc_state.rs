@@ -1,4 +1,4 @@
-use crate::{utils, AssetUuid};
+use atelier_core::{utils, AssetUuid};
 use atelier_schema::{data::asset_change_event, service::asset_hub};
 use capnp::{message::ReaderOptions, Result as CapnpResult};
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
@@ -316,7 +316,9 @@ impl asset_hub::listener::Server for ListenerImpl {
         if let Some(change_num) = self.snapshot_change {
             let mut request = snapshot.get_asset_changes_request();
             request.get().set_start(change_num);
-            request.get().set_count(1);
+            request
+                .get()
+                .set_count(params.get_latest_change() - change_num);
             let channel = self.snapshot_channel.clone();
             let _ = tokio_current_thread::TaskExecutor::current().spawn_local(Box::new(
                 request

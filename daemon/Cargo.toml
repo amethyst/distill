@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+atelier-core = { path = "../core" }
 atelier-schema = { path = "../schema" }
 atelier-importer = { path = "../importer" }
 capnp = { version = "0.10.0" }

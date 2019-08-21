@@ -7,8 +7,8 @@ use crate::serialized_asset::SerializedAsset;
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use crate::utils;
-use atelier_importer::{AssetMetadata, AssetUuid, BoxedImporter};
+use atelier_core::{utils, AssetUuid};
+use atelier_importer::{AssetMetadata, BoxedImporter, ImporterContext};
 use atelier_schema::data::{self, source_metadata};
 use bincode;
 use crossbeam_channel::{self as channel, Receiver};
@@ -26,6 +26,7 @@ pub(crate) struct FileAssetSource {
     db: Arc<Environment>,
     tables: FileAssetSourceTables,
     importers: Arc<ImporterMap>,
+    importer_contexts: Arc<Vec<Box<dyn ImporterContext>>>,
 }
 
 struct FileAssetSourceTables {
@@ -77,6 +78,7 @@ impl FileAssetSource {
         hub: &Arc<AssetHub>,
         db: &Arc<Environment>,
         importers: &Arc<ImporterMap>,
+        importer_contexts: Arc<Vec<Box<dyn ImporterContext>>>,
     ) -> Result<FileAssetSource> {
         let (tx, rx) = channel::unbounded();
         tracker.register_listener(tx);
@@ -92,6 +94,7 @@ impl FileAssetSource {
                     .create_db(Some("asset_id_to_path"), lmdb::DatabaseFlags::default())?,
             },
             importers: importers.clone(),
+            importer_contexts,
         })
     }
 
@@ -232,12 +235,11 @@ impl FileAssetSource {
             };
 
             let mut import = SourcePairImport::new(path);
-            import.with_importer_from_map(&self.importers);
+            import.set_importer_from_map(&self.importers);
+            import.set_importer_contexts(&self.importer_contexts);
             import.generate_source_metadata(&cache);
             import.hash_source();
-
             let imported_assets = import.import_source(scratch_buf).ok()?;
-
             imported_assets
                 .into_iter()
                 .find(|a| a.metadata.id == *id)
@@ -602,6 +604,7 @@ impl FileAssetSource {
                                     let result = source_pair_import::process_pair(
                                         &cache,
                                         &self.importers,
+                                        &self.importer_contexts,
                                         &processed_pair,
                                         local_store.as_mut().unwrap(),
                                     );
