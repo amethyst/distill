@@ -3,13 +3,14 @@ use crate::{
     file_tracker::FileTracker,
 };
 use atelier_importer::{get_importer_contexts, BoxedImporter, ImporterContext};
+use log::error;
 use std::{
     collections::HashMap,
     fs,
     iter::FromIterator,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
 };
 
@@ -97,6 +98,7 @@ impl AssetDaemon {
         use asset_hub::AssetHub;
         use asset_hub_service::AssetHubService;
         use file_asset_source::FileAssetSource;
+        use std::panic;
 
         let _ = fs::create_dir(&self.db_dir);
         for dir in self.asset_dirs.iter() {
@@ -114,20 +116,14 @@ impl AssetDaemon {
         let hub = Arc::new(hub);
 
         let importers = Arc::new(self.importers);
-        let importer_contexts = Arc::new(self.importer_contexts);
+        let ctxs = Arc::new(self.importer_contexts);
 
-        let asset_source = file_asset_source::FileAssetSource::new(
-            &tracker,
-            &hub,
-            &asset_db,
-            &importers,
-            importer_contexts,
-        )
-        .expect("failed to create asset source");
+        let asset_source = FileAssetSource::new(&tracker, &hub, &asset_db, &importers, ctxs)
+            .expect("failed to create asset source");
 
         let asset_source = Arc::new(asset_source);
 
-        let service = asset_hub_service::AssetHubService::new(
+        let service = AssetHubService::new(
             asset_db.clone(),
             hub.clone(),
             asset_source.clone(),
@@ -136,21 +132,56 @@ impl AssetDaemon {
 
         // create the assets folder automatically to make it easier to get started.
         // might want to remove later when watched dirs become configurable?
-        let tracker_handle = thread::spawn(move || tracker.run());
-        let asset_source_handle = thread::spawn(move || asset_source.run());
-        let service_handle = thread::spawn(move || service.run(self.address));
+        let tracker_handle = thread::spawn(move || {
+            let result = panic::catch_unwind(|| tracker.run());
+            if let Err(err) = result {
+                bail(err);
+            }
+        });
 
-        // NOTE(happens): We need to run all of these in threads since in order to catch any
-        // potential panics, we can't have any of these block the main thread. The only way
-        // to make sure all threads shut down when a panic occurs is to immediately bail
-        // using `std::process::abort`.
-        tracker_handle.join().unwrap_or_else(bail);
-        asset_source_handle.join().unwrap_or_else(bail);
-        service_handle.join().unwrap_or_else(bail);
+        // NOTE(happens): We have to do a silly little dance here because of the way
+        // unwind boundaries work. Since `Cell`s and other pointer types can provide
+        // interior mutability, they're not allowed to cross `catch_unwind` boundaries.
+        // However, Mutexes implement poisoning and can be passed, so we basically
+        // wrap these in a useless Mutex that gets locked instantly. This lets us catch
+        // any panic and abort after logging the error.
+        let asset_source_handle = thread::spawn(move || {
+            let asset_source = Mutex::new(asset_source);
+            let result = panic::catch_unwind(|| asset_source.lock().unwrap().run());
+
+            if let Err(err) = result {
+                bail(err);
+            }
+        });
+
+        let addr = self.address;
+        let service_handle = thread::spawn(move || {
+            let service = Mutex::new(service);
+            let result = panic::catch_unwind(|| service.lock().unwrap().run(addr));
+            if let Err(err) = result {
+                bail(err);
+            }
+        });
+
+        tracker_handle
+            .join()
+            .expect("Invalid: Thread panic should be caught");
+
+        asset_source_handle
+            .join()
+            .expect("Invalid: Thread panic should be caught");
+
+        service_handle
+            .join()
+            .expect("Invalid: Thread panic should be caught");
     }
 }
 
-fn bail() {
+fn bail(err: std::boxed::Box<dyn std::any::Any + std::marker::Send>) {
     error!("Something unexpected happened - bailing out to prevent corrupt state");
-    std::process::abort();
+    if let Ok(msg) = err.downcast::<&'static str>() {
+        error!("panic: {}", msg);
+    }
+
+    std::process::exit(1);
 }
