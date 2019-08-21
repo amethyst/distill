@@ -2,12 +2,15 @@ use crate::{error::Result, Importer, ImporterValue, SerdeObj};
 use atelier_core::{AssetTypeId, AssetUuid};
 use ron;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+use std::{
+    io::Read,
+    collections::HashSet,
+};
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Serializable metadata for an asset.
 /// Stored in .meta files and metadata DB.
-#[derive(Clone, Serialize, Deserialize, Hash, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Default)]
 pub struct AssetMetadata {
     /// UUID for the asset to uniquely identify it
     pub id: AssetUuid,
@@ -89,8 +92,10 @@ where
         options: Box<dyn SerdeObj>,
         state: Box<dyn SerdeObj>,
     ) -> Result<BoxedImporterValue> {
-        let mut s = state.downcast::<S>().unwrap();
-        let o = *options.downcast::<O>().unwrap();
+        let s = state.downcast::<S>();
+        let mut s = if let Ok(s) = s { s } else { panic!("Failed to downcast Importer::State"); };
+        let o = options.downcast::<O>();
+        let o = if let Ok(o) = o { *o } else { panic!("Failed to downcast Importer::Options"); };
         let result = self.import(source, o.clone(), &mut s)?;
         Ok(BoxedImporterValue {
             value: result,
@@ -148,6 +153,9 @@ pub fn get_source_importers(
 
 pub trait ImporterContextHandle {
     fn exit(&mut self);
+    fn begin_serialize_asset(&mut self, asset: AssetUuid);
+    /// Returns any registered dependencies
+    fn end_serialize_asset(&mut self, asset: AssetUuid) -> HashSet<AssetUuid>;
 }
 
 pub trait ImporterContext: 'static + Send + Sync {

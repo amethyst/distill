@@ -1,4 +1,4 @@
-use downcast::*;
+use mopa::*;
 use erased_serde::*;
 use type_uuid::TypeUuidDynamic;
 
@@ -34,4 +34,4 @@ pub use serde_importable_derive::*;
 pub use typetag;
 
 serialize_trait_object!(SerdeObj);
-downcast!(dyn SerdeObj);
+mopafy!(SerdeObj);

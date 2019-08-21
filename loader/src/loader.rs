@@ -219,14 +219,4 @@ pub trait LoaderInfoProvider {
     ///
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid>;
-
-    /// Adds a reference to an asset and returns its [`LoadHandle`].
-    ///
-    /// If the asset is already loaded, this returns the existing [`LoadHandle`]. If it is not
-    /// loaded, this allocates a new [`LoadHandle`] and returns that.
-    ///
-    /// # Parameters
-    ///
-    /// * `id`: UUID of the asset.
-    fn add_ref(&self, id: AssetUuid) -> LoadHandle;
 }

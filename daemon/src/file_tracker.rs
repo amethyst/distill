@@ -581,7 +581,7 @@ impl FileTracker {
                         let txn = txn.as_mut().expect("db: Failed to get txn");
                         match events::handle_file_event(txn, &self.tables, evt, scan_stack) {
                             Ok(evt) => evt.map(|evt| output_evts.push(evt)).unwrap_or(()),
-                            Err(err) => error!("Error while handling file event"),
+                            Err(err) => error!("Error while handling file event: {}", err),
                         }
                     } else {
                         error!("Receive error");

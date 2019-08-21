@@ -40,10 +40,11 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, AddrParseError> {
 // to include when linking static libraries, so we need to reference a symbol in each module that
 // registers an importer since it uses inventory::submit and the .ctor linkage hack.
 fn init_modules() {
-    #[cfg(feature = "amethyst")]
+    #[cfg(feature = "amethyst-importers")]
     {
         use amethyst::assets::Asset;
         amethyst::renderer::types::Texture::name();
+        amethyst::assets::experimental::DefaultLoader::default();
         let _w = amethyst::audio::output::outputs();
     }
 }
