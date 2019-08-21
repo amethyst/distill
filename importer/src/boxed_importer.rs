@@ -92,8 +92,10 @@ where
         options: Box<dyn SerdeObj>,
         state: Box<dyn SerdeObj>,
     ) -> Result<BoxedImporterValue> {
-        let mut s = state.downcast::<S>().unwrap();
-        let o = *options.downcast::<O>().unwrap();
+        let s = state.downcast::<S>();
+        let mut s = if let Ok(s) = s { s } else { panic!("Failed to downcast Importer::State"); };
+        let o = options.downcast::<O>();
+        let o = if let Ok(o) = o { *o } else { panic!("Failed to downcast Importer::Options"); };
         let result = self.import(source, o.clone(), &mut s)?;
         Ok(BoxedImporterValue {
             value: result,
