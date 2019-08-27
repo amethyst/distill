@@ -90,7 +90,7 @@ mod tests {
         let importer: Box<dyn BoxedImporter> = Box::new(RonImporter::default());
 
         let mut a = "{
-                       \"36fb2083-7195-4583-8af9-0965f10ae60d\": 
+                       \"36fb2083-7195-4583-8af9-0965f10ae60d\":
                         (
                            x: 30,
                         )
@@ -111,9 +111,12 @@ mod tests {
             .nth(0)
             .unwrap()
             .asset_data;
-        let a = a_serde_obj.downcast::<A>().unwrap();
 
-        assert_eq!(a.x, 30);
+        let a_downcast = a_serde_obj.downcast::<A>();
+        match a_downcast {
+            Ok(a) => assert_eq!(a.x, 30),
+            Err(_serde_obj) => panic!("Expected serde_obj to be downcast to `A`."),
+        }
     }
 
     #[test]
@@ -121,7 +124,7 @@ mod tests {
         let importer: Box<dyn BoxedImporter> = Box::new(RonImporter::default());
 
         let mut b = "{
-                       \"d4b83227-d3f8-47f5-b026-db615fb41d31\": 
+                       \"d4b83227-d3f8-47f5-b026-db615fb41d31\":
                         (
                             s: \"Ferris\",
                             a: (
@@ -149,12 +152,16 @@ mod tests {
             .nth(0)
             .unwrap()
             .asset_data;
-        let b = b_serde_obj.downcast::<B>().unwrap();
-
-        assert_eq!(b.s, "Ferris");
-        assert_eq!(b.a.x, 30);
-        assert_eq!(b.m["lorem"], "ipsum");
-        assert_eq!(b.m["dolor"], "sim");
-        assert_eq!(b.m.len(), 2);
+        let b_downcast = b_serde_obj.downcast::<B>();
+        match b_downcast {
+            Ok(b) => {
+                assert_eq!(b.s, "Ferris");
+                assert_eq!(b.a.x, 30);
+                assert_eq!(b.m["lorem"], "ipsum");
+                assert_eq!(b.m["dolor"], "sim");
+                assert_eq!(b.m.len(), 2);
+            }
+            Err(_serde_obj) => panic!("Expected serde_obj to be downcast to `B`."),
+        }
     }
 }

@@ -6,10 +6,10 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
+use chrono::Local;
 use futures::Future;
 use shrust;
 use std::{cell::RefCell, io, rc::Rc};
-use time::PreciseTime;
 use tokio::prelude::*;
 use tokio::runtime::current_thread::Runtime;
 
@@ -81,9 +81,9 @@ fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
     shell.new_command("show_all", "Get all asset metadata", 0, |io, ctx, _| {
         let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
         let mut io = io.clone();
-        let start = PreciseTime::now();
+        let start = Local::now();
         Box::new(request.send().promise.then(move |result| {
-            let total_time = start.to(PreciseTime::now());
+            let total_time = Local::now().signed_duration_since(start);
             let response = result.unwrap();
             let response = response.get().unwrap();
             let assets = response.get_assets().unwrap();
@@ -100,9 +100,9 @@ fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
         let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
         let mut io = io.clone();
-        let start = PreciseTime::now();
+        let start = Local::now();
         Box::new(request.send().promise.then(move |result| {
-            let total_time = start.to(PreciseTime::now());
+            let total_time = Local::now().signed_duration_since(start);
             let response = result.unwrap();
             let response = response.get().unwrap();
             let assets = response.get_assets().unwrap();
@@ -122,9 +122,9 @@ fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
             let mut request = ctx.snapshot.borrow().get_build_artifacts_request();
             request.get().init_assets(1).get(0).set_id(id.as_bytes());
             let mut io = io.clone();
-            let start = PreciseTime::now();
+            let start = Local::now();
             Box::new(request.send().promise.then(move |result| {
-                let total_time = start.to(PreciseTime::now());
+                let total_time = Local::now().signed_duration_since(start);
                 let response = result.unwrap();
                 let response = response.get().unwrap();
                 let artifacts = response.get_artifacts().unwrap();

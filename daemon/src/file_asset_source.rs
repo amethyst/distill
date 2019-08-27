@@ -11,13 +11,13 @@ use atelier_core::{utils, AssetUuid};
 use atelier_importer::{AssetMetadata, BoxedImporter, ImporterContext};
 use atelier_schema::data::{self, source_metadata};
 use bincode;
+use chrono::Local;
 use crossbeam_channel::{self as channel, Receiver};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use scoped_threadpool::Pool;
 use std::collections::HashMap;
 use std::{path::PathBuf, str, sync::Arc};
-use time::PreciseTime;
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -664,7 +664,7 @@ impl FileAssetSource {
     }
 
     fn handle_update(&self, thread_pool: &mut Pool) {
-        let start_time = PreciseTime::now();
+        let start_time = Local::now();
         let mut changed_files = Vec::new();
 
         let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
@@ -695,7 +695,7 @@ impl FileAssetSource {
             })
             .collect();
 
-        let elapsed = start_time.to(PreciseTime::now());
+        let elapsed = Local::now().signed_duration_since(start_time);
         debug!("Hashed {} pairs in {}", hashed_files.len(), elapsed);
 
         let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
@@ -710,7 +710,7 @@ impl FileAssetSource {
             }
         }
 
-        let elapsed = start_time.to(PreciseTime::now());
+        let elapsed = Local::now().signed_duration_since(start_time);
         info!("Processed {} pairs in {}", hashed_files.len(), elapsed);
     }
 

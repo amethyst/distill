@@ -3,13 +3,13 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
+use chrono::Local;
 use futures::Future;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
     thread,
 };
-use time::PreciseTime;
 use tokio::prelude::*;
 use tokio::runtime::current_thread::Runtime;
 
@@ -28,7 +28,7 @@ pub fn main() {
 
     let num_assets = Arc::new(AtomicUsize::new(0));
     let byte_size = Arc::new(AtomicUsize::new(0));
-    let start_time = PreciseTime::now();
+    let start_time = Local::now();
     let mut threads = Vec::new();
     for _ in 0..8 {
         let num_assets = num_assets.clone();
@@ -87,7 +87,7 @@ pub fn main() {
     for thread in threads {
         thread.join().unwrap();
     }
-    let total_time = start_time.to(PreciseTime::now());
+    let total_time = Local::now().signed_duration_since(start_time);
     println!(
         "got {} assets and {} bytes in {}",
         num_assets.load(Ordering::Acquire),
