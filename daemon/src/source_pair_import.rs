@@ -3,13 +3,14 @@ use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
 use crate::serialized_asset::SerializedAsset;
 use crate::watcher::file_metadata;
-use atelier_core::{AssetUuid, utils};
+use atelier_core::{utils, AssetUuid};
 use atelier_importer::{
     AssetMetadata, BoxedImporter, ImporterContext, ImporterContextHandle, SerdeObj,
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
 use atelier_schema::data::{self, CompressionType};
 use bincode;
+use chrono::Local;
 use log::{debug, error, info};
 use ron;
 use std::{
@@ -19,7 +20,6 @@ use std::{
     io::{BufRead, Read, Write},
     path::PathBuf,
 };
-use time::PreciseTime;
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -228,7 +228,7 @@ impl<'a> SourcePairImport<'a> {
     }
 
     pub fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<Vec<ImportedAssetVec>> {
-        let start_time = PreciseTime::now();
+        let start_time = Local::now();
         let importer = self
             .importer
             .expect("cannot import source without importer");
@@ -300,7 +300,10 @@ impl<'a> SourcePairImport<'a> {
                     scratch_buf.len(),
                 );
             }
-            info!("Imported pair in {}", start_time.to(PreciseTime::now()));
+            info!(
+                "Imported pair in {}",
+                Local::now().signed_duration_since(start_time)
+            );
             self.source_metadata = Some(SourceMetadata {
                 version: SOURCEMETADATA_VERSION,
                 import_hash: Some(import_hash),

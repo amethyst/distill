@@ -27,7 +27,7 @@ ron = "0.4"
 meowhash = "0.1.2"
 scoped_threadpool = "0.1.9"
 num_cpus = "1.0"
-time = "0.1"
+chrono = "0.4.7"
 parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
 uuid = "0.7"
 smush = { version = "0.1", default-features = false, features = [ "lz4_support" ] }
