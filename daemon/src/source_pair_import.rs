@@ -3,7 +3,7 @@ use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
 use crate::serialized_asset::SerializedAsset;
 use crate::watcher::file_metadata;
-use atelier_core::{utils, AssetUuid};
+use atelier_core::{utils, AssetUuid, AssetTypeId};
 use atelier_importer::{
     AssetMetadata, BoxedImporter, ImporterContext, ImporterContextHandle, SerdeObj,
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
@@ -133,7 +133,7 @@ impl<'a> SourcePairImport<'a> {
                     metadata.importer_options.as_ref(),
                     metadata.importer_state.as_ref(),
                     metadata.importer_version,
-                    metadata.importer_type,
+                    metadata.importer_type.0,
                     scratch_buf,
                 )?);
             }
@@ -191,7 +191,7 @@ impl<'a> SourcePairImport<'a> {
         let mut default_metadata = SourceMetadata {
             version: SOURCEMETADATA_VERSION,
             importer_version: importer.version(),
-            importer_type: importer.uuid(),
+            importer_type: AssetTypeId(importer.uuid()),
             importer_options: importer.default_options(),
             importer_state: importer.default_state(),
             import_hash: None,
@@ -289,7 +289,7 @@ impl<'a> SourcePairImport<'a> {
                             load_deps: deps.into_iter().collect(),
                             instantiate_deps: asset.instantiate_deps,
                             build_pipeline,
-                            import_asset_type: asset_data.uuid(),
+                            import_asset_type: AssetTypeId(asset_data.uuid()),
                         },
                         asset: Some(serialized_asset),
                     }
@@ -308,7 +308,7 @@ impl<'a> SourcePairImport<'a> {
                 version: SOURCEMETADATA_VERSION,
                 import_hash: Some(import_hash),
                 importer_version: importer.version(),
-                importer_type: importer.uuid(),
+                importer_type: AssetTypeId(importer.uuid()),
                 importer_options: options,
                 importer_state: state,
                 assets: imported_assets.iter().map(|m| m.metadata.clone()).collect(),

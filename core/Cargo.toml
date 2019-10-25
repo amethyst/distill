@@ -7,3 +7,4 @@ edition = "2018"
 uuid = "0.7"
 proc-macro-hack = "0.5"
 asset-uuid = { path = "./asset-uuid" }
+serde = "1.0"

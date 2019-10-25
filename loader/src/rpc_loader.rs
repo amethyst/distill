@@ -512,7 +512,7 @@ fn process_data_requests(
                 let response = rpc.request(move |_conn, snapshot| {
                     let mut request = snapshot.get_build_artifacts_request();
                     let mut assets = request.get().init_assets(1);
-                    assets.reborrow().get(0).set_id(&asset);
+                    assets.reborrow().get(0).set_id(&asset.0);
                     (request, handle)
                 });
                 requests.pending_data_requests.push(response);
@@ -597,7 +597,7 @@ fn process_metadata_requests(
                 let mut request = snapshot.get_asset_metadata_with_dependencies_request();
                 let mut assets = request.get().init_assets(assets_to_request.len() as u32);
                 for (idx, (asset, _)) in assets_to_request.iter().enumerate() {
-                    assets.reborrow().get(idx as u32).set_id(asset);
+                    assets.reborrow().get(idx as u32).set_id(&asset.0);
                 }
                 (request, assets_to_request)
             });
@@ -1030,7 +1030,7 @@ mod tests {
             state: &mut Self::State,
         ) -> atelier_importer::Result<ImporterValue> {
             if state.id.is_none() {
-                state.id = Some(*uuid::Uuid::new_v4().as_bytes());
+                state.id = Some(AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
             }
             let mut bytes = Vec::new();
             source.read_to_end(&mut bytes)?;
@@ -1041,7 +1041,7 @@ mod tests {
             let load_deps = parsed_asset_data
                 .lines()
                 .filter_map(|line| Uuid::from_str(line).ok())
-                .map(|uuid| *uuid.as_bytes())
+                .map(|uuid| AssetUuid(*uuid.as_bytes()))
                 .collect::<Vec<AssetUuid>>();
 
             Ok(ImporterValue {
@@ -1090,9 +1090,9 @@ mod tests {
         let mut loader = RpcLoader::new(daemon_address).expect("Failed to construct `RpcLoader`.");
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset.txt"
-            *uuid::Uuid::parse_str("60352042-616f-460e-abd2-546195c060fe")
+            AssetUuid(*uuid::Uuid::parse_str("60352042-616f-460e-abd2-546195c060fe")
                 .unwrap()
-                .as_bytes(),
+                .as_bytes()),
         );
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
@@ -1114,9 +1114,9 @@ mod tests {
         let mut loader = RpcLoader::new(daemon_address).expect("Failed to construct `RpcLoader`.");
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset_a.txt"
-            *uuid::Uuid::parse_str("a5ce4da0-675e-4460-be02-c8b145c2ee49")
+            AssetUuid(*uuid::Uuid::parse_str("a5ce4da0-675e-4460-be02-c8b145c2ee49")
                 .unwrap()
-                .as_bytes(),
+                .as_bytes()),
         );
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
@@ -1177,7 +1177,7 @@ mod tests {
                 .unwrap_or_else(|_| panic!("Failed to parse `{}` as `Uuid`.", id))
                 .as_bytes();
 
-            (asset_uuid, *file_name)
+            (AssetUuid(asset_uuid), *file_name)
         })
         .collect::<Vec<(AssetUuid, &'static str)>>()
     }
