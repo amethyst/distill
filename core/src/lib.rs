@@ -14,8 +14,8 @@ pub mod utils;
 /// An asset can be an instance of any Rust type that implements
 /// [type_uuid::TypeUuid] + [serde::Serialize] + [Send].
 ///
-/// Serializes to a hyphenated UUID format and deserializes from any format supported by the `uuid`
-/// crate.
+/// If using a human-readable format, serializes to a hyphenated UUID format and deserializes from
+/// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Default, Hash)]
 pub struct AssetUuid(pub [u8; 16]);
 
@@ -37,9 +37,19 @@ impl PartialOrd for AssetUuid {
     }
 }
 
+impl fmt::Display for AssetUuid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        uuid::Uuid::from_bytes(self.0).fmt(f)
+    }
+}
+
 impl Serialize for AssetUuid {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&uuid::Uuid::from_bytes(self.0).to_string())
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            self.0.serialize(serializer)
+        }
     }
 }
 
@@ -61,14 +71,18 @@ impl<'a> Visitor<'a> for AssetUuidVisitor {
 
 impl<'de> Deserialize<'de> for AssetUuid {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_string(AssetUuidVisitor)
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_string(AssetUuidVisitor)
+        } else {
+            Ok(AssetUuid(<[u8; 16]>::deserialize(deserializer)?))
+        }
     }
 }
 
 /// UUID of an asset's Rust type. Produced by [type_uuid::TypeUuid::UUID].
 ///
-/// Serializes to a hyphenated UUID format and deserializes from any format supported by the `uuid`
-/// crate.
+/// If using a human-readable format, serializes to a hyphenated UUID format and deserializes from
+/// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Default, Hash)]
 pub struct AssetTypeId(pub [u8; 16]);
 
@@ -84,9 +98,19 @@ impl AsRef<[u8]> for AssetTypeId {
     }
 }
 
+impl fmt::Display for AssetTypeId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        uuid::Uuid::from_bytes(self.0).fmt(f)
+    }
+}
+
 impl Serialize for AssetTypeId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&uuid::Uuid::from_bytes(self.0).to_string())
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            self.0.serialize(serializer)
+        }
     }
 }
 
@@ -108,6 +132,10 @@ impl<'a> Visitor<'a> for AssetTypeIdVisitor {
 
 impl<'de> Deserialize<'de> for AssetTypeId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_string(AssetTypeIdVisitor)
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_string(AssetTypeIdVisitor)
+        } else {
+            Ok(AssetTypeId(<[u8; 16]>::deserialize(deserializer)?))
+        }
     }
 }
