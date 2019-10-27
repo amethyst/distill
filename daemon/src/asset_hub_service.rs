@@ -6,7 +6,7 @@ use crate::{
     file_tracker::FileTracker,
     serialized_asset::SerializedAsset,
 };
-use atelier_core::utils;
+use atelier_core::{utils, AssetUuid};
 use atelier_schema::{
     data::{asset_change_log_entry, asset_metadata, serialized_asset, AssetSource},
     service::asset_hub,
@@ -77,7 +77,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut metadatas = Vec::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?)?;
-            let value = ctx.hub.get_metadata(txn, &id)?;
+            let value = ctx.hub.get_metadata(txn, &AssetUuid(id))?;
             if let Some(metadata) = value {
                 metadatas.push(metadata);
             }
@@ -103,7 +103,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut metadatas = HashMap::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?)?;
-            let value = ctx.hub.get_metadata(txn, &id)?;
+            let value = ctx.hub.get_metadata(txn, &AssetUuid(id))?;
             if let Some(metadata) = value {
                 metadatas.insert(id, metadata);
             }
@@ -118,7 +118,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
             }
         }
         for id in missing_metadata {
-            let value = ctx.hub.get_metadata(txn, &id)?;
+            let value = ctx.hub.get_metadata(txn, &AssetUuid(id))?;
             if let Some(metadata) = value {
                 metadatas.insert(id, metadata);
             }
@@ -168,7 +168,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut scratch_buf = Vec::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?)?;
-            let value = ctx.hub.get_metadata(txn, &id)?;
+            let value = ctx.hub.get_metadata(txn, &AssetUuid(id))?;
             if let Some(metadata) = value {
                 let metadata = metadata.get()?;
                 match metadata.get_source()? {
@@ -176,7 +176,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
                         // TODO run build pipeline
                         if let Some((hash, artifact)) =
                             ctx.file_source
-                                .regenerate_import_artifact(txn, &id, &mut scratch_buf)
+                                .regenerate_import_artifact(txn, &AssetUuid(id), &mut scratch_buf)
                         {
                             let capnp_artifact = build_serialized_asset_message(&artifact);
                             artifacts.push((id, hash, capnp_artifact));
@@ -252,7 +252,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut asset_paths = Vec::new();
         for id in params.get_assets()? {
             let asset_uuid = utils::uuid_from_slice(id.get_id()?)?;
-            let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
+            let path = ctx.file_source.get_asset_path(txn, &AssetUuid(asset_uuid));
             if let Some(path) = path {
                 asset_paths.push((id, path));
             }

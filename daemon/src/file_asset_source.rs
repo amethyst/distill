@@ -111,7 +111,7 @@ impl FileAssetSource {
 
             {
                 value.set_importer_version(metadata.importer_version);
-                value.set_importer_type(&metadata.importer_type);
+                value.set_importer_type(&metadata.importer_type.0);
                 value.set_importer_state_type(&metadata.importer_state.uuid());
                 let mut state_buf = Vec::new();
                 bincode::serialize_into(&mut state_buf, &metadata.importer_state)?;
@@ -125,7 +125,7 @@ impl FileAssetSource {
             let mut assets = value.reborrow().init_assets(metadata.assets.len() as u32);
 
             for (idx, asset) in metadata.assets.iter().enumerate() {
-                assets.reborrow().get(idx as u32).set_id(&asset.id);
+                assets.reborrow().get(idx as u32).set_id(&asset.id.0);
             }
 
             let assets_with_pipelines: Vec<&AssetMetadata> = metadata
@@ -142,12 +142,12 @@ impl FileAssetSource {
                     .reborrow()
                     .get(idx as u32)
                     .init_key()
-                    .set_id(&asset.id);
+                    .set_id(&asset.id.0);
                 build_pipelines
                     .reborrow()
                     .get(idx as u32)
                     .init_value()
-                    .set_id(&asset.build_pipeline.unwrap());
+                    .set_id(&asset.build_pipeline.unwrap().0);
             }
         }
 
@@ -288,7 +288,7 @@ impl FileAssetSource {
             for asset in to_remove {
                 debug!("remove asset {:?}", asset);
                 affected_assets.entry(asset).or_insert(None);
-                self.delete_asset_path(txn, &asset);
+                self.delete_asset_path(txn, &AssetUuid(asset));
             }
 
             self.delete_metadata(txn, path);
@@ -313,14 +313,14 @@ impl FileAssetSource {
                             let slice = asset.get_id().expect("capnp: Failed to read id");
                             utils::uuid_from_slice(slice).ok()
                         })
-                        .filter(|id| metadata.assets.iter().all(|a| a.id != *id))
+                        .filter(|id| metadata.assets.iter().all(|a| a.id.0 != *id))
                         .collect()
                 })
                 .unwrap_or_default();
 
             for asset in to_remove {
                 debug!("removing deleted asset {:?}", asset);
-                self.delete_asset_path(txn, &asset);
+                self.delete_asset_path(txn, &AssetUuid(asset));
                 affected_assets.entry(asset).or_insert(None);
             }
 
@@ -328,7 +328,7 @@ impl FileAssetSource {
                 .expect("Failed to put metadata");
 
             for asset in metadata.assets.iter() {
-                debug!("updating asset {:?}", uuid::Uuid::from_bytes(asset.id));
+                debug!("updating asset {:?}", uuid::Uuid::from_bytes(asset.id.0));
 
                 match self.get_asset_path(txn, &asset.id) {
                     Some(ref old_path) if old_path != path => {
@@ -343,12 +343,12 @@ impl FileAssetSource {
                     _ => self.put_asset_path(txn, &asset.id, path),
                 }
 
-                affected_assets.insert(asset.id, Some(asset));
+                affected_assets.insert(asset.id.0, Some(asset));
             }
         }
 
         for (asset, maybe_metadata) in affected_assets {
-            match self.get_asset_path(txn, &asset) {
+            match self.get_asset_path(txn, &AssetUuid(asset)) {
                 Some(ref path) => {
                     let asset_metadata =
                         maybe_metadata.expect("metadata exists in DB but not in hashmap");
@@ -356,7 +356,7 @@ impl FileAssetSource {
                         .update_asset(
                             txn,
                             utils::calc_asset_hash(
-                                &asset,
+                                &AssetUuid(asset),
                                 changes
                                     .get(path)
                                     .expect("path in affected set but no change in hashmap")
@@ -373,7 +373,7 @@ impl FileAssetSource {
                 }
                 None => {
                     self.hub
-                        .remove_asset(txn, &asset, change_batch)
+                        .remove_asset(txn, &AssetUuid(asset), change_batch)
                         .expect("hub: Failed to remove asset");
                 }
             }
@@ -779,8 +779,8 @@ impl<'a, 'b, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>
             metadata.assets = build_pipelines
                 .iter()
                 .map(|(id, pipeline)| AssetMetadata {
-                    id: *id,
-                    build_pipeline: Some(*pipeline),
+                    id: AssetUuid(*id),
+                    build_pipeline: Some(AssetUuid(*pipeline)),
                     ..Default::default()
                 })
                 .collect();

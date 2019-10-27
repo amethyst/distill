@@ -69,7 +69,7 @@ fn set_assetid_list(
     builder: &mut capnp::struct_list::Builder<'_, data::asset_uuid::Owned>,
 ) {
     for (idx, uuid) in asset_ids.iter().enumerate() {
-        builder.reborrow().get(idx as u32).set_id(uuid);
+        builder.reborrow().get(idx as u32).set_id(&uuid.0);
     }
 }
 
@@ -81,9 +81,9 @@ fn build_asset_metadata<K>(
     let mut value_builder = capnp::message::Builder::new_default();
     {
         let mut m = value_builder.init_root::<asset_metadata::Builder<'_>>();
-        m.reborrow().init_id().set_id(&metadata.id);
+        m.reborrow().init_id().set_id(&metadata.id.0);
         if let Some(pipeline) = metadata.build_pipeline {
-            m.reborrow().init_build_pipeline().set_id(&pipeline);
+            m.reborrow().init_build_pipeline().set_id(&pipeline.0);
         }
         set_assetid_list(
             &metadata.load_deps,
@@ -123,9 +123,9 @@ fn build_asset_metadata<K>(
                 .set_hash(artifact_hash);
         }
         m.reborrow()
-            .set_imported_asset_type(&metadata.import_asset_type);
+            .set_imported_asset_type(&metadata.import_asset_type.0);
         m.reborrow()
-            .set_built_asset_type(&metadata.import_asset_type);
+            .set_built_asset_type(&metadata.import_asset_type.0);
         m.reborrow().set_source(source);
     }
     value_builder
@@ -153,7 +153,7 @@ fn add_asset_changelog_entry(
         match change {
             ChangeEvent::ContentUpdate(evt) => {
                 let mut db_evt = value.init_content_update_event();
-                db_evt.reborrow().init_id().set_id(&evt.id);
+                db_evt.reborrow().init_id().set_id(&evt.id.0);
                 if let Some(ref import_hash) = evt.import_hash {
                     db_evt.reborrow().init_import_hash().set_hash(import_hash);
                 }
@@ -162,7 +162,7 @@ fn add_asset_changelog_entry(
                 }
             }
             ChangeEvent::Remove(id) => {
-                value.init_remove_event().init_id().set_id(id);
+                value.init_remove_event().init_id().set_id(&id.0);
             }
         }
     }
@@ -224,7 +224,7 @@ impl AssetHub {
         let mut value = value_builder.init_root::<data::asset_uuid_list::Builder<'_>>();
         let mut list = value.reborrow().init_list(dependees.len() as u32);
         for (idx, uuid) in dependees.iter().enumerate() {
-            list.reborrow().get(idx as u32).set_id(uuid);
+            list.reborrow().get(idx as u32).set_id(&uuid.0);
         }
         txn.put(self.tables.build_dep_reverse, &id, &value_builder)?;
         Ok(())
@@ -252,7 +252,7 @@ impl AssetHub {
                 maybe_id = Some(Vec::from(id.get_hash()?));
             }
             for dep in existing_metadata.get_build_deps()? {
-                let dep = utils::uuid_from_slice(dep.get_id()?)?;
+                let dep = AssetUuid(utils::uuid_from_slice(dep.get_id()?)?);
                 if !metadata.build_deps.contains(&dep) {
                     deps_to_delete.push(dep);
                 }
@@ -272,7 +272,8 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    dependees.push(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    dependees.push(uuid);
                 }
             }
             dependees.push(metadata.id);
@@ -282,7 +283,8 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    dependees.push(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    dependees.push(uuid);
                 }
             }
             dependees
@@ -313,7 +315,8 @@ impl AssetHub {
         if let Some(metadata) = metadata {
             let metadata = metadata.get()?;
             for dep in metadata.get_build_deps()? {
-                deps_to_delete.push(utils::uuid_from_slice(dep.get_id()?)?);
+                let uuid = AssetUuid(utils::uuid_from_slice(dep.get_id()?)?);
+                deps_to_delete.push(uuid);
             }
         }
         if txn.delete(self.tables.asset_metadata, &id)? {
@@ -323,7 +326,8 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    dependees.push(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    dependees.push(uuid);
                 }
             }
             dependees
@@ -361,7 +365,8 @@ impl AssetHub {
             if affected_assets.insert(id) {
                 if let Some(dependees) = self.get_build_deps_reverse(txn, &id)? {
                     for dependee in dependees.get()?.get_list()? {
-                        to_check.push_back(utils::uuid_from_slice(dependee.get_id()?)?);
+                        let uuid = AssetUuid(utils::uuid_from_slice(dependee.get_id()?)?);
+                        to_check.push_back(uuid);
                     }
                 }
             }
@@ -387,7 +392,8 @@ impl AssetHub {
                             dependency_graph.insert(asset, Vec::from(id.get_hash()?));
                         }
                         for dep in metadata.get_build_deps()? {
-                            to_check.push_back(utils::uuid_from_slice(dep.get_id()?)?);
+                            let uuid = AssetUuid(utils::uuid_from_slice(dep.get_id()?)?);
+                            to_check.push_back(uuid);
                         }
                     }
                 }

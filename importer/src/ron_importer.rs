@@ -40,7 +40,7 @@ impl Importer for RonImporter {
         state: &mut Self::State,
     ) -> crate::Result<ImporterValue> {
         if state.id.is_none() {
-            state.id = Some(*uuid::Uuid::new_v4().as_bytes());
+            state.id = Some(AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
         }
 
         let de: Box<dyn SerdeImportable> = from_reader(source)?;
