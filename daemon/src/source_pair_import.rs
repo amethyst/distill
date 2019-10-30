@@ -3,7 +3,7 @@ use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
 use crate::serialized_asset::SerializedAsset;
 use crate::watcher::file_metadata;
-use atelier_core::{utils, AssetUuid, AssetTypeId};
+use atelier_core::{utils, AssetRef, AssetTypeId, AssetUuid};
 use atelier_importer::{
     AssetMetadata, BoxedImporter, ImporterContext, ImporterContextHandle, SerdeObj,
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
@@ -37,12 +37,16 @@ pub(crate) struct SourcePair {
     pub meta: Option<FileState>,
 }
 
-pub(crate) type ImportedAssetVec = ImportedAsset<Vec<u8>>;
+pub(crate) struct PairImportResult {
+    pub importer_context_set: Option<ImporterContextHandleSet>,
+    pub assets: Vec<AssetImportResult>,
+}
 
-pub(crate) struct ImportedAsset<T: AsRef<[u8]>> {
-    pub asset_hash: u64,
+pub(crate) struct AssetImportResult {
     pub metadata: AssetMetadata,
-    pub asset: Option<SerializedAsset<T>>,
+    pub unresolved_load_refs: Vec<AssetRef>,
+    pub unresolved_build_refs: Vec<AssetRef>,
+    pub asset: Option<Box<dyn SerdeObj>>,
 }
 
 #[derive(Default)]
@@ -65,14 +69,29 @@ pub(crate) trait SourceMetadataCache {
     ) -> Result<()>;
 }
 
-struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);
+pub struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);
 impl ImporterContextHandleSet {
-    fn begin_serialize_asset(&mut self, id: AssetUuid) {
+    pub fn enter(&mut self) {
+        for handle in self.0.iter_mut() {
+            handle.enter();
+        }
+    }
+    pub fn exit(&mut self) {
+        for handle in self.0.iter_mut().rev() {
+            handle.exit();
+        }
+    }
+    pub fn resolve_ref(&mut self, asset_ref: &AssetRef, id: AssetUuid) {
+        for handle in self.0.iter_mut() {
+            handle.resolve_ref(asset_ref, id);
+        }
+    }
+    pub fn begin_serialize_asset(&mut self, id: AssetUuid) {
         for handle in self.0.iter_mut() {
             handle.begin_serialize_asset(id);
         }
     }
-    fn end_serialize_asset(&mut self, id: AssetUuid) -> HashSet<AssetUuid> {
+    pub fn end_serialize_asset(&mut self, id: AssetUuid) -> HashSet<AssetRef> {
         let mut deps = HashSet::new();
         for handle in self.0.iter_mut() {
             for dep in handle.end_serialize_asset(id) {
@@ -90,8 +109,8 @@ impl<'a> SourcePairImport<'a> {
             ..Default::default()
         }
     }
-    pub fn source_metadata(self) -> Option<SourceMetadata> {
-        self.source_metadata
+    pub fn source_metadata(&self) -> Option<&SourceMetadata> {
+        self.source_metadata.as_ref()
     }
     pub fn set_source_hash(&mut self, source_hash: u64) {
         self.source_hash = Some(source_hash);
@@ -208,7 +227,7 @@ impl<'a> SourcePairImport<'a> {
     fn enter_importer_contexts<F, R>(
         import_contexts: Option<&Vec<Box<dyn ImporterContext>>>,
         f: F,
-    ) -> R
+    ) -> (R, ImporterContextHandleSet)
     where
         F: FnOnce(&mut ImporterContextHandleSet) -> R,
     {
@@ -221,13 +240,36 @@ impl<'a> SourcePairImport<'a> {
         let mut handle_set = ImporterContextHandleSet(ctx_handles);
         let retval = f(&mut handle_set);
         // make sure to exit in reverse order of enter
-        for mut ctx_handle in handle_set.0.into_iter().rev() {
+        for ctx_handle in handle_set.0.iter_mut().rev() {
             ctx_handle.exit();
         }
-        retval
+        (retval, handle_set)
+    }
+    pub fn import_result_from_metadata(&mut self) -> Result<PairImportResult> {
+        let mut assets = Vec::new();
+        let source_metadata = self
+            .source_metadata()
+            .expect("cannot generate import result without source_metadata");
+        for asset in source_metadata.assets.iter() {
+            use std::iter::FromIterator;
+            let unresolved_load_refs: HashSet<AssetRef, std::collections::hash_map::RandomState> =
+                HashSet::from_iter(asset.load_deps.iter().filter(|r| !r.is_uuid()).cloned());
+            let unresolved_build_refs: HashSet<AssetRef, std::collections::hash_map::RandomState> =
+                HashSet::from_iter(asset.build_deps.iter().filter(|r| !r.is_uuid()).cloned());
+            assets.push(AssetImportResult {
+                metadata: asset.clone(),
+                unresolved_load_refs: unresolved_load_refs.into_iter().collect(),
+                unresolved_build_refs: unresolved_build_refs.into_iter().collect(),
+                asset: None,
+            });
+        }
+        Ok(PairImportResult {
+            importer_context_set: None,
+            assets,
+        })
     }
 
-    pub fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<Vec<ImportedAssetVec>> {
+    pub fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<PairImportResult> {
         let start_time = Local::now();
         let importer = self
             .importer
@@ -235,7 +277,10 @@ impl<'a> SourcePairImport<'a> {
 
         let metadata = std::mem::replace(&mut self.source_metadata, None)
             .expect("cannot import source file without source_metadata");
-        Self::enter_importer_contexts(self.importer_contexts, |ctx| {
+        let (asset_result, context_set): (
+            Result<Vec<AssetImportResult>>,
+            ImporterContextHandleSet,
+        ) = Self::enter_importer_contexts(self.importer_contexts, |ctx| {
             let imported = {
                 let mut f = fs::File::open(&self.source)?;
                 importer.import_boxed(&mut f, metadata.importer_options, metadata.importer_state)?
@@ -265,34 +310,53 @@ impl<'a> SourcePairImport<'a> {
                 ));
                 let asset_data = &asset.asset_data;
                 ctx.begin_serialize_asset(asset.id);
-                let serialized_asset = SerializedAsset::create(
-                    asset_data.as_ref(),
-                    CompressionType::None,
-                    scratch_buf,
-                )?;
-                let mut deps = ctx.end_serialize_asset(asset.id);
+                // We need to serialize each asset to gather references.
+                // TODO write a dummy serializer that doesn't output anything to optimize this
+                SerializedAsset::create(asset_data.as_ref(), CompressionType::None, scratch_buf)?;
+                let serde_refs = ctx.end_serialize_asset(asset.id);
                 let build_pipeline = metadata
                     .assets
                     .iter()
                     .find(|a| a.id == asset.id)
                     .and_then(|m| m.build_pipeline);
-                for load_dep in asset.load_deps {
-                    deps.insert(load_dep);
-                }
-                imported_assets.push({
-                    ImportedAsset {
-                        asset_hash: utils::calc_asset_hash(&asset.id, import_hash),
-                        metadata: AssetMetadata {
-                            id: asset.id,
-                            search_tags: asset.search_tags,
-                            build_deps: asset.build_deps,
-                            load_deps: deps.into_iter().collect(),
-                            instantiate_deps: asset.instantiate_deps,
-                            build_pipeline,
-                            import_asset_type: AssetTypeId(asset_data.uuid()),
-                        },
-                        asset: Some(serialized_asset),
+                // Add the collected serialization dependencies to the build and load dependencies
+                let mut unresolved_load_refs = Vec::new();
+                let mut load_deps = HashSet::new();
+                for load_dep in serde_refs.iter().chain(asset.load_deps.iter()) {
+                    // check insert return value to prevent duplicates in unresolved_load_refs
+                    if load_deps.insert(load_dep.clone()) {
+                        if let AssetRef::Path(path) = load_dep {
+                            unresolved_load_refs.push(AssetRef::Path(path.clone()));
+                        }
                     }
+                }
+                let mut unresolved_build_refs = Vec::new();
+                let mut build_deps = HashSet::new();
+                for build_dep in serde_refs
+                    .into_iter()
+                    .chain(asset.build_deps.iter().cloned())
+                {
+                    // check insert return value to prevent duplicates in unresolved_build_refs
+                    if build_deps.insert(build_dep.clone()) {
+                        if let AssetRef::Path(path) = build_dep {
+                            unresolved_build_refs.push(AssetRef::Path(path));
+                        }
+                    }
+                }
+                asset.load_deps = load_deps.into_iter().collect();
+                asset.build_deps = build_deps.into_iter().collect();
+                imported_assets.push(AssetImportResult {
+                    metadata: AssetMetadata {
+                        id: asset.id,
+                        search_tags: asset.search_tags,
+                        build_deps: asset.build_deps.clone(),
+                        load_deps: asset.load_deps.clone(),
+                        build_pipeline: asset.build_pipeline,
+                        asset_type: asset.asset_data.uuid(),
+                    },
+                    unresolved_load_refs,
+                    unresolved_build_refs,
+                    asset: Some(asset.asset_data),
                 });
                 debug!(
                     "Import success {} read {} bytes",
@@ -314,6 +378,11 @@ impl<'a> SourcePairImport<'a> {
                 assets: imported_assets.iter().map(|m| m.metadata.clone()).collect(),
             });
             Ok(imported_assets)
+        });
+        let assets = asset_result?;
+        Ok(PairImportResult {
+            importer_context_set: Some(context_set),
+            assets,
         })
     }
 
@@ -338,7 +407,7 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
     importer_contexts: &'a Vec<Box<dyn ImporterContext>>,
     pair: &HashedSourcePair,
     scratch_buf: &mut Vec<u8>,
-) -> Result<Option<(SourcePairImport<'a>, Option<Vec<ImportedAssetVec>>)>> {
+) -> Result<Option<(SourcePairImport<'a>, Option<PairImportResult>)>> {
     let original_pair = pair.clone();
     let mut pair = pair.clone();
     // When source or meta gets deleted, the FileState has a `state` of `Deleted`.
@@ -410,7 +479,8 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
                     Ok(Some((import, Some(imported_assets))))
                 } else {
                     debug!("does not need source import {:?}", import.source);
-                    Ok(Some((import, None)))
+                    let imported_assets = import.import_result_from_metadata()?;
+                    Ok(Some((import, Some(imported_assets))))
                 }
             }
         }
@@ -435,7 +505,9 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
                     import.write_metadata()?;
                     Ok(Some((import, Some(imported_assets))))
                 } else {
-                    Ok(Some((import, None)))
+                    let imported_assets = import.import_result_from_metadata()?;
+                    import.write_metadata()?;
+                    Ok(Some((import, Some(imported_assets))))
                 }
             }
         }

@@ -51,7 +51,6 @@ impl Importer for RonImporter {
                 search_tags: Vec::new(),
                 build_deps: Vec::new(),
                 load_deps: Vec::new(),
-                instantiate_deps: Vec::new(),
                 asset_data: de.into_serde_obj(),
                 build_pipeline: None,
             }],

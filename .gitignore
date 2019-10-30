@@ -3,3 +3,4 @@ target
 /.assets_db
 .vscode
 */tests/assets_db
+Cargo.lock

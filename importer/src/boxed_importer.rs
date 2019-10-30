@@ -1,11 +1,8 @@
 use crate::{error::Result, Importer, ImporterValue, SerdeObj};
-use atelier_core::{AssetTypeId, AssetUuid};
+use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
 use ron;
 use serde::{Deserialize, Serialize};
-use std::{
-    io::Read,
-    collections::HashSet,
-};
+use std::{collections::HashSet, io::Read};
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Serializable metadata for an asset.
@@ -17,16 +14,13 @@ pub struct AssetMetadata {
     /// Search tags are used by asset tooling to search for the imported asset
     pub search_tags: Vec<(String, Option<String>)>,
     /// Build dependencies will be included in the Builder arguments when building the asset
-    pub build_deps: Vec<AssetUuid>,
+    pub build_deps: Vec<AssetRef>,
     /// Load dependencies are guaranteed to load before this asset by the Loader
-    pub load_deps: Vec<AssetUuid>,
-    /// Instantiate dependencies will be instantiated along with this asset when
-    /// the asset is instantiated into a world. Only applies for Prefabs.
-    pub instantiate_deps: Vec<AssetUuid>,
+    pub load_deps: Vec<AssetRef>,
     /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset
     pub build_pipeline: Option<AssetUuid>,
     /// The UUID of the asset's Rust type
-    pub import_asset_type: AssetTypeId,
+    pub asset_type: AssetTypeId,
 }
 /// Version of the SourceMetadata struct.
 /// Used for forward compatibility to enable changing the .meta file format
@@ -34,7 +28,7 @@ pub const SOURCEMETADATA_VERSION: u32 = 1;
 
 /// SourceMetadata is the in-memory representation of the .meta file for a (source, .meta) pair.
 #[derive(Serialize, Deserialize)]
-pub struct SourceMetadata<Options, State> {
+pub struct SourceMetadata<Options: 'static, State: 'static> {
     /// Metadata struct version
     pub version: u32,
     /// Hash of the source file + importer options + importer state when last importing source file.
@@ -93,9 +87,17 @@ where
         state: Box<dyn SerdeObj>,
     ) -> Result<BoxedImporterValue> {
         let s = state.downcast::<S>();
-        let mut s = if let Ok(s) = s { s } else { panic!("Failed to downcast Importer::State"); };
+        let mut s = if let Ok(s) = s {
+            s
+        } else {
+            panic!("Failed to downcast Importer::State");
+        };
         let o = options.downcast::<O>();
-        let o = if let Ok(o) = o { *o } else { panic!("Failed to downcast Importer::Options"); };
+        let o = if let Ok(o) = o {
+            *o
+        } else {
+            panic!("Failed to downcast Importer::Options");
+        };
         let result = self.import(source, o.clone(), &mut s)?;
         Ok(BoxedImporterValue {
             value: result,
@@ -153,9 +155,12 @@ pub fn get_source_importers(
 
 pub trait ImporterContextHandle {
     fn exit(&mut self);
+    fn enter(&mut self);
     fn begin_serialize_asset(&mut self, asset: AssetUuid);
     /// Returns any registered dependencies
-    fn end_serialize_asset(&mut self, asset: AssetUuid) -> HashSet<AssetUuid>;
+    fn end_serialize_asset(&mut self, asset: AssetUuid) -> HashSet<AssetRef>;
+    /// Resolves an AssetRef to a specific AssetUuid
+    fn resolve_ref(&mut self, asset_ref: &AssetRef, asset: AssetUuid);
 }
 
 pub trait ImporterContext: 'static + Send + Sync {

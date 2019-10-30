@@ -10,7 +10,7 @@ pub use crate::ron_importer::{RonImporter, RonImporterOptions, RonImporterState}
 #[cfg(feature = "serde_importers")]
 pub use crate::serde_obj::typetag;
 
-use atelier_core::AssetUuid;
+use atelier_core::{AssetRef, AssetUuid};
 use serde::Serialize;
 use std::io::Read;
 
@@ -65,12 +65,9 @@ pub struct ImportedAsset {
     /// Search tags are used by asset tooling to search for the imported asset.
     pub search_tags: Vec<(String, Option<String>)>,
     /// Build dependencies will be included in the Builder arguments when building the asset.
-    pub build_deps: Vec<AssetUuid>,
-    /// Load dependencies are guaranteed to load before this asset by the Loader.
-    pub load_deps: Vec<AssetUuid>,
-    /// Instantiate dependencies will be instantiated along with this asset when
-    /// the asset is instantiated into a world. Only applies for Prefabs.
-    pub instantiate_deps: Vec<AssetUuid>,
+    pub build_deps: Vec<AssetRef>,
+    /// Load dependencies are guaranteed to load before this asset.
+    pub load_deps: Vec<AssetRef>,
     /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset.
     pub build_pipeline: Option<AssetUuid>,
     /// The actual asset data used by tools and Builder.

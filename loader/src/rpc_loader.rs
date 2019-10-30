@@ -5,9 +5,9 @@ use crate::{
     },
     rpc_state::{ConnectionState, ResponsePromise, RpcState},
 };
-use atelier_core::{utils::make_array, AssetTypeId, AssetUuid};
+use atelier_core::{utils::make_array, AssetRef, AssetTypeId, AssetUuid};
 use atelier_schema::{
-    data::{artifact, asset_metadata},
+    data::{artifact, asset_metadata, asset_ref},
     service::asset_hub::{
         snapshot::get_asset_metadata_with_dependencies_results::Owned as GetAssetMetadataWithDependenciesResults,
         snapshot::get_build_artifacts_results::Owned as GetBuildArtifactsResults,
@@ -274,8 +274,8 @@ impl LoaderInfoProvider
         &HandleAllocator,
     )
 {
-    fn get_load_handle(&self, id: AssetUuid) -> Option<LoadHandle> {
-        self.0.get(&id).map(|l| *l)
+    fn get_load_handle(&self, id: &AssetRef) -> Option<LoadHandle> {
+        self.0.get(id.expect_uuid()).map(|l| *l)
     }
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
         self.1.get(&load).map(|l| l.asset_id)
@@ -312,7 +312,16 @@ fn update_asset_metadata(
 ) -> Result<(), capnp::Error> {
     let mut load_deps = Vec::new();
     for dep in reader.get_load_deps()? {
-        load_deps.push(make_array(dep.get_id()?));
+        let uuid = match dep.which()? {
+            asset_ref::Uuid(uuid) => make_array(uuid.and_then(|id| id.get_id())?),
+            _ => {
+                return Err(capnp::Error::failed(
+                    "capnp: unexpected type when reading load_dep in asset_metadata".to_string(),
+                ))
+            }
+        };
+
+        load_deps.push(uuid);
     }
     metadata.insert(*uuid, AssetMetadata { load_deps });
     Ok(())
@@ -1041,8 +1050,8 @@ mod tests {
             let load_deps = parsed_asset_data
                 .lines()
                 .filter_map(|line| Uuid::from_str(line).ok())
-                .map(|uuid| AssetUuid(*uuid.as_bytes()))
-                .collect::<Vec<AssetUuid>>();
+                .map(|uuid| AssetRef::Uuid(*uuid.as_bytes()))
+                .collect::<Vec<AssetRef>>();
 
             Ok(ImporterValue {
                 assets: vec![ImportedAsset {
@@ -1050,7 +1059,6 @@ mod tests {
                     search_tags: Vec::new(),
                     build_deps: Vec::new(),
                     load_deps,
-                    instantiate_deps: Vec::new(),
                     asset_data: Box::new(parsed_asset_data),
                     build_pipeline: None,
                 }],
@@ -1090,9 +1098,11 @@ mod tests {
         let mut loader = RpcLoader::new(daemon_address).expect("Failed to construct `RpcLoader`.");
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset.txt"
-            AssetUuid(*uuid::Uuid::parse_str("60352042-616f-460e-abd2-546195c060fe")
-                .unwrap()
-                .as_bytes()),
+            AssetUuid(
+                *uuid::Uuid::parse_str("60352042-616f-460e-abd2-546195c060fe")
+                    .unwrap()
+                    .as_bytes(),
+            ),
         );
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
@@ -1114,9 +1124,11 @@ mod tests {
         let mut loader = RpcLoader::new(daemon_address).expect("Failed to construct `RpcLoader`.");
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset_a.txt"
-            AssetUuid(*uuid::Uuid::parse_str("a5ce4da0-675e-4460-be02-c8b145c2ee49")
-                .unwrap()
-                .as_bytes()),
+            AssetUuid(
+                *uuid::Uuid::parse_str("a5ce4da0-675e-4460-be02-c8b145c2ee49")
+                    .unwrap()
+                    .as_bytes(),
+            ),
         );
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),

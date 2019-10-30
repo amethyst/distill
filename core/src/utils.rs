@@ -36,9 +36,16 @@ pub fn to_meta_path(p: &PathBuf) -> PathBuf {
     ))
 }
 
-pub fn calc_asset_hash(id: &AssetUuid, import_hash: u64) -> u64 {
+pub fn calc_asset_hash<T>(id: &AssetUuid, import_hash: u64, dep_list: T) -> u64
+where
+    T: IntoIterator,
+    T::Item: Hash,
+{
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
     import_hash.hash(&mut hasher);
     id.hash(&mut hasher);
+    for dep in dep_list {
+        dep.hash(&mut hasher);
+    }
     hasher.finish()
 }

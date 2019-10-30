@@ -7,6 +7,9 @@ edition = "2018"
 atelier-core = { path = "../core" }
 atelier-schema = { path = "../schema" }
 atelier-importer = { path = "../importer" }
+dunce = "1.0"
+path-clean = "0.1"
+path-slash = "0.1.1"
 capnp = { version = "0.10.0" }
 capnp-rpc = "0.10.0"
 notify = "4.0.0"
@@ -28,10 +31,8 @@ meowhash = "0.1.2"
 scoped_threadpool = "0.1.9"
 num_cpus = "1.0"
 chrono = "0.4.7"
-parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
 uuid = "0.7"
 smush = { version = "0.1", default-features = false, features = [ "lz4_support" ] }
-amethyst = { git = "https://github.com/kabergstrom/amethyst.git", branch = "new-asset-system", optional = true, features = ["empty", "experimental-assets"] }
 structopt = "0.2"
 
 [dev-dependencies]
@@ -39,7 +40,3 @@ tempfile = "3"
 
 [profile.release]
 debug = true
-
-[features]
-default = ["amethyst-importers"]
-amethyst-importers = ["amethyst"]

@@ -8,7 +8,7 @@ edition = "2018"
 type-uuid = "0.1"
 crossbeam-channel = "0.3"
 
-atelier-core = { path = "../core" }
+atelier-core = { path = "../core", features = ["serde-1"] }
 atelier-schema = { path = "../schema", optional = true }
 tokio = { version = "0.1", optional = true }
 tokio-current-thread = { version = "0.1", optional = true }
