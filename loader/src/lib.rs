@@ -9,7 +9,7 @@ pub mod rpc_loader;
 mod rpc_state;
 
 pub use crate::loader::{
-    AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader, LoaderInfoProvider,
+    AssetLoadOp, AssetStorage, LoadHandle, LoadInfo, LoadStatus, Loader, LoaderInfoProvider,
 };
 pub use atelier_core::{asset_uuid, AssetRef, AssetTypeId, AssetUuid};
 pub use type_uuid::{TypeUuid, TypeUuidDynamic};
