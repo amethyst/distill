@@ -920,36 +920,59 @@ impl FileAssetSource {
         let changed_paths: Vec<PathBuf> = {
             let txn = self.db.ro_txn().expect("db: Failed to open ro txn");
 
-            self.iter_metadata(&txn)
-                .filter_map(|(path, metadata)| {
-                    let metadata = metadata.get().expect("capnp: Failed to get metadata");
+            self.tracker
+                .read_all_files(&txn)
+                .iter()
+                .filter_map(|file_state| {
+                    let metadata = self.get_metadata(&txn, &file_state.path);
                     let changed = self
                         .importers
-                        .get_by_path(&path)
+                        .get_by_path(&file_state.path)
                         .map(|importer| {
-                            let importer_version = metadata.get_importer_version();
+                            match &metadata {
+                                None => {
+                                    // there's no existing import metadata, but we have an importer,
+                                    // so we should process this file - it probably just got a new importer
+                                    return true;
+                                }
+                                Some(metadata) => {
+                                    let metadata =
+                                        metadata.get().expect("capnp: Failed to get metadata");
+                                    let importer_version = metadata.get_importer_version();
 
-                            let options_type = metadata
-                                .get_importer_options_type()
-                                .expect("capnp: Failed to get importer options type");
+                                    let options_type = metadata
+                                        .get_importer_options_type()
+                                        .expect("capnp: Failed to get importer options type");
 
-                            let state_type = metadata
-                                .get_importer_state_type()
-                                .expect("capnp: Failed to get importer state type");
+                                    let state_type = metadata
+                                        .get_importer_state_type()
+                                        .expect("capnp: Failed to get importer state type");
 
-                            let importer_type = metadata
-                                .get_importer_type()
-                                .expect("capnp: Failed to get importer type");
+                                    let importer_type = metadata
+                                        .get_importer_type()
+                                        .expect("capnp: Failed to get importer type");
 
-                            importer_version != importer.version()
-                                || options_type != importer.default_options().uuid()
-                                || state_type != importer.default_state().uuid()
-                                || importer_type != importer.uuid()
+                                    importer_version != importer.version()
+                                        || options_type != importer.default_options().uuid()
+                                        || state_type != importer.default_state().uuid()
+                                        || importer_type != importer.uuid()
+                                }
+                            }
                         })
-                        .unwrap_or(false);
+                        .unwrap_or_else(|| {
+                            if let None = metadata {
+                                // there's no importer, and no existing metadata.
+                                // no need to process it
+                                false
+                            } else {
+                                // there's no importer, but we have metadata.
+                                // we should process it, as its importer could've been removed
+                                true
+                            }
+                        });
 
                     if changed {
-                        Some(path)
+                        Some(file_state.path.clone())
                     } else {
                         None
                     }

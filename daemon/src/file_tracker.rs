@@ -340,7 +340,17 @@ impl FileTracker {
     {
         let watch_dirs: Vec<PathBuf> = to_watch
             .into_iter()
-            .map(|s| watcher::canonicalize_path(&PathBuf::from(s)))
+            .map(|s| {
+                let path = PathBuf::from(s);
+                let path = if path.is_relative() {
+                    std::env::current_dir()
+                        .expect("failed to get current dir")
+                        .join(path)
+                } else {
+                    path
+                };
+                watcher::canonicalize_path(&path)
+            })
             .collect();
 
         let source_files = db

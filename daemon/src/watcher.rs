@@ -78,7 +78,13 @@ impl DirWatcher {
             asset_tx: chan,
         };
         for path in paths {
-            let path = canonicalize_path(&PathBuf::from(path));
+            let path = PathBuf::from(path);
+            let path = if path.is_relative() {
+                std::env::current_dir()?.join(path)
+            } else {
+                path
+            };
+            let path = canonicalize_path(&path);
             asset_watcher.watch(&path)?;
         }
         Ok(asset_watcher)

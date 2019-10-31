@@ -12,7 +12,10 @@ mod serialized_asset;
 mod source_pair_import;
 mod watcher;
 
-pub use crate::{daemon::AssetDaemon, error::Result};
+pub use crate::{
+    daemon::AssetDaemon,
+    error::{Error, Result},
+};
 
 #[cfg(debug)]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Debug;

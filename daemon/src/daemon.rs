@@ -16,11 +16,11 @@ use std::{
 };
 
 #[derive(Default)]
-pub(crate) struct ImporterMap(HashMap<&'static str, Box<dyn BoxedImporter>>);
+pub(crate) struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
-    pub fn insert(&mut self, ext: &'static str, importer: Box<dyn BoxedImporter>) {
-        self.0.insert(ext, importer);
+    pub fn insert(&mut self, ext: &str, importer: Box<dyn BoxedImporter>) {
+        self.0.insert(ext.to_lowercase(), importer);
     }
 
     pub fn get_by_path<'a>(&'a self, path: &PathBuf) -> Option<&'a dyn BoxedImporter> {

@@ -501,10 +501,12 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
             } else {
                 import.generate_source_metadata(metadata_cache);
                 if import.needs_source_import(scratch_buf)? {
+                    debug!("running importer for source file..");
                     let imported_assets = import.import_source(scratch_buf)?;
                     import.write_metadata()?;
                     Ok(Some((import, Some(imported_assets))))
                 } else {
+                    debug!("using cached metadata for source file");
                     let imported_assets = import.import_result_from_metadata()?;
                     import.write_metadata()?;
                     Ok(Some((import, Some(imported_assets))))
