@@ -755,7 +755,7 @@ impl FileAssetSource {
             }
         }
 
-        // TODO update asset hashes for the reverse path refs of all changes
+        // update asset hashes for the reverse path refs of all changes
         for (path, _) in changes.iter() {
             let reverse_path_refs = self.get_path_refs(txn, path);
             for path_ref_source in reverse_path_refs.iter() {
