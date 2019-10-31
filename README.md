@@ -41,16 +41,15 @@ Compilation dependencies:
 - [capnpc in PATH](https://capnproto.org/install.html)
 
 To run:
-- Create an `assets` folder in the root of the repository
+- `cd daemon && cargo run --example daemon`
 - Put some images (png, jpg, tga) in the `assets` folder
-- `cargo run --release`
 
 Enjoy glorious .meta files!
 
 Check the metadata using the CLI:
 - `cd cli`
 - Run the shell: `cargo run`
-- `help` to list all available commands. Try `show_all` to get UUIDs of all indexed assets
+- `help` to list all available commands. Try `show_all` to get UUIDs of all indexed assets, then `get` a returned uuid
 
 # Get involved
 This project's first user will be [Amethyst](https://github.com/amethyst/amethyst) and casual communication around development happens in the #assets channel of the [Amethyst Discord server](https://discord.gg/amethyst). Feel free to drop by for a chat, contributions or questions are very welcome! 
