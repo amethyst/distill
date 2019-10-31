@@ -5,12 +5,14 @@ edition = "2018"
 
 [features]
 serde-1 = ["serde"]
+importer_context = ["inventory"]
 
 [dependencies]
 uuid = "0.7"
 proc-macro-hack = "0.5"
 serde = { version = "1.0", optional = true, features = ["derive"] }
 asset-uuid = { path = "./asset-uuid" }
+inventory = { version = "0.1", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0"

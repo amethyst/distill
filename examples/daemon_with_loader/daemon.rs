@@ -1,13 +1,10 @@
 use std::{
-    io::Read,
     net::{AddrParseError, SocketAddr},
     path::PathBuf,
 };
 
-use atelier_core::AssetUuid;
 use atelier_daemon::AssetDaemon;
 use structopt::StructOpt;
-use type_uuid::*;
 
 /// Parameters to the asset daemon.
 ///

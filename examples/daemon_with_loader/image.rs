@@ -1,15 +1,9 @@
-use std::{
-    io::Read,
-    net::{AddrParseError, SocketAddr},
-    path::PathBuf,
-};
+use std::io::Read;
 
 use atelier_core::AssetUuid;
-use atelier_daemon::AssetDaemon;
 use atelier_importer::{Error, ImportedAsset, Importer, ImporterValue, Result};
 use image2::{color, ImageBuf};
 use serde::{Deserialize, Serialize};
-use structopt::StructOpt;
 use type_uuid::*;
 
 #[derive(TypeUuid, Serialize, Deserialize)]

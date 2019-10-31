@@ -1,6 +1,7 @@
 #![warn(rust_2018_idioms, rust_2018_compatibility)]
 
 mod asset_data;
+pub mod handle;
 mod loader;
 #[cfg(feature = "rpc_loader")]
 pub mod rpc_loader;

@@ -8,6 +8,8 @@ use std::{cmp, fmt};
 
 #[proc_macro_hack]
 pub use asset_uuid::asset_uuid;
+#[cfg(feature = "importer_context")]
+pub mod importer_context;
 pub mod utils;
 
 /// A universally unique identifier for an asset.
