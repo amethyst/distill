@@ -10,5 +10,5 @@ mod rpc_state;
 pub use crate::loader::{
     AssetLoadOp, AssetStorage, LoadHandle, LoadStatus, Loader, LoaderInfoProvider,
 };
-pub use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
+pub use atelier_core::{asset_uuid, AssetRef, AssetTypeId, AssetUuid};
 pub use type_uuid::{TypeUuid, TypeUuidDynamic};

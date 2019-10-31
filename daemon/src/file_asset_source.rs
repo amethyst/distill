@@ -134,7 +134,7 @@ impl FileAssetSource {
         metadata: &SourceMetadata,
     ) -> Result<Vec<AssetUuid>> {
         let mut affected_assets = Vec::new();
-        let (assets_to_remove, path_refs_to_remove): (Vec<uuid::Bytes>, Vec<PathBuf>) = self
+        let (assets_to_remove, path_refs_to_remove): (Vec<AssetUuid>, Vec<PathBuf>) = self
             .get_metadata(txn, path)
             .map(|existing| {
                 let existing = existing.get().expect("capnp: Failed to read metadata");
@@ -174,7 +174,7 @@ impl FileAssetSource {
             affected_assets.push(asset);
         }
         for asset in metadata.assets.iter() {
-            debug!("updating asset {:?}", uuid::Uuid::from_bytes(asset.id));
+            debug!("updating asset {:?}", asset.id);
 
             match self.get_asset_path(txn, &asset.id) {
                 Some(ref old_path) if old_path != path => {
@@ -311,7 +311,7 @@ impl FileAssetSource {
     }
 
     fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Vec<AssetUuid> {
-        let to_remove: Vec<uuid::Bytes> = self
+        let to_remove: Vec<AssetUuid> = self
             .get_metadata(txn, path)
             .map(|existing| {
                 let metadata = existing.get().expect("capnp: Failed to read metadata");
@@ -369,8 +369,9 @@ impl FileAssetSource {
                     assets.into_iter().nth(0)
                 } else {
                     log::error!(
-                        "Failed to resolve path {:?}: could not find metadata",
-                        canon_path
+                        "Failed to resolve path {:?} at {:?}: could not find metadata for file",
+                        canon_path.to_string_lossy(),
+                        source_path.to_string_lossy(),
                     );
                     None
                 }
@@ -748,7 +749,7 @@ impl FileAssetSource {
                 }
                 None => {
                     self.hub
-                        .remove_asset(txn, &AssetUuid(asset), change_batch)
+                        .remove_asset(txn, &asset, change_batch)
                         .expect("hub: Failed to remove asset");
                 }
             }
@@ -757,9 +758,9 @@ impl FileAssetSource {
         // TODO update asset hashes for the reverse path refs of all changes
         for (path, _) in changes.iter() {
             let reverse_path_refs = self.get_path_refs(txn, path);
-            for path_ref in reverse_path_refs.iter() {
+            for path_ref_source in reverse_path_refs.iter() {
                 // First, check if the path has already been processed
-                if changes.contains_key(path_ref) {
+                if changes.contains_key(path_ref_source) {
                     continue;
                 }
                 // Then we look in the database for assets affected by the change
@@ -768,9 +769,9 @@ impl FileAssetSource {
                     file_asset_source: &self,
                     _marker: std::marker::PhantomData,
                 };
-                let mut import = SourcePairImport::new(path_ref.clone());
+                let mut import = SourcePairImport::new(path_ref_source.clone());
                 if !import.set_importer_from_map(&self.importers) {
-                    log::warn!("failed to set importer from map for path {:?} when updating path ref dependencies", path_ref);
+                    log::warn!("failed to set importer from map for path {:?} when updating path ref dependencies", path_ref_source);
                 } else {
                     import.generate_source_metadata(&cache);
                     let import_hash = import
@@ -788,7 +789,7 @@ impl FileAssetSource {
                                 };
                                 self.resolve_metadata_asset_refs(
                                     txn,
-                                    path,
+                                    path_ref_source,
                                     &result_metadata,
                                     &mut asset.metadata,
                                 );

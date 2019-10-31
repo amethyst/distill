@@ -1050,7 +1050,7 @@ mod tests {
             let load_deps = parsed_asset_data
                 .lines()
                 .filter_map(|line| Uuid::from_str(line).ok())
-                .map(|uuid| AssetRef::Uuid(*uuid.as_bytes()))
+                .map(|uuid| AssetRef::Uuid(AssetUuid(*uuid.as_bytes())))
                 .collect::<Vec<AssetRef>>();
 
             Ok(ImporterValue {

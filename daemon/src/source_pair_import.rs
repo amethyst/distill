@@ -352,7 +352,7 @@ impl<'a> SourcePairImport<'a> {
                         build_deps: asset.build_deps.clone(),
                         load_deps: asset.load_deps.clone(),
                         build_pipeline: asset.build_pipeline,
-                        asset_type: asset.asset_data.uuid(),
+                        asset_type: AssetTypeId(asset.asset_data.uuid()),
                     },
                     unresolved_load_refs,
                     unresolved_build_refs,

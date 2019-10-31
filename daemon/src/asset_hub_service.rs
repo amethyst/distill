@@ -6,7 +6,7 @@ use crate::{
     file_tracker::FileTracker,
     serialized_asset::SerializedAsset,
 };
-use atelier_core::{utils, AssetUuid};
+use atelier_core::utils;
 use atelier_schema::{
     data::{asset_change_log_entry, asset_metadata, serialized_asset, AssetSource},
     service::asset_hub,
@@ -191,7 +191,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
             .init_artifacts(artifacts.len() as u32);
         for (idx, (id, hash, artifact)) in artifacts.iter().enumerate() {
             let mut out = artifact_results.reborrow().get(idx as u32);
-            out.reborrow().init_asset_id().set_id(id);
+            out.reborrow().init_asset_id().set_id(&id.0);
             out.reborrow().set_key(&hash.to_le_bytes());
             out.reborrow()
                 .set_data(artifact.get_root_as_reader::<serialized_asset::Reader<'_>>()?)?;
@@ -250,7 +250,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut asset_paths = Vec::new();
         for id in params.get_assets()? {
             let asset_uuid = utils::uuid_from_slice(id.get_id()?)?;
-            let path = ctx.file_source.get_asset_path(txn, &AssetUuid(asset_uuid));
+            let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
             if let Some(path) = path {
                 asset_paths.push((id, path));
             }

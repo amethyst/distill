@@ -81,7 +81,7 @@ fn set_assetref_list(
                 );
             }
             AssetRef::Uuid(uuid) => {
-                builder.init_uuid().set_id(uuid);
+                builder.init_uuid().set_id(&uuid.0);
             }
         }
     }
@@ -175,9 +175,9 @@ pub(crate) fn build_asset_metadata(
     artifact_hash: Option<&[u8]>,
     source: data::AssetSource,
 ) {
-    m.reborrow().init_id().set_id(&metadata.id);
+    m.reborrow().init_id().set_id(&metadata.id.0);
     if let Some(pipeline) = metadata.build_pipeline {
-        m.reborrow().init_build_pipeline().set_id(&pipeline);
+        m.reborrow().init_build_pipeline().set_id(&pipeline.0);
     }
     set_assetref_list(
         &metadata.load_deps,
@@ -210,7 +210,7 @@ pub(crate) fn build_asset_metadata(
             .init_id()
             .set_hash(artifact_hash);
     }
-    m.reborrow().set_asset_type(&metadata.asset_type);
+    m.reborrow().set_asset_type(&metadata.asset_type.0);
     m.reborrow().set_source(source);
 }
 
@@ -373,7 +373,7 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, dep.expect_uuid())? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
                     dependees.push(uuid);
                 }
             }
@@ -384,7 +384,7 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
                     dependees.push(uuid);
                 }
             }
@@ -426,7 +426,7 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
                     dependees.push(uuid);
                 }
             }
@@ -465,7 +465,7 @@ impl AssetHub {
             if affected_assets.insert(id) {
                 if let Some(dependees) = self.get_build_deps_reverse(txn, &id)? {
                     for dependee in dependees.get()?.get_list()? {
-                        let uuid = AssetUuid(utils::uuid_from_slice(dependee.get_id()?)?);
+                        let uuid = utils::uuid_from_slice(dependee.get_id()?)?;
                         to_check.push_back(uuid);
                     }
                 }

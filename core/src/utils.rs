@@ -16,7 +16,7 @@ where
     a
 }
 
-pub fn uuid_from_slice(slice: &[u8]) -> Result<uuid::Bytes, BytesError> {
+pub fn uuid_from_slice(slice: &[u8]) -> Result<AssetUuid, BytesError> {
     const BYTES_LEN: usize = 16;
 
     let len = slice.len();
@@ -27,7 +27,7 @@ pub fn uuid_from_slice(slice: &[u8]) -> Result<uuid::Bytes, BytesError> {
 
     let mut bytes: uuid::Bytes = [0; 16];
     bytes.copy_from_slice(slice);
-    Ok(bytes)
+    Ok(AssetUuid(bytes))
 }
 
 pub fn to_meta_path(p: &PathBuf) -> PathBuf {
