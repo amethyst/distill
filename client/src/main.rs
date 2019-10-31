@@ -1,3 +1,4 @@
+// this is just a test crate at the moment
 use atelier_schema::service::asset_hub;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
@@ -12,7 +13,6 @@ use std::{
 };
 use tokio::prelude::*;
 use tokio::runtime::current_thread::Runtime;
-
 fn endpoint() -> String {
     if cfg!(windows) {
         r"\\.\pipe\atelier-assets".to_string()

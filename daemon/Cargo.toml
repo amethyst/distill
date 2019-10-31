@@ -36,7 +36,3 @@ smush = { version = "0.1", default-features = false, features = [ "lz4_support" 
 
 [dev-dependencies]
 tempfile = "3"
-type-uuid = "0.1"
-structopt = "0.2"
-image2 = { version = "0.11", features = [ "ser" ], git = "https://github.com/kabergstrom/image2-rs.git", branch = "error_fixes" }
-inventory = "0.1"

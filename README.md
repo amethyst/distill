@@ -41,10 +41,10 @@ Compilation dependencies:
 - [capnpc in PATH](https://capnproto.org/install.html)
 
 To run:
-- `cd daemon && cargo run --example daemon`
-- Put some images (png, jpg, tga) in the `assets` folder
+- `cargo run --example daemon_with_loader`
+- Try to put some images (png, jpg, tga) in the `examples/daemon_with_loader/assets` folder
 
-Enjoy glorious .meta files!
+Enjoy glorious .meta files! 
 
 Check the metadata using the CLI:
 - `cd cli`
