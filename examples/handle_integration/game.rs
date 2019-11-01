@@ -32,7 +32,11 @@ pub fn run() {
 
     let mut loader = RpcLoader::default();
     let weak_handle = {
+        // add_ref begins loading of the asset
         let handle = loader.add_ref(asset_uuid!("6f91796a-6a14-4dd2-8b7b-cb5369417032"));
+        // From the returned LoadHandle, create a typed, internally refcounted Handle.
+        // This requires a channel to send increase/decrease over to be able to implement
+        // Clone and Drop. In a real implementation, you would probably create nicer wrappers for this.
         let handle = Handle::<BigPerf>::new(tx.clone(), handle);
         loop {
             process(&mut loader, &game, &rx);
@@ -40,14 +44,17 @@ pub fn run() {
                 break;
             }
         }
+        // From the Storage, use the Handle to get a reference to the loaded asset.
         let custom_asset: &BigPerf = handle.asset(&game.storage).expect("failed to get asset");
+        // The custom asset has an automatically constructed Handle reference to an Image.
         log::info!(
             "Image dependency has handle {:?}",
             custom_asset.but_cooler_handle.load_handle()
         );
         // Handle is automatically refcounted, so it will be dropped at the end of this scope,
-        // causing all assets to be unloaded. We return a WeakHandle of the image dependency
-        //  to be able to track this unload
+        // causing the asset and its dependencies to be unloaded.
+        // We return a WeakHandle of the image dependency to be able to track the unload of the dependency,
+        // which happens after the dependee.
         WeakHandle::new(custom_asset.but_cooler_handle.load_handle())
     };
     loop {
