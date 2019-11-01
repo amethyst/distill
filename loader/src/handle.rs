@@ -85,10 +85,19 @@ impl AssetHandle for HandleRef {
 }
 
 /// Handle to an asset.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Handle<T: ?Sized> {
     handle_ref: HandleRef,
     marker: PhantomData<T>,
+}
+
+impl<T: ?Sized> Clone for Handle<T> {
+    fn clone(&self) -> Self {
+        Self {
+            handle_ref: self.handle_ref.clone(),
+            marker: PhantomData,
+        }
+    }
 }
 
 impl<T> Handle<T> {
