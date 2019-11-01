@@ -42,6 +42,9 @@ log = { version = "0.4", features = ["serde"] }
 serde = "1"
 uuid = "0.7"
 bincode = "1.2"
+typetag = "0.1"
+lazy_static = "1.3"
+mopa = "0.2"
 
 
 [[example]]

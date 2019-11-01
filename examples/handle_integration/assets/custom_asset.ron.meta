@@ -1,0 +1,27 @@
+(
+    version: 1,
+    import_hash: Some(14230174069754009112),
+    importer_version: 1,
+    importer_type: "162ede20-6fdd-44c1-8387-8f93983c067c",
+    importer_options: (
+    ),
+    importer_state: (
+        id: Some("6f91796a-6a14-4dd2-8b7b-cb5369417032"),
+    ),
+    assets: [
+        (
+            id: "6f91796a-6a14-4dd2-8b7b-cb5369417032",
+            search_tags: [
+                ("file_name", Some("custom_asset.ron")),
+            ],
+            build_deps: [
+                Uuid("6c5ae1ad-ae30-471b-985b-7d017265f19f"),
+            ],
+            load_deps: [
+                Uuid("6c5ae1ad-ae30-471b-985b-7d017265f19f"),
+            ],
+            build_pipeline: None,
+            asset_type: "fab4249b-f95d-411d-a017-7549df090a4f",
+        ),
+    ],
+)
