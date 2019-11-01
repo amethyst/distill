@@ -435,7 +435,6 @@ fn get_handle_ref(asset_ref: AssetRef) -> (LoadHandle, Arc<Sender<RefOp>>) {
                 .get_load_handle(&asset_ref)
                 .unwrap_or_else(|| panic!("Handle for AssetUuid {:?} was not present when deserializing a Handle. This indicates missing dependency metadata, and can be caused by dependency cycles.", asset_ref))
         };
-        let _ = sender.send(RefOp::Increase(handle));
         (handle, sender)
     })
 }
