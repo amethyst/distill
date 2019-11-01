@@ -6,7 +6,7 @@ mod image;
 mod storage;
 
 fn main() {
-    std::env::set_current_dir(PathBuf::from("examples/daemon_with_loader"))
+    std::env::set_current_dir(PathBuf::from("examples/handle_integration"))
         .expect("failed to set working directory");
     atelier_daemon::init_logging().expect("failed to init logging");
     std::thread::spawn(move || {

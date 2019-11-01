@@ -50,3 +50,7 @@ mopa = "0.2"
 [[example]]
 name = "daemon_with_loader"
 path = "examples/daemon_with_loader/main.rs"
+
+[[example]]
+name = "handle_integration"
+path = "examples/handle_integration/main.rs"
