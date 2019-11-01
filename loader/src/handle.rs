@@ -1,5 +1,5 @@
 use crate::{AssetRef, AssetUuid, LoadHandle, LoadStatus, Loader, LoaderInfoProvider, TypeUuid};
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use derivative::Derivative;
 use serde::{
     de::{self, Deserialize, Visitor},
@@ -18,6 +18,23 @@ pub enum RefOp {
     Decrease(LoadHandle),
     Increase(LoadHandle),
     IncreaseUuid(AssetUuid),
+}
+
+pub fn process_ref_ops<T: Loader>(loader: &T, rx: &Receiver<RefOp>) {
+    loop {
+        match rx.try_recv() {
+            Err(_) => break,
+            Ok(RefOp::Decrease(handle)) => loader.remove_ref(handle),
+            Ok(RefOp::Increase(handle)) => {
+                loader
+                    .get_load_info(handle)
+                    .map(|info| loader.add_ref(info.asset_id));
+            }
+            Ok(RefOp::IncreaseUuid(uuid)) => {
+                loader.add_ref(uuid);
+            }
+        }
+    }
 }
 
 /// Keeps track of whether a handle ref is a strong, weak or "internal" ref

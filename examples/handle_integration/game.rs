@@ -15,20 +15,7 @@ struct Game {
 }
 
 fn process(loader: &mut RpcLoader, game: &Game, chan: &Receiver<RefOp>) {
-    loop {
-        match chan.try_recv() {
-            Err(_) => break,
-            Ok(RefOp::Decrease(handle)) => loader.remove_ref(handle),
-            Ok(RefOp::Increase(handle)) => {
-                loader
-                    .get_load_info(handle)
-                    .map(|info| loader.add_ref(info.asset_id));
-            }
-            Ok(RefOp::IncreaseUuid(uuid)) => {
-                loader.add_ref(uuid);
-            }
-        }
-    }
+    atelier_loader::handle::process_ref_ops(loader, chan);
     loader
         .process(&game.storage)
         .expect("failed to process loader");
