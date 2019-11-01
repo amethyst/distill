@@ -2,6 +2,7 @@
     "fab4249b-f95d-411d-a017-7549df090a4f": 
     (
         cool_string: "thanks",
-        but_cooler_handle: "6c5ae1ad-ae30-471b-985b-7d017265f19f"
+        handle_made_from_path: "amethyst.png",
+        handle_made_from_uuid: "6c5ae1ad-ae30-471b-985b-7d017265f19f"
     )
 }

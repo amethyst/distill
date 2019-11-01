@@ -7,5 +7,6 @@ use type_uuid::TypeUuid;
 #[uuid = "fab4249b-f95d-411d-a017-7549df090a4f"]
 pub struct BigPerf {
     pub cool_string: String,
-    pub but_cooler_handle: Handle<crate::image::Image>,
+    pub handle_made_from_path: Handle<crate::image::Image>,
+    pub handle_made_from_uuid: Handle<crate::image::Image>,
 }

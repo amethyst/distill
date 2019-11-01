@@ -48,14 +48,15 @@ pub fn run() {
         let custom_asset: &BigPerf = handle.asset(&game.storage).expect("failed to get asset");
         // The custom asset has an automatically constructed Handle reference to an Image.
         log::info!(
-            "Image dependency has handle {:?}",
-            custom_asset.but_cooler_handle.load_handle()
+            "Image dependency has handle {:?} from path, and {:?} from UUID",
+            custom_asset.handle_made_from_path.load_handle(),
+            custom_asset.handle_made_from_uuid.load_handle()
         );
         // Handle is automatically refcounted, so it will be dropped at the end of this scope,
         // causing the asset and its dependencies to be unloaded.
         // We return a WeakHandle of the image dependency to be able to track the unload of the dependency,
         // which happens after the dependee.
-        WeakHandle::new(custom_asset.but_cooler_handle.load_handle())
+        WeakHandle::new(custom_asset.handle_made_from_path.load_handle())
     };
     loop {
         process(&mut loader, &game, &rx);
