@@ -61,6 +61,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
     for GenericAssetStorage
 {
     fn get<T: AssetHandle>(&self, handle: &T) -> Option<&A> {
+        // This transmute can probably be unsound, but I don't have the energy to fix it right now
         unsafe {
             std::mem::transmute(
                 self.storage
@@ -85,6 +86,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
             .get_version(handle)
     }
     fn get_asset_with_version<T: AssetHandle>(&self, handle: &T) -> Option<(&A, u32)> {
+        // This transmute can probably be unsound, but I don't have the energy to fix it right now
         unsafe {
             std::mem::transmute(
                 self.storage
