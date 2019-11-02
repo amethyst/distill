@@ -130,7 +130,7 @@ impl<T> Handle<T> {
     }
 
     /// Creates a new handle with `HandleRefType::Internal`
-    pub fn new_internal(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub(crate) fn new_internal(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -167,7 +167,7 @@ impl GenericHandle {
     }
 
     /// Creates a new handle with `HandleRefType::Internal`
-    pub fn new_internal(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub(crate) fn new_internal(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
