@@ -1,13 +1,15 @@
 use proc_macro_hack::proc_macro_hack;
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
 use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid;
 
-use std::{cmp, fmt};
 use std::str::FromStr;
+use std::{cmp, fmt};
 
 #[proc_macro_hack]
 pub use asset_uuid::asset_uuid;
+#[cfg(feature = "importer_context")]
+pub mod importer_context;
 pub mod utils;
 
 /// A universally unique identifier for an asset.
@@ -136,6 +138,37 @@ impl<'de> Deserialize<'de> for AssetTypeId {
             deserializer.deserialize_string(AssetTypeIdVisitor)
         } else {
             Ok(AssetTypeId(<[u8; 16]>::deserialize(deserializer)?))
+        }
+    }
+}
+
+/// A potentially unresolved reference to an asset
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AssetRef {
+    Uuid(AssetUuid),
+    Path(std::path::PathBuf),
+}
+impl AssetRef {
+    pub fn expect_uuid(&self) -> &AssetUuid {
+        if let AssetRef::Uuid(uuid) = self {
+            uuid
+        } else {
+            panic!("Expected AssetRef::Uuid, got {:?}", self)
+        }
+    }
+    pub fn is_path(&self) -> bool {
+        if let AssetRef::Path(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+    pub fn is_uuid(&self) -> bool {
+        if let AssetRef::Uuid(_) = self {
+            true
+        } else {
+            false
         }
     }
 }

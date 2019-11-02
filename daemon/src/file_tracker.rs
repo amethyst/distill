@@ -11,7 +11,7 @@ use log::{debug, error, info};
 use std::{
     cmp::PartialEq,
     collections::{HashMap, HashSet},
-    fs, io,
+    fs,
     iter::FromIterator,
     ops::IndexMut,
     path::PathBuf,
@@ -89,7 +89,8 @@ fn add_rename_event(
 ) -> Result<()> {
     let mut last_seq: u64 = 0;
     let last_element = txn
-        .open_ro_cursor(tables.rename_file_events)?
+        .open_ro_cursor(tables.rename_file_events)
+        .expect("Failed to open RO cursor for rename_file_events")
         .capnp_iter_start()
         .last();
     if let Some((key, _)) = last_element {
@@ -272,7 +273,9 @@ mod events {
                     let path_str = path.to_string_lossy();
                     let key = path_str.as_bytes();
                     let path_string = scan_ctx.path.to_string_lossy().into_owned();
-                    let mut cursor = txn.open_ro_cursor(tables.source_files)?;
+                    let cursor = txn
+                        .open_ro_cursor(tables.source_files)
+                        .expect("Failed to open RO cursor for source_files table");
                     for (key, _) in cursor.capnp_iter_from(&key) {
                         let key = str::from_utf8(key).expect("Encoded key was invalid utf8");
                         if !key.starts_with(&path_string) {
@@ -300,7 +303,9 @@ mod events {
                 if scan_stack.is_empty() {
                     let mut to_delete = Vec::new();
                     {
-                        let mut cursor = txn.open_ro_cursor(tables.source_files)?;
+                        let mut cursor = txn
+                            .open_ro_cursor(tables.source_files)
+                            .expect("Failed to open RO cursor for source_files table");
                         let dirs_as_strings = Vec::from_iter(
                             watched_dirs
                                 .into_iter()
@@ -335,9 +340,17 @@ impl FileTracker {
     {
         let watch_dirs: Vec<PathBuf> = to_watch
             .into_iter()
-            .map(fs::canonicalize)
-            // TODO(happens): Log which paths could not be added
-            .filter_map(io::Result::ok)
+            .map(|s| {
+                let path = PathBuf::from(s);
+                let path = if path.is_relative() {
+                    std::env::current_dir()
+                        .expect("failed to get current dir")
+                        .join(path)
+                } else {
+                    path
+                };
+                watcher::canonicalize_path(&path)
+            })
             .collect();
 
         let source_files = db
@@ -581,7 +594,7 @@ impl FileTracker {
                         let txn = txn.as_mut().expect("db: Failed to get txn");
                         match events::handle_file_event(txn, &self.tables, evt, scan_stack) {
                             Ok(evt) => evt.map(|evt| output_evts.push(evt)).unwrap_or(()),
-                            Err(err) => error!("Error while handling file event: {}", err),
+                            Err(err) => panic!("Error while handling file event: {}", err),
                         }
                     } else {
                         error!("Receive error");
@@ -631,8 +644,9 @@ impl FileTracker {
         let handle = thread::spawn(move || watcher.run());
 
         let mut listeners = vec![];
+        let mut scan_stack = Vec::new();
         while self.is_running.load(Ordering::Acquire) {
-            let mut scan_stack = Vec::new();
+            scan_stack.clear();
             let mut is_running = true;
             let events = self.read_file_events(&mut is_running, &rx, &mut scan_stack);
 
@@ -666,6 +680,7 @@ impl FileTracker {
 
 #[cfg(test)]
 pub mod tests {
+    use super::*;
     use crate::capnp_db::Environment;
     use crate::file_tracker::{FileTracker, FileTrackerEvent};
     use crossbeam_channel::{self as channel, select, Receiver};
@@ -754,9 +769,8 @@ pub mod tests {
 
     fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_ro_txn();
-        let path = fs::canonicalize(&asset_dir)
-            .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
-        let canonical_path = path.join(name);
+        let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
+        let canonical_path = watcher::canonicalize_path(&path.join(name));
         let maybe_state = t.get_file_state(&txn, &canonical_path);
 
         assert!(
@@ -768,8 +782,7 @@ pub mod tests {
 
     fn expect_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_ro_txn();
-        let canonical_path =
-            fs::canonicalize(asset_dir.join(name)).expect("failed to canonicalize");
+        let canonical_path = watcher::canonicalize_path(&asset_dir.join(name));
         t.get_file_state(&txn, &canonical_path)
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
@@ -797,8 +810,7 @@ pub mod tests {
 
     fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_ro_txn();
-        let path = fs::canonicalize(&asset_dir)
-            .unwrap_or_else(|_| panic!("failed to canonicalize {}", asset_dir.to_string_lossy()));
+        let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
         let canonical_path = path.join(name);
         t.get_dirty_file_state(&txn, &canonical_path)
             .unwrap_or_else(|| panic!("expected dirty file state for file {}", name));

@@ -16,7 +16,7 @@ where
     a
 }
 
-pub fn uuid_from_slice(slice: &[u8]) -> Result<uuid::Bytes, BytesError> {
+pub fn uuid_from_slice(slice: &[u8]) -> Result<AssetUuid, BytesError> {
     const BYTES_LEN: usize = 16;
 
     let len = slice.len();
@@ -27,7 +27,7 @@ pub fn uuid_from_slice(slice: &[u8]) -> Result<uuid::Bytes, BytesError> {
 
     let mut bytes: uuid::Bytes = [0; 16];
     bytes.copy_from_slice(slice);
-    Ok(bytes)
+    Ok(AssetUuid(bytes))
 }
 
 pub fn to_meta_path(p: &PathBuf) -> PathBuf {
@@ -36,9 +36,16 @@ pub fn to_meta_path(p: &PathBuf) -> PathBuf {
     ))
 }
 
-pub fn calc_asset_hash(id: &AssetUuid, import_hash: u64) -> u64 {
+pub fn calc_asset_hash<T>(id: &AssetUuid, import_hash: u64, dep_list: T) -> u64
+where
+    T: IntoIterator,
+    T::Item: Hash,
+{
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
     import_hash.hash(&mut hasher);
     id.hash(&mut hasher);
+    for dep in dep_list {
+        dep.hash(&mut hasher);
+    }
     hasher.finish()
 }

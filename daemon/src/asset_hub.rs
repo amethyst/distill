@@ -1,15 +1,17 @@
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
-use atelier_core::{utils, AssetUuid};
+use atelier_core::{utils, AssetRef, AssetUuid};
 use atelier_importer::AssetMetadata;
 use atelier_schema::data::{
     self, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
+    asset_ref,
 };
 use futures::sync::mpsc::Sender;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{Hash, Hasher},
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -64,16 +66,155 @@ struct AssetHubTables {
     asset_changes: lmdb::Database,
 }
 
-fn set_assetid_list(
-    asset_ids: &[AssetUuid],
-    builder: &mut capnp::struct_list::Builder<'_, data::asset_uuid::Owned>,
+fn set_assetref_list(
+    asset_ids: &[AssetRef],
+    builder: &mut capnp::struct_list::Builder<'_, data::asset_ref::Owned>,
 ) {
-    for (idx, uuid) in asset_ids.iter().enumerate() {
-        builder.reborrow().get(idx as u32).set_id(&uuid.0);
+    for (idx, asset_ref) in asset_ids.iter().enumerate() {
+        let mut builder = builder.reborrow().get(idx as u32);
+        match asset_ref {
+            AssetRef::Path(p) => {
+                builder.set_path(
+                    p.to_str()
+                        .expect("failed to convert path to string")
+                        .as_bytes(),
+                );
+            }
+            AssetRef::Uuid(uuid) => {
+                builder.init_uuid().set_id(&uuid.0);
+            }
+        }
     }
 }
 
-fn build_asset_metadata<K>(
+pub(crate) fn parse_db_asset_ref(asset_ref: &asset_ref::Reader<'_>) -> AssetRef {
+    match asset_ref.which().expect("capnp: failed to read asset ref") {
+        asset_ref::Path(p) => AssetRef::Path(PathBuf::from(
+            std::str::from_utf8(p.expect("capnp: failed to read asset ref path"))
+                .expect("capnp: failed to parse utf8 string"),
+        )),
+        asset_ref::Uuid(uuid) => AssetRef::Uuid(utils::make_array(
+            uuid.and_then(|id| id.get_id())
+                .expect("capnp: failed to read asset ref uuid"),
+        )),
+    }
+}
+
+pub fn parse_db_metadata(metadata: &asset_metadata::Reader<'_>) -> AssetMetadata {
+    let search_tags = metadata
+        .get_search_tags()
+        .expect("capnp: failed to read search tags")
+        .iter()
+        .map(|tag| {
+            let key =
+                std::str::from_utf8(tag.get_key().expect("capnp: failed to read search tag key"))
+                    .expect("failed to read tag key as utf8")
+                    .to_owned();
+            let value = std::str::from_utf8(
+                tag.get_value()
+                    .expect("capnp: failed to read search tag value"),
+            )
+            .expect("failed to read tag value as utf8")
+            .to_owned();
+            if value.len() > 0 {
+                (key, Some(value))
+            } else {
+                (key, None)
+            }
+        })
+        .collect();
+    let load_deps = metadata
+        .get_load_deps()
+        .expect("capnp: failed to read load deps")
+        .iter()
+        .map(|dep| parse_db_asset_ref(&dep))
+        .collect();
+    let build_deps = metadata
+        .get_build_deps()
+        .expect("capnp: failed to read build deps")
+        .iter()
+        .map(|dep| parse_db_asset_ref(&dep))
+        .collect();
+    let asset_type = utils::make_array(
+        metadata
+            .get_asset_type()
+            .expect("capnp: failed to read asset type"),
+    );
+    let build_pipeline = metadata
+        .get_build_pipeline()
+        .expect("capnp: failed to read build pipeline")
+        .get_id()
+        .expect("capnp: failed to read build pipeline id");
+    let build_pipeline = if build_pipeline.len() > 0 {
+        Some(utils::make_array(
+            metadata
+                .get_asset_type()
+                .expect("capnp: failed to read asset type"),
+        ))
+    } else {
+        None
+    };
+    AssetMetadata {
+        id: utils::make_array(
+            metadata
+                .get_id()
+                .expect("capnp: failed to read asset_id")
+                .get_id()
+                .expect("capnp: failed to read asset_id"),
+        ),
+        search_tags,
+        build_deps,
+        load_deps,
+        asset_type,
+        build_pipeline,
+    }
+}
+pub(crate) fn build_asset_metadata(
+    metadata: &AssetMetadata,
+    m: &mut asset_metadata::Builder<'_>,
+    artifact_hash: Option<&[u8]>,
+    source: data::AssetSource,
+) {
+    m.reborrow().init_id().set_id(&metadata.id.0);
+    if let Some(pipeline) = metadata.build_pipeline {
+        m.reborrow().init_build_pipeline().set_id(&pipeline.0);
+    }
+    set_assetref_list(
+        &metadata.load_deps,
+        &mut m.reborrow().init_load_deps(metadata.load_deps.len() as u32),
+    );
+    set_assetref_list(
+        &metadata.build_deps,
+        &mut m
+            .reborrow()
+            .init_build_deps(metadata.build_deps.len() as u32),
+    );
+    let mut search_tags = m
+        .reborrow()
+        .init_search_tags(metadata.search_tags.len() as u32);
+    for (idx, (key, value)) in metadata.search_tags.iter().enumerate() {
+        search_tags
+            .reborrow()
+            .get(idx as u32)
+            .set_key(key.as_bytes());
+        if let Some(value) = value {
+            search_tags
+                .reborrow()
+                .get(idx as u32)
+                .set_value(value.as_bytes());
+        }
+    }
+    if let Some(artifact_hash) = artifact_hash {
+        m.reborrow()
+            .init_latest_artifact()
+            .init_id()
+            .set_hash(artifact_hash);
+    }
+    m.reborrow().set_asset_type(&metadata.asset_type.0);
+    m.reborrow().set_source(source);
+}
+
+fn build_asset_metadata_message<K>(
     metadata: &AssetMetadata,
     artifact_hash: Option<&[u8]>,
     source: data::AssetSource,
@@ -81,52 +222,7 @@ fn build_asset_metadata<K>(
     let mut value_builder = capnp::message::Builder::new_default();
     {
         let mut m = value_builder.init_root::<asset_metadata::Builder<'_>>();
-        m.reborrow().init_id().set_id(&metadata.id.0);
-        if let Some(pipeline) = metadata.build_pipeline {
-            m.reborrow().init_build_pipeline().set_id(&pipeline.0);
-        }
-        set_assetid_list(
-            &metadata.load_deps,
-            &mut m.reborrow().init_load_deps(metadata.load_deps.len() as u32),
-        );
-        set_assetid_list(
-            &metadata.build_deps,
-            &mut m
-                .reborrow()
-                .init_build_deps(metadata.build_deps.len() as u32),
-        );
-        set_assetid_list(
-            &metadata.instantiate_deps,
-            &mut m
-                .reborrow()
-                .init_instantiate_deps(metadata.instantiate_deps.len() as u32),
-        );
-        let mut search_tags = m
-            .reborrow()
-            .init_search_tags(metadata.search_tags.len() as u32);
-        for (idx, (key, value)) in metadata.search_tags.iter().enumerate() {
-            search_tags
-                .reborrow()
-                .get(idx as u32)
-                .set_key(key.as_bytes());
-            if let Some(value) = value {
-                search_tags
-                    .reborrow()
-                    .get(idx as u32)
-                    .set_value(value.as_bytes());
-            }
-        }
-        if let Some(artifact_hash) = artifact_hash {
-            m.reborrow()
-                .init_latest_artifact()
-                .init_id()
-                .set_hash(artifact_hash);
-        }
-        m.reborrow()
-            .set_imported_asset_type(&metadata.import_asset_type.0);
-        m.reborrow()
-            .set_built_asset_type(&metadata.import_asset_type.0);
-        m.reborrow().set_source(source);
+        build_asset_metadata(metadata, &mut m, artifact_hash, source);
     }
     value_builder
 }
@@ -202,8 +298,9 @@ impl AssetHub {
         &self,
         txn: &'a V,
         id: &AssetUuid,
-    ) -> Result<Option<MessageReader<'a, asset_metadata::Owned>>> {
-        Ok(txn.get::<asset_metadata::Owned, _>(self.tables.asset_metadata, &id)?)
+    ) -> Option<MessageReader<'a, asset_metadata::Owned>> {
+        txn.get::<asset_metadata::Owned, _>(self.tables.asset_metadata, &id)
+            .expect("db: failed to get asset_metadata")
     }
 
     pub fn get_build_deps_reverse<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -242,7 +339,8 @@ impl AssetHub {
         let mut maybe_id = None;
         let existing_metadata: Option<MessageReader<'_, asset_metadata::Owned>> =
             txn.get(self.tables.asset_metadata, &metadata.id)?;
-        let new_metadata = build_asset_metadata::<&[u8; 8]>(&metadata, Some(&hash_bytes), source);
+        let new_metadata =
+            build_asset_metadata_message::<&[u8; 8]>(&metadata, Some(&hash_bytes), source);
         let mut deps_to_delete = Vec::new();
         let mut deps_to_add = Vec::new();
         if let Some(existing_metadata) = existing_metadata {
@@ -251,15 +349,18 @@ impl AssetHub {
             if let latest_artifact::Id(Ok(id)) = latest_artifact.which()? {
                 maybe_id = Some(Vec::from(id.get_hash()?));
             }
+            let mut existing_deps = HashSet::new();
             for dep in existing_metadata.get_build_deps()? {
-                let dep = AssetUuid(utils::uuid_from_slice(dep.get_id()?)?);
-                if !metadata.build_deps.contains(&dep) {
+                let dep = *parse_db_asset_ref(&dep).expect_uuid();
+                existing_deps.insert(dep);
+                if !metadata.build_deps.contains(&AssetRef::Uuid(dep)) {
                     deps_to_delete.push(dep);
                 }
-                deps_to_add
-                    .iter()
-                    .position(|x| x == &dep)
-                    .map(|i| deps_to_add.swap_remove(i));
+            }
+            for dep in metadata.build_deps.iter() {
+                if !existing_deps.contains(dep.expect_uuid()) {
+                    deps_to_add.push(dep);
+                }
             }
         } else {
             deps_to_add.extend(metadata.build_deps.iter());
@@ -270,20 +371,20 @@ impl AssetHub {
         }
         for dep in deps_to_add {
             let mut dependees = Vec::new();
-            if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
+            if let Some(existing_list) = self.get_build_deps_reverse(txn, dep.expect_uuid())? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
                     dependees.push(uuid);
                 }
             }
             dependees.push(metadata.id);
-            self.put_build_deps_reverse(txn, &dep, dependees)?;
+            self.put_build_deps_reverse(txn, dep.expect_uuid(), dependees)?;
         }
         for dep in deps_to_delete {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
                     dependees.push(uuid);
                 }
             }
@@ -310,13 +411,12 @@ impl AssetHub {
         id: &AssetUuid,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
-        let metadata = self.get_metadata(txn, id)?;
+        let metadata = self.get_metadata(txn, id);
         let mut deps_to_delete = Vec::new();
         if let Some(metadata) = metadata {
             let metadata = metadata.get()?;
             for dep in metadata.get_build_deps()? {
-                let uuid = AssetUuid(utils::uuid_from_slice(dep.get_id()?)?);
-                deps_to_delete.push(uuid);
+                deps_to_delete.push(*parse_db_asset_ref(&dep).expect_uuid());
             }
         }
         if txn.delete(self.tables.asset_metadata, &id)? {
@@ -326,7 +426,7 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = AssetUuid(utils::uuid_from_slice(uuid.get_id()?)?);
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
                     dependees.push(uuid);
                 }
             }
@@ -365,14 +465,14 @@ impl AssetHub {
             if affected_assets.insert(id) {
                 if let Some(dependees) = self.get_build_deps_reverse(txn, &id)? {
                     for dependee in dependees.get()?.get_list()? {
-                        let uuid = AssetUuid(utils::uuid_from_slice(dependee.get_id()?)?);
+                        let uuid = utils::uuid_from_slice(dependee.get_id()?)?;
                         to_check.push_back(uuid);
                     }
                 }
             }
         }
         for asset in affected_assets {
-            let metadata = self.get_metadata(txn, &asset)?;
+            let metadata = self.get_metadata(txn, &asset);
             if let Some(metadata) = metadata {
                 let metadata = metadata.get()?;
                 let mut dependency_graph = HashMap::new();
@@ -383,7 +483,7 @@ impl AssetHub {
                     if dependency_graph.contains_key(&id) {
                         continue;
                     }
-                    let metadata = self.get_metadata(txn, &id)?;
+                    let metadata = self.get_metadata(txn, &id);
                     if let Some(metadata) = metadata {
                         let metadata = metadata.get()?;
                         if let latest_artifact::Id(Ok(id)) =
@@ -392,8 +492,7 @@ impl AssetHub {
                             dependency_graph.insert(asset, Vec::from(id.get_hash()?));
                         }
                         for dep in metadata.get_build_deps()? {
-                            let uuid = AssetUuid(utils::uuid_from_slice(dep.get_id()?)?);
-                            to_check.push_back(uuid);
+                            to_check.push_back(*parse_db_asset_ref(&dep).expect_uuid());
                         }
                     }
                 }

@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
 };
 
-use atelier_daemon::{init_logging, AssetDaemon};
+use atelier_daemon::AssetDaemon;
 use structopt::StructOpt;
 
 /// Parameters to the asset daemon.
@@ -32,28 +32,31 @@ pub struct AssetDaemonOpt {
 }
 
 /// Parses a string as a socket address.
-fn parse_socket_addr(s: &str) -> Result<SocketAddr, AddrParseError> {
+fn parse_socket_addr(s: &str) -> std::result::Result<SocketAddr, AddrParseError> {
     s.parse()
 }
 
 // This is required because rustc does not recognize .ctor segments when considering which symbols
-// to include when linking static libraries, so we need to reference a symbol in each module that
-// registers an importer since it uses inventory::submit and the .ctor linkage hack.
+// to include when linking static libraries to avoid having the module eliminated as "dead code".
+// We need to reference a symbol in each module (crate) that registers an importer since atelier_importer uses
+// inventory::submit and the .ctor linkage hack.
+// Note that this is only required if you use the built-in `atelier_importer::get_source_importers` to
+// register importers with the daemon builder.
 fn init_modules() {
-    #[cfg(feature = "amethyst-importers")]
-    {
-        use amethyst::assets::Asset;
-        amethyst::renderer::types::Texture::name();
-        amethyst::assets::experimental::DefaultLoader::default();
-        let _w = amethyst::audio::output::outputs();
-    }
+    // An example of how referencing of types could look to avoid dead code elimination
+    // #[cfg(feature = "amethyst-importers")]
+    // {
+    //     use amethyst::assets::Asset;
+    //     amethyst::renderer::types::Texture::name();
+    //     amethyst::assets::experimental::DefaultLoader::default();
+    //     let _w = amethyst::audio::output::outputs();
+    // }
 }
 
-fn main() {
-    init_logging().expect("failed to init logging");
+pub fn run() {
     init_modules();
 
-    log::debug!(
+    log::info!(
         "registered importers for {}",
         atelier_importer::get_source_importers()
             .map(|(ext, _)| ext)

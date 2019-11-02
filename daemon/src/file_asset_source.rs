@@ -1,22 +1,22 @@
 use crate::asset_hub::{self, AssetHub};
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::daemon::ImporterMap;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use crate::serialized_asset::SerializedAsset;
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use atelier_core::{utils, AssetUuid};
+use atelier_core::{utils, AssetRef, AssetUuid};
 use atelier_importer::{AssetMetadata, BoxedImporter, ImporterContext};
-use atelier_schema::data::{self, source_metadata};
+use atelier_schema::data::{self, path_refs, source_metadata, CompressionType};
 use bincode;
 use chrono::Local;
 use crossbeam_channel::{self as channel, Receiver};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use scoped_threadpool::Pool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::{path::PathBuf, str, sync::Arc};
 
 pub(crate) struct FileAssetSource {
@@ -36,6 +36,20 @@ struct FileAssetSourceTables {
     /// Maps an AssetUuid to its source file path
     /// AssetUuid -> Path
     asset_id_to_path: lmdb::Database,
+    /// Reverse index of a path reference to a list of paths to source files referencing the path
+    /// Path -> PathRefs
+    reverse_path_refs: lmdb::Database,
+}
+
+#[derive(Debug)]
+struct AssetImportResultMetadata {
+    pub metadata: AssetMetadata,
+    pub unresolved_load_refs: Vec<AssetRef>,
+    pub unresolved_build_refs: Vec<AssetRef>,
+}
+struct PairImportResultMetadata<'a> {
+    pub import_state: SourcePairImport<'a>,
+    pub assets: Vec<AssetImportResultMetadata>,
 }
 
 type SerializedAssetVec = SerializedAsset<Vec<u8>>;
@@ -72,6 +86,19 @@ where
     }))
 }
 
+fn resolve_source_path(abs_source_path: &PathBuf, path: &PathBuf) -> PathBuf {
+    let absolute_path = if path.is_relative() {
+        // TODO check from root of asset folder as well?
+        let mut parent_path = abs_source_path.clone();
+        parent_path.pop();
+        parent_path.push(path);
+        parent_path
+    } else {
+        path.clone()
+    };
+    crate::watcher::canonicalize_path(&absolute_path)
+}
+
 impl FileAssetSource {
     pub fn new(
         tracker: &Arc<FileTracker>,
@@ -92,6 +119,8 @@ impl FileAssetSource {
                     .create_db(Some("path_to_metadata"), lmdb::DatabaseFlags::default())?,
                 asset_id_to_path: db
                     .create_db(Some("asset_id_to_path"), lmdb::DatabaseFlags::default())?,
+                reverse_path_refs: db
+                    .create_db(Some("reverse_path_refs"), lmdb::DatabaseFlags::default())?,
             },
             importers: importers.clone(),
             importer_contexts,
@@ -103,7 +132,87 @@ impl FileAssetSource {
         txn: &'a mut RwTransaction<'_>,
         path: &PathBuf,
         metadata: &SourceMetadata,
-    ) -> Result<()> {
+    ) -> Result<Vec<AssetUuid>> {
+        let mut affected_assets = Vec::new();
+        let (assets_to_remove, path_refs_to_remove): (Vec<AssetUuid>, Vec<PathBuf>) = self
+            .get_metadata(txn, path)
+            .map(|existing| {
+                let existing = existing.get().expect("capnp: Failed to read metadata");
+                let path_refs = existing
+                    .get_path_refs()
+                    .expect("capnp: Failed to get path refs")
+                    .iter()
+                    .map(|r| {
+                        PathBuf::from(
+                            str::from_utf8(r.expect("cpnp: Failed to read path ref"))
+                                .expect("Failed to parse path ref as utf8"),
+                        )
+                    })
+                    .collect();
+                let assets = existing.get_assets().expect("capnp: Failed to get assets");
+
+                let asset_ids = assets
+                    .iter()
+                    .map(|asset| {
+                        asset
+                            .get_id()
+                            .and_then(|id| id.get_id())
+                            .map_err(Error::Capnp)
+                            .and_then(|slice| Ok(utils::uuid_from_slice(slice)?))
+                            .expect("capnp: Failed to read uuid")
+                    })
+                    .filter(|id| metadata.assets.iter().all(|a| a.id != *id))
+                    .collect();
+
+                (asset_ids, path_refs)
+            })
+            .unwrap_or_default();
+
+        for asset in assets_to_remove {
+            debug!("removing deleted asset {:?}", asset);
+            self.delete_asset_path(txn, &asset);
+            affected_assets.push(asset);
+        }
+        for asset in metadata.assets.iter() {
+            debug!("updating asset {:?}", asset.id);
+
+            match self.get_asset_path(txn, &asset.id) {
+                Some(ref old_path) if old_path != path => {
+                    error!(
+                        "asset {:?} already in DB with path {} expected {}",
+                        asset.id,
+                        old_path.to_string_lossy(),
+                        path.to_string_lossy(),
+                    );
+                }
+                Some(_) => {} // asset already in DB with correct path
+                _ => self.put_asset_path(txn, &asset.id, path),
+            }
+
+            affected_assets.push(asset.id);
+        }
+        for path_ref in path_refs_to_remove {
+            self.remove_path_ref(txn, path, &path_ref);
+        }
+
+        let new_path_refs = metadata
+            .assets
+            .iter()
+            .flat_map(|x| &x.load_deps)
+            .chain(metadata.assets.iter().flat_map(|x| &x.build_deps))
+            .filter_map(|x| {
+                if let AssetRef::Path(path) = x {
+                    Some(path)
+                } else {
+                    None
+                }
+            });
+        let mut deduped_path_refs = HashSet::new();
+        for path_ref in new_path_refs {
+            if deduped_path_refs.insert(path_ref.clone()) {
+                self.add_path_ref(txn, path, &path_ref);
+            }
+        }
         let mut value_builder = capnp::message::Builder::new_default();
 
         {
@@ -120,12 +229,26 @@ impl FileAssetSource {
                 let mut options_buf = Vec::new();
                 bincode::serialize_into(&mut options_buf, &metadata.importer_options)?;
                 value.set_importer_options(&options_buf);
+                let hash_bytes = metadata
+                    .import_hash
+                    .expect("import hash not present")
+                    .to_le_bytes();
+                value.set_import_hash(&hash_bytes);
+            }
+            let mut path_refs = value
+                .reborrow()
+                .init_path_refs(deduped_path_refs.len() as u32);
+            for (idx, path_ref) in deduped_path_refs.into_iter().enumerate() {
+                path_refs
+                    .reborrow()
+                    .set(idx as u32, path_ref.to_string_lossy().as_bytes());
             }
 
             let mut assets = value.reborrow().init_assets(metadata.assets.len() as u32);
 
             for (idx, asset) in metadata.assets.iter().enumerate() {
-                assets.reborrow().get(idx as u32).set_id(&asset.id.0);
+                let mut builder = assets.reborrow().get(idx as u32);
+                asset_hub::build_asset_metadata(asset, &mut builder, None, data::AssetSource::File);
             }
 
             let assets_with_pipelines: Vec<&AssetMetadata> = metadata
@@ -157,7 +280,7 @@ impl FileAssetSource {
         txn.put(self.tables.path_to_metadata, &key, &value_builder)
             .expect("db: Failed to put value to path_to_metadata");
 
-        Ok(())
+        Ok(affected_assets)
     }
 
     pub fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -187,11 +310,73 @@ impl FileAssetSource {
             })
     }
 
-    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> bool {
+    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Vec<AssetUuid> {
+        let to_remove: Vec<AssetUuid> = self
+            .get_metadata(txn, path)
+            .map(|existing| {
+                let metadata = existing.get().expect("capnp: Failed to read metadata");
+                metadata
+                    .get_assets()
+                    .expect("capnp: Failed to get assets")
+                    .iter()
+                    .map(|asset| {
+                        asset
+                            .get_id()
+                            .and_then(|id| id.get_id())
+                            .map_err(Error::Capnp)
+                            .and_then(|slice| Ok(utils::uuid_from_slice(slice)?))
+                            .expect("capnp: Failed to read uuid")
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for asset in to_remove.iter() {
+            debug!("remove asset {:?}", asset);
+            self.delete_asset_path(txn, &asset);
+        }
+
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         txn.delete(self.tables.path_to_metadata, &key)
-            .expect("db: Failed to delete metadata from path_to_metadata table")
+            .expect("db: Failed to delete metadata from path_to_metadata table");
+        to_remove
+    }
+
+    pub fn resolve_asset_ref<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        txn: &'a V,
+        source_path: &PathBuf,
+        asset_ref: &AssetRef,
+    ) -> Option<AssetUuid> {
+        match asset_ref {
+            AssetRef::Uuid(uuid) => Some(*uuid),
+            AssetRef::Path(path) => {
+                let canon_path = resolve_source_path(source_path, path);
+                if let Some(metadata) = self.get_metadata(txn, &canon_path) {
+                    let assets = metadata
+                        .get()
+                        .map_err(crate::error::Error::Capnp)
+                        .and_then(|metadata| {
+                            let mut assets = Vec::new();
+                            for asset in metadata.get_assets()? {
+                                assets.push(utils::uuid_from_slice(asset.get_id()?.get_id()?)?);
+                            }
+                            Ok(assets)
+                        })
+                        .expect("capnp: failed to read asset list");
+                    // Resolve the path into asset with index 0, if it exists
+                    assets.into_iter().nth(0)
+                } else {
+                    log::error!(
+                        "Failed to resolve path {:?} at {:?}: could not find metadata for file",
+                        canon_path.to_string_lossy(),
+                        source_path.to_string_lossy(),
+                    );
+                    None
+                }
+            }
+        }
     }
 
     fn put_asset_path<'a>(
@@ -221,149 +406,340 @@ impl FileAssetSource {
             .expect("db: Failed to delete asset_id from asset_id_to_path table")
     }
 
+    fn add_path_ref<'a>(
+        &self,
+        txn: &'a mut RwTransaction<'_>,
+        source: &PathBuf,
+        path_ref: &PathBuf,
+    ) -> bool {
+        let path_ref = resolve_source_path(source, path_ref);
+        let key_str = path_ref.to_string_lossy();
+        let key = key_str.as_bytes();
+        let existing_refs = txn
+            .get::<path_refs::Owned, &[u8]>(self.tables.reverse_path_refs, &key)
+            .expect("db: Failed to get path ref from reverse_path_refs table");
+        let path_ref_str = source.to_string_lossy();
+        let path_ref_bytes = path_ref_str.as_bytes();
+        let mut message = capnp::message::Builder::new_default();
+        let list = message.init_root::<path_refs::Builder<'_>>();
+        let mut new_size = 1;
+        let mut paths = if let Some(existing_refs) = existing_refs {
+            let existing_refs = existing_refs.get().expect("capnp: failed to read message");
+            let existing_refs = existing_refs
+                .get_paths()
+                .expect("capnp: failed to read paths");
+
+            for existing_path in existing_refs.iter() {
+                if existing_path.expect("capnp: failed to read path ref") == path_ref_bytes {
+                    return false; // already exists in the list
+                }
+            }
+            new_size += existing_refs.len();
+            let mut paths = list.init_paths(new_size);
+            for (idx, existing_path) in existing_refs.iter().enumerate() {
+                paths.set(
+                    idx as u32,
+                    existing_path.expect("capnp: failed to read path ref"),
+                );
+            }
+            paths
+        } else {
+            list.init_paths(1)
+        };
+        paths.set(new_size - 1, &path_ref_bytes);
+        txn.put(self.tables.reverse_path_refs, &key, &message)
+            .expect("lmdb: failed to put path ref");
+        true
+    }
+
+    pub fn get_path_refs<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        txn: &'a V,
+        path: &PathBuf,
+    ) -> Vec<PathBuf> {
+        let key_str = path.to_string_lossy();
+        let key = key_str.as_bytes();
+        txn.get::<path_refs::Owned, &[u8]>(self.tables.reverse_path_refs, &key)
+            .expect("db: Failed to get asset_id from asset_id_to_path table")
+            .map_or(Vec::new(), |path_refs_message| {
+                let path_refs_message = path_refs_message
+                    .get()
+                    .expect("capnp: failed to read message");
+                let path_refs = path_refs_message
+                    .get_paths()
+                    .expect("capnp: failed to read paths");
+                path_refs
+                    .iter()
+                    .map(|path_bytes| {
+                        PathBuf::from(
+                            std::str::from_utf8(
+                                path_bytes.expect("capnp: failed to read path ref"),
+                            )
+                            .expect("capnp: failed to read utf8"),
+                        )
+                    })
+                    .collect()
+            })
+    }
+
+    fn remove_path_ref(
+        &self,
+        txn: &mut RwTransaction<'_>,
+        source: &PathBuf,
+        path_ref: &PathBuf,
+    ) -> bool {
+        let path_ref = resolve_source_path(source, path_ref);
+        let key_str = path_ref.to_string_lossy();
+        let key = key_str.as_bytes();
+        let existing_refs = txn
+            .get::<path_refs::Owned, &[u8]>(self.tables.reverse_path_refs, &key)
+            .expect("db: Failed to get path ref from reverse_path_refs table");
+        if let Some(existing_refs) = existing_refs {
+            let path_ref_str = source.to_string_lossy();
+            let path_ref_bytes = path_ref_str.as_bytes();
+            let existing_refs = existing_refs.get().expect("capnp: failed to read message");
+            let existing_refs = existing_refs
+                .get_paths()
+                .expect("capnp: failed to read paths");
+
+            let mut remove_idx = None;
+            for (idx, existing_path) in existing_refs.iter().enumerate() {
+                if existing_path.expect("capnp: failed to read path ref") == path_ref_bytes {
+                    remove_idx = Some(idx);
+                }
+            }
+            match remove_idx {
+                None => false, // does not exist in current list
+                Some(remove_idx) => {
+                    let new_size = existing_refs.len() - 1;
+                    if new_size == 0 {
+                        txn.delete(self.tables.reverse_path_refs, &key)
+                            .expect("lmdb: failed to delete path ref");
+                    } else {
+                        let mut message = capnp::message::Builder::new_default();
+                        let list = message.init_root::<path_refs::Builder<'_>>();
+                        let mut paths = list.init_paths(new_size);
+                        let mut insert_idx = 0;
+                        for (idx, existing_path) in existing_refs.iter().enumerate() {
+                            if idx != remove_idx {
+                                paths.set(
+                                    insert_idx as u32,
+                                    existing_path.expect("capnp: failed to read path ref"),
+                                );
+                                insert_idx += 1;
+                            }
+                        }
+                        txn.put(self.tables.reverse_path_refs, &key, &message)
+                            .expect("db: failed to update path refs");
+                    }
+                    true
+                }
+            }
+        } else {
+            false
+        }
+    }
+
     pub fn regenerate_import_artifact<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
         id: &AssetUuid,
         scratch_buf: &mut Vec<u8>,
-    ) -> Option<(u64, SerializedAssetVec)> {
-        self.get_asset_path(txn, id).and_then(|path| {
-            let cache = DBSourceMetadataCache {
-                txn,
-                file_asset_source: self,
-                _marker: std::marker::PhantomData,
-            };
+    ) -> Result<(u64, SerializedAssetVec)> {
+        let path = self
+            .get_asset_path(txn, id)
+            .ok_or_else(|| Error::Custom("Could not find asset".to_string()))?;
+        let cache = DBSourceMetadataCache {
+            txn,
+            file_asset_source: self,
+            _marker: std::marker::PhantomData,
+        };
 
-            let mut import = SourcePairImport::new(path);
-            import.set_importer_from_map(&self.importers);
-            import.set_importer_contexts(&self.importer_contexts);
-            import.generate_source_metadata(&cache);
-            import.hash_source();
-            let imported_assets = import.import_source(scratch_buf).ok()?;
-            imported_assets
-                .into_iter()
-                .find(|a| a.metadata.id == *id)
-                .map(|a| {
-                    let import_hash = import
-                        .import_hash()
-                        .expect("Invalid: Import path should exist");
+        let mut import = SourcePairImport::new(path.clone());
+        import.set_importer_from_map(&self.importers);
+        import.set_importer_contexts(&self.importer_contexts);
+        import.generate_source_metadata(&cache);
+        import.hash_source();
+        let imported_assets = import.import_source(scratch_buf)?;
+        let mut context_set = imported_assets
+            .importer_context_set
+            .expect("importer context set required");
+        let unresolved_load_refs = imported_assets
+            .assets
+            .iter()
+            .flat_map(|a| &a.unresolved_load_refs);
+        let unresolved_build_refs = imported_assets
+            .assets
+            .iter()
+            .flat_map(|a| &a.unresolved_build_refs);
+        let mut resolved_refs = Vec::new();
+        for unresolved_ref in unresolved_build_refs.chain(unresolved_load_refs) {
+            if let Some(uuid) = self.resolve_asset_ref(txn, &path, &unresolved_ref) {
+                context_set.resolve_ref(&unresolved_ref, uuid);
+                resolved_refs.push(uuid);
+            }
+        }
 
-                    let hash = utils::calc_asset_hash(id, import_hash);
+        context_set.enter();
+        let serialized_asset = imported_assets
+            .assets
+            .into_iter()
+            .find(|a| a.metadata.id == *id)
+            .ok_or_else(|| Error::Custom("Asset does not exist in source file".to_string()))
+            .and_then(|a| {
+                let import_hash = import
+                    .import_hash()
+                    .expect("Invalid: Import path should exist");
 
-                    a.asset.map(|a| (hash, a))
-                })
-                .unwrap_or(None)
-        })
+                let hash = utils::calc_asset_hash(id, import_hash, resolved_refs);
+                context_set.begin_serialize_asset(a.metadata.id);
+                let serialized_asset = SerializedAsset::create(
+                    &*a.asset
+                        .expect("expected asset obj when regenerating artifact"),
+                    CompressionType::None,
+                    scratch_buf,
+                )?;
+                context_set.end_serialize_asset(a.metadata.id);
+
+                Ok((hash, serialized_asset))
+            });
+        context_set.exit();
+        serialized_asset
+    }
+
+    fn resolve_metadata_asset_refs<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+        &self,
+        txn: &'a V,
+        path: &PathBuf,
+        asset_import_result: &AssetImportResultMetadata,
+        asset_metadata: &mut AssetMetadata,
+    ) {
+        for unresolved_build_ref in asset_import_result.unresolved_build_refs.iter() {
+            if let Some(build_ref) = self.resolve_asset_ref(txn, path, unresolved_build_ref) {
+                let uuid_ref = AssetRef::Uuid(build_ref);
+                if !asset_metadata.build_deps.contains(&uuid_ref) {
+                    asset_metadata.build_deps.push(uuid_ref);
+                }
+                // remove the AssetRef that was resolved
+                let ref_idx = asset_metadata
+                    .build_deps
+                    .iter()
+                    .position(|x| x == unresolved_build_ref);
+                if let Some(ref_idx) = ref_idx {
+                    asset_metadata.build_deps.remove(ref_idx);
+                }
+            }
+        }
+        for unresolved_load_ref in asset_import_result.unresolved_load_refs.iter() {
+            if let Some(load_ref) = self.resolve_asset_ref(txn, path, unresolved_load_ref) {
+                let uuid_ref = AssetRef::Uuid(load_ref);
+                if !asset_metadata.load_deps.contains(&uuid_ref) {
+                    asset_metadata.load_deps.push(uuid_ref);
+                }
+                let ref_idx = asset_metadata
+                    .load_deps
+                    .iter()
+                    .position(|x| x == unresolved_load_ref);
+                if let Some(ref_idx) = ref_idx {
+                    asset_metadata.load_deps.remove(ref_idx);
+                }
+            }
+        }
     }
 
     fn process_metadata_changes(
         &self,
         txn: &mut RwTransaction<'_>,
-        changes: HashMap<PathBuf, Option<SourceMetadata>>,
+        changes: HashMap<PathBuf, Option<PairImportResultMetadata<'_>>>,
         change_batch: &mut asset_hub::ChangeBatch,
     ) {
         let mut affected_assets = HashMap::new();
 
+        // delete metadata for deleted source pairs
         for (path, _) in changes.iter().filter(|(_, change)| change.is_none()) {
             debug!("deleting metadata for {}", path.to_string_lossy());
-            let to_remove: Vec<uuid::Bytes> = self
-                .get_metadata(txn, path)
-                .map(|existing| {
-                    let assets = existing
-                        .get()
-                        .expect("capnp: Failed to read metadata")
-                        .get_assets()
-                        .expect("capnp: Failed to get assets");
-
-                    assets
-                        .iter()
-                        .filter_map(|asset| {
-                            let slice = asset.get_id().ok()?;
-                            utils::uuid_from_slice(slice).ok()
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            for asset in to_remove {
-                debug!("remove asset {:?}", asset);
+            for asset in self.delete_metadata(txn, path) {
                 affected_assets.entry(asset).or_insert(None);
-                self.delete_asset_path(txn, &AssetUuid(asset));
             }
-
-            self.delete_metadata(txn, path);
         }
 
+        // update or insert metadata for changed source pairs
         for (path, metadata) in changes.iter().filter(|(_, change)| change.is_some()) {
-            let metadata = metadata.as_ref().unwrap();
+            let import_state = &metadata.as_ref().unwrap().import_state;
+            if import_state.source_metadata().is_none() {
+                continue;
+            }
+            let metadata = import_state
+                .source_metadata()
+                .unwrap_or_else(|| panic!("Change for {:?} has no SourceMetadata", path));
             debug!("imported {}", path.to_string_lossy());
 
-            let to_remove: Vec<uuid::Bytes> = self
-                .get_metadata(txn, path)
-                .map(|existing| {
-                    let assets = existing
-                        .get()
-                        .expect("capnp: Failed to read metadata")
-                        .get_assets()
-                        .expect("capnp: Failed to get assets");
+            let changed_assets = self
+                .put_metadata(txn, path, &metadata)
+                .expect("Failed to put metadata");
 
-                    assets
-                        .iter()
-                        .filter_map(|asset| {
-                            let slice = asset.get_id().expect("capnp: Failed to read id");
-                            utils::uuid_from_slice(slice).ok()
-                        })
-                        .filter(|id| metadata.assets.iter().all(|a| a.id.0 != *id))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            for asset in to_remove {
-                debug!("removing deleted asset {:?}", asset);
-                self.delete_asset_path(txn, &AssetUuid(asset));
+            for asset in changed_assets {
                 affected_assets.entry(asset).or_insert(None);
             }
 
-            self.put_metadata(txn, path, &metadata)
-                .expect("Failed to put metadata");
-
             for asset in metadata.assets.iter() {
-                debug!("updating asset {:?}", uuid::Uuid::from_bytes(asset.id.0));
-
-                match self.get_asset_path(txn, &asset.id) {
-                    Some(ref old_path) if old_path != path => {
-                        error!(
-                            "asset {:?} already in DB with path {} expected {}",
-                            asset.id,
-                            old_path.to_string_lossy(),
-                            path.to_string_lossy(),
-                        );
-                    }
-                    Some(_) => {} // asset already in DB with correct path
-                    _ => self.put_asset_path(txn, &asset.id, path),
-                }
-
-                affected_assets.insert(asset.id.0, Some(asset));
+                affected_assets.insert(asset.id, Some(asset.clone()));
             }
         }
 
-        for (asset, maybe_metadata) in affected_assets {
-            match self.get_asset_path(txn, &AssetUuid(asset)) {
+        // resolve unresolved path AssetRefs into UUIDs before updating asset metadata.
+        for (path, metadata) in changes.iter().filter(|(_, change)| change.is_some()) {
+            let metadata = metadata.as_ref().unwrap();
+            for asset in metadata.assets.iter() {
+                let asset_metadata = affected_assets
+                    .get_mut(&asset.metadata.id)
+                    .expect("asset in changes but not in affected_assets")
+                    .as_mut()
+                    .expect("asset None in affected_assets");
+                self.resolve_metadata_asset_refs(txn, path, asset, asset_metadata);
+            }
+        }
+
+        // push removals and updates into AssetHub database
+        for (asset, maybe_metadata) in affected_assets.iter_mut() {
+            match self.get_asset_path(txn, &asset) {
                 Some(ref path) => {
-                    let asset_metadata =
-                        maybe_metadata.expect("metadata exists in DB but not in hashmap");
+                    let mut asset_metadata = maybe_metadata
+                        .as_mut()
+                        .expect("metadata exists in DB but not in hashmap");
+                    // TODO set error state for unresolved path references?
+                    // this code strips out path references for now, but it will probably crash and burn when loading
+                    asset_metadata.load_deps = asset_metadata
+                        .load_deps
+                        .iter()
+                        .filter(|x| x.is_uuid())
+                        .cloned()
+                        .collect();
+                    asset_metadata.build_deps = asset_metadata
+                        .build_deps
+                        .iter()
+                        .filter(|x| x.is_uuid())
+                        .cloned()
+                        .collect();
+
+                    let import_hash = changes
+                        .get(path)
+                        .expect("path in affected set but no change in hashmap")
+                        .as_ref()
+                        .expect("path changed but no import result present")
+                        .import_state
+                        .import_hash()
+                        .expect("path changed but no import hash present");
                     self.hub
                         .update_asset(
                             txn,
                             utils::calc_asset_hash(
-                                &AssetUuid(asset),
-                                changes
-                                    .get(path)
-                                    .expect("path in affected set but no change in hashmap")
-                                    .as_ref()
-                                    .unwrap()
-                                    .import_hash
-                                    .expect("path changed but no import hash present"),
+                                &asset,
+                                import_hash,
+                                asset_metadata
+                                    .load_deps
+                                    .iter()
+                                    .chain(asset_metadata.build_deps.iter()),
                             ),
                             &asset_metadata,
                             data::AssetSource::File,
@@ -373,8 +749,89 @@ impl FileAssetSource {
                 }
                 None => {
                     self.hub
-                        .remove_asset(txn, &AssetUuid(asset), change_batch)
+                        .remove_asset(txn, &asset, change_batch)
                         .expect("hub: Failed to remove asset");
+                }
+            }
+        }
+
+        // update asset hashes for the reverse path refs of all changes
+        for (path, _) in changes.iter() {
+            let reverse_path_refs = self.get_path_refs(txn, path);
+            for path_ref_source in reverse_path_refs.iter() {
+                // First, check if the path has already been processed
+                if changes.contains_key(path_ref_source) {
+                    continue;
+                }
+                // Then we look in the database for assets affected by the change
+                let cache = DBSourceMetadataCache {
+                    txn,
+                    file_asset_source: &self,
+                    _marker: std::marker::PhantomData,
+                };
+                let mut import = SourcePairImport::new(path_ref_source.clone());
+                if !import.set_importer_from_map(&self.importers) {
+                    log::warn!("failed to set importer from map for path {:?} when updating path ref dependencies", path_ref_source);
+                } else {
+                    import.generate_source_metadata(&cache);
+                    let import_hash = import
+                        .source_metadata()
+                        .expect("expected source metadata")
+                        .import_hash
+                        .expect("expected import hash in source metadata");
+                    match import.import_result_from_metadata() {
+                        Ok(import_result) => {
+                            for mut asset in import_result.assets {
+                                let result_metadata = AssetImportResultMetadata {
+                                    metadata: asset.metadata.clone(),
+                                    unresolved_load_refs: asset.unresolved_load_refs,
+                                    unresolved_build_refs: asset.unresolved_build_refs,
+                                };
+                                self.resolve_metadata_asset_refs(
+                                    txn,
+                                    path_ref_source,
+                                    &result_metadata,
+                                    &mut asset.metadata,
+                                );
+                                // TODO set error state for unresolved path references?
+                                // this code strips out path references for now, but it will probably crash and burn when loading
+                                asset.metadata.load_deps = asset
+                                    .metadata
+                                    .load_deps
+                                    .iter()
+                                    .filter(|x| x.is_uuid())
+                                    .cloned()
+                                    .collect();
+                                asset.metadata.build_deps = asset
+                                    .metadata
+                                    .build_deps
+                                    .iter()
+                                    .filter(|x| x.is_uuid())
+                                    .cloned()
+                                    .collect();
+                                self.hub
+                                    .update_asset(
+                                        txn,
+                                        utils::calc_asset_hash(
+                                            &asset.metadata.id,
+                                            import_hash,
+                                            asset
+                                                .metadata
+                                                .load_deps
+                                                .iter()
+                                                .chain(asset.metadata.build_deps.iter()),
+                                        ),
+                                        &asset.metadata,
+                                        data::AssetSource::File,
+                                        change_batch,
+                                    )
+                                    .expect("hub: Failed to update asset in hub");
+                            }
+                        }
+                        Err(err) => {
+                            log::error!("failed to get import result from metadata when updating path ref for asset: {}", err);
+                        }
+                    }
                 }
             }
         }
@@ -397,7 +854,6 @@ impl FileAssetSource {
             skip_ack_dirty |= check_file_state(&pair.source.as_ref().map(|f| f));
             skip_ack_dirty |= check_file_state(&pair.meta.as_ref().map(|f| f));
         }
-
         if !skip_ack_dirty {
             if pair.source.is_some() {
                 self.tracker
@@ -431,7 +887,10 @@ impl FileAssetSource {
 
                     existing_metadata = Some(copy);
                     for asset in metadata.get_assets().expect("capnp: Failed to get assets") {
-                        let id = asset.get_id().expect("capnp: Failed to get asset id");
+                        let id = asset
+                            .get_id()
+                            .and_then(|a| a.get_id())
+                            .expect("capnp: Failed to get asset id");
                         asset_ids.push(Vec::from(id));
                     }
                 }
@@ -458,45 +917,68 @@ impl FileAssetSource {
     }
 
     fn check_for_importer_changes(&self) -> bool {
-        let txn = self.db.ro_txn().expect("db: Failed to open ro txn");
+        let changed_paths: Vec<PathBuf> = {
+            let txn = self.db.ro_txn().expect("db: Failed to open ro txn");
 
-        let changed_paths: Vec<PathBuf> = self
-            .iter_metadata(&txn)
-            .filter_map(|(path, metadata)| {
-                let metadata = metadata.get().expect("capnp: Failed to get metadata");
-                let changed = self
-                    .importers
-                    .get_by_path(&path)
-                    .map(|importer| {
-                        let importer_version = metadata.get_importer_version();
+            self.tracker
+                .read_all_files(&txn)
+                .iter()
+                .filter_map(|file_state| {
+                    let metadata = self.get_metadata(&txn, &file_state.path);
+                    let changed = self
+                        .importers
+                        .get_by_path(&file_state.path)
+                        .map(|importer| {
+                            match &metadata {
+                                None => {
+                                    // there's no existing import metadata, but we have an importer,
+                                    // so we should process this file - it probably just got a new importer
+                                    return true;
+                                }
+                                Some(metadata) => {
+                                    let metadata =
+                                        metadata.get().expect("capnp: Failed to get metadata");
+                                    let importer_version = metadata.get_importer_version();
 
-                        let options_type = metadata
-                            .get_importer_options_type()
-                            .expect("capnp: Failed to get importer options type");
+                                    let options_type = metadata
+                                        .get_importer_options_type()
+                                        .expect("capnp: Failed to get importer options type");
 
-                        let state_type = metadata
-                            .get_importer_state_type()
-                            .expect("capnp: Failed to get importer state type");
+                                    let state_type = metadata
+                                        .get_importer_state_type()
+                                        .expect("capnp: Failed to get importer state type");
 
-                        let importer_type = metadata
-                            .get_importer_type()
-                            .expect("capnp: Failed to get importer type");
+                                    let importer_type = metadata
+                                        .get_importer_type()
+                                        .expect("capnp: Failed to get importer type");
 
-                        importer_version != importer.version()
-                            || options_type != importer.default_options().uuid()
-                            || state_type != importer.default_state().uuid()
-                            || importer_type != importer.uuid()
-                    })
-                    .unwrap_or(false);
+                                    importer_version != importer.version()
+                                        || options_type != importer.default_options().uuid()
+                                        || state_type != importer.default_state().uuid()
+                                        || importer_type != importer.uuid()
+                                }
+                            }
+                        })
+                        .unwrap_or_else(|| {
+                            if let None = metadata {
+                                // there's no importer, and no existing metadata.
+                                // no need to process it
+                                false
+                            } else {
+                                // there's no importer, but we have metadata.
+                                // we should process it, as its importer could've been removed
+                                true
+                            }
+                        });
 
-                if changed {
-                    Some(path)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
+                    if changed {
+                        Some(file_state.path.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
         let has_changed_paths = !changed_paths.is_empty();
         if has_changed_paths {
             let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
@@ -554,9 +1036,6 @@ impl FileAssetSource {
         }
 
         source_meta_pairs
-            .into_iter()
-            .filter(|(_, pair)| pair.meta.is_some() && pair.source.is_some())
-            .collect()
     }
 
     // TODO(happens): Return for this is asset_metadata_changed. This function needs a lot
@@ -593,7 +1072,7 @@ impl FileAssetSource {
                             }
                             match self.db.ro_txn() {
                                 Err(e) => {
-                                    sender.send((processed_pair, Err(e))).unwrap();
+                                    panic!("failed to open RO transaction: {}", e);
                                 }
                                 Ok(read_txn) => {
                                     let cache = DBSourceMetadataCache {
@@ -608,7 +1087,26 @@ impl FileAssetSource {
                                         &processed_pair,
                                         local_store.as_mut().unwrap(),
                                     );
-                                    sender.send((processed_pair, result)).unwrap();
+                                    // TODO put import artifact in cache if it doesn't have unresolved refs
+                                    let import_result = result.map(|result| {
+                                        result.and_then(|(import, import_output)| {
+                                            import_output.map(|o| PairImportResultMetadata {
+                                                import_state: import,
+                                                assets: o
+                                                    .assets
+                                                    .into_iter()
+                                                    .map(|a| AssetImportResultMetadata {
+                                                        metadata: a.metadata,
+                                                        unresolved_load_refs: a
+                                                            .unresolved_load_refs,
+                                                        unresolved_build_refs: a
+                                                            .unresolved_build_refs,
+                                                    })
+                                                    .collect(),
+                                            })
+                                        })
+                                    });
+                                    sender.send((processed_pair, import_result)).unwrap();
                                 }
                             }
                         });
@@ -637,13 +1135,13 @@ impl FileAssetSource {
                                     )
                                     .path;
                                     self.ack_dirty_file_states(txn, &pair);
-                                    // TODO put import artifact in cache
-                                    metadata_changes.insert(
-                                        path.clone(),
-                                        result.map(|r| r.0.source_metadata()).unwrap_or(None),
-                                    );
+                                    metadata_changes.insert(path.clone(), result);
                                 }
-                                Err(e) => error!("Error processing pair: {}", e),
+                                Err(e) => error!(
+                                    "Error processing pair at {:?}: {}",
+                                    pair.source.as_ref().map(|s| &s.path),
+                                    e
+                                ),
                             }
                             num_processed += 1;
                             import_iter.next();
@@ -667,18 +1165,22 @@ impl FileAssetSource {
         let start_time = Local::now();
         let mut changed_files = Vec::new();
 
-        let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
+        // Transactions on the same thread cannot be active at the same time!
+        // This scope is important, even if it may look like it does nothing..
+        {
+            let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
 
-        // Before reading the filesystem state we need to process rename events.
-        // This must be done in the same transaction to guarantee database consistency.
-        self.handle_rename_events(&mut txn);
-        let source_meta_pairs = self.handle_dirty_files(&mut txn);
+            // Before reading the filesystem state we need to process rename events.
+            // This must be done in the same transaction to guarantee database consistency.
+            self.handle_rename_events(&mut txn);
+            let source_meta_pairs = self.handle_dirty_files(&mut txn);
 
-        // This looks a little stupid, since there is no `into_values`
-        changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
+            // This looks a little stupid, since there is no `into_values`
+            changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
 
-        if txn.dirty {
-            txn.commit().expect("Failed to commit txn");
+            if txn.dirty {
+                txn.commit().expect("Failed to commit txn");
+            }
         }
 
         let hashed_files = hash_files(&changed_files);
@@ -776,13 +1278,13 @@ impl<'a, 'b, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>
                     metadata.importer_state = state;
                 }
             }
-            metadata.assets = build_pipelines
+            metadata.import_hash = Some(u64::from_le_bytes(utils::make_array(
+                saved_metadata.get_import_hash()?,
+            )));
+            metadata.assets = saved_metadata
+                .get_assets()?
                 .iter()
-                .map(|(id, pipeline)| AssetMetadata {
-                    id: AssetUuid(*id),
-                    build_pipeline: Some(AssetUuid(*pipeline)),
-                    ..Default::default()
-                })
+                .map(|a| asset_hub::parse_db_metadata(&a))
                 .collect();
         }
         Ok(())

@@ -1,4 +1,4 @@
-use atelier_core::{AssetTypeId, AssetUuid};
+use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
 use crossbeam_channel::Sender;
 use std::{error::Error, sync::Arc};
 
@@ -211,7 +211,7 @@ pub trait LoaderInfoProvider {
     /// # Parameters
     ///
     /// * `id`: UUID of the asset.
-    fn get_load_handle(&self, id: AssetUuid) -> Option<LoadHandle>;
+    fn get_load_handle(&self, asset_ref: &AssetRef) -> Option<LoadHandle>;
 
     /// Returns the AssetUUID for the given LoadHandle, if present.
     ///

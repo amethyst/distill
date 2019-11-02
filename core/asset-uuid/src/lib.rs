@@ -18,7 +18,7 @@ pub fn asset_uuid(input: TokenStream) -> TokenStream {
         .as_bytes();
 
     let expanded = quote! {
-        [#(#bytes as u8),*]
+        AssetUuid([#(#bytes as u8),*])
     };
 
     TokenStream::from(expanded)

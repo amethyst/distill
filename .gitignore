@@ -1,5 +1,6 @@
 target
 /assets
-/.assets_db
+.assets_db
 .vscode
 */tests/assets_db
+Cargo.lock

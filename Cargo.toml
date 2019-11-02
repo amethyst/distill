@@ -1,3 +1,18 @@
+[package]
+name = "atelier-assets"
+version = "0.1.0"
+authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
+edition = "2018"
+description = "\"Offline\" asset processing and indexing for game engines"
+exclude = ["examples/*"]
+keywords = ["game", "engine", "assets", "loading", "processing", "indexing"]
+categories = ["game-engines"]
+
+repository = "https://github.com/amethyst/atelier-assets"
+
+readme = "README.md"
+license = "MIT/Apache-2.0"
+
 [workspace]
 members = [
     "importer", 
@@ -9,3 +24,33 @@ members = [
     "daemon",
     "core",
 ]
+
+[dependencies]
+atelier-core = { version = "0.1", path = "core" }
+atelier-daemon = { version = "0.1", path = "daemon" }
+atelier-importer = { version = "0.1", path = "importer" }
+atelier-loader = { version = "0.1", path = "loader" }
+
+
+
+[dev-dependencies]
+type-uuid = "0.1"
+structopt = "0.2"
+image2 = { version = "0.11", features = [ "ser" ], git = "https://github.com/kabergstrom/image2-rs.git", branch = "error_fixes" }
+inventory = "0.1"
+log = { version = "0.4", features = ["serde"] }
+serde = "1"
+uuid = "0.7"
+bincode = "1.2"
+typetag = "0.1"
+lazy_static = "1.3"
+mopa = "0.2"
+
+
+[[example]]
+name = "daemon_with_loader"
+path = "examples/daemon_with_loader/main.rs"
+
+[[example]]
+name = "handle_integration"
+path = "examples/handle_integration/main.rs"

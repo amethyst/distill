@@ -6,7 +6,7 @@ use crate::{
     file_tracker::FileTracker,
     serialized_asset::SerializedAsset,
 };
-use atelier_core::{utils, AssetUuid};
+use atelier_core::utils;
 use atelier_schema::{
     data::{asset_change_log_entry, asset_metadata, serialized_asset, AssetSource},
     service::asset_hub,
@@ -17,7 +17,7 @@ use futures::{sync::mpsc, Future, Stream};
 use owning_ref::OwningHandle;
 use std::{
     collections::{HashMap, HashSet},
-    fs, path,
+    path,
     rc::Rc,
     sync::Arc,
     thread,
@@ -77,7 +77,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut metadatas = Vec::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?)?;
-            let value = ctx.hub.get_metadata(txn, &AssetUuid(id))?;
+            let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
                 metadatas.push(metadata);
             }
@@ -103,7 +103,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut metadatas = HashMap::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?)?;
-            let value = ctx.hub.get_metadata(txn, &AssetUuid(id))?;
+            let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
                 metadatas.insert(id, metadata);
             }
@@ -111,14 +111,14 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut missing_metadata = HashSet::new();
         for metadata in metadatas.values() {
             for dep in metadata.get()?.get_load_deps()? {
-                let dep = utils::uuid_from_slice(dep.get_id()?)?;
+                let dep = *crate::asset_hub::parse_db_asset_ref(&dep).expect_uuid();
                 if !metadatas.contains_key(&dep) {
                     missing_metadata.insert(dep);
                 }
             }
         }
         for id in missing_metadata {
-            let value = ctx.hub.get_metadata(txn, &AssetUuid(id))?;
+            let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
                 metadatas.insert(id, metadata);
             }
@@ -168,19 +168,19 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut scratch_buf = Vec::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?)?;
-            let value = ctx.hub.get_metadata(txn, &AssetUuid(id))?;
+            let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
                 let metadata = metadata.get()?;
                 match metadata.get_source()? {
                     AssetSource::File => {
                         // TODO run build pipeline
-                        if let Some((hash, artifact)) =
-                            ctx.file_source
-                                .regenerate_import_artifact(txn, &AssetUuid(id), &mut scratch_buf)
-                        {
-                            let capnp_artifact = build_serialized_asset_message(&artifact);
-                            artifacts.push((id, hash, capnp_artifact));
-                        }
+                        let (hash, artifact) = ctx.file_source.regenerate_import_artifact(
+                            txn,
+                            &id,
+                            &mut scratch_buf,
+                        )?;
+                        let capnp_artifact = build_serialized_asset_message(&artifact);
+                        artifacts.push((id, hash, capnp_artifact));
                     }
                 }
             }
@@ -191,7 +191,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
             .init_artifacts(artifacts.len() as u32);
         for (idx, (id, hash, artifact)) in artifacts.iter().enumerate() {
             let mut out = artifact_results.reborrow().get(idx as u32);
-            out.reborrow().init_asset_id().set_id(id);
+            out.reborrow().init_asset_id().set_id(&id.0);
             out.reborrow().set_key(&hash.to_le_bytes());
             out.reborrow()
                 .set_data(artifact.get_root_as_reader::<serialized_asset::Reader<'_>>()?)?;
@@ -218,10 +218,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let ctx = self.txn.as_owner();
         let txn = &**self.txn;
         let mut changes = Vec::new();
-        let iter = ctx
-            .hub
-            .get_asset_changes_iter(txn)?
-            .capnp_iter_from(&params.get_start().to_le_bytes());
+        let iter = ctx.hub.get_asset_changes_iter(txn)?;
+        let iter = iter.capnp_iter_from(&params.get_start().to_le_bytes());
         let mut count = params.get_count() as usize;
         if count == 0 {
             count = std::usize::MAX;
@@ -252,7 +250,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut asset_paths = Vec::new();
         for id in params.get_assets()? {
             let asset_uuid = utils::uuid_from_slice(id.get_id()?)?;
-            let path = ctx.file_source.get_asset_path(txn, &AssetUuid(asset_uuid));
+            let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
             if let Some(path) = path {
                 asset_paths.push((id, path));
             }
@@ -285,26 +283,19 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut metadatas = Vec::new();
         for request_path in params.get_paths()? {
             let request_path = request_path?;
-            let path_str = if cfg!(windows) {
-                // fs::canonicalize does not handle forward slashes in paths on Windows
-                std::str::from_utf8(request_path)?
-                    .to_string()
-                    .replace("/", "\\")
-            } else {
-                std::str::from_utf8(request_path)?.to_string()
-            };
+            let path_str = std::str::from_utf8(request_path)?.to_string();
             let path = path::PathBuf::from(path_str);
             let mut metadata = None;
             if path.is_relative() {
                 for dir in ctx.file_tracker.get_watch_dirs() {
-                    if let Ok(canonicalized) = fs::canonicalize(dir.join(&path)) {
-                        metadata = ctx.file_source.get_metadata(txn, &canonicalized);
-                        if metadata.is_some() {
-                            break;
-                        }
+                    let canonicalized = crate::watcher::canonicalize_path(&dir.join(&path));
+                    metadata = ctx.file_source.get_metadata(txn, &canonicalized);
+                    if metadata.is_some() {
+                        break;
                     }
                 }
-            } else if let Ok(canonicalized) = fs::canonicalize(&path) {
+            } else {
+                let canonicalized = crate::watcher::canonicalize_path(&path);
                 metadata = ctx.file_source.get_metadata(txn, &canonicalized)
             }
             if let Some(metadata) = metadata {
@@ -323,7 +314,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
                 asset_results
                     .reborrow()
                     .get(idx as u32)
-                    .set_id(asset.get_id()?);
+                    .set_id(asset.get_id()?.get_id()?);
             }
             results.reborrow().get(idx as u32).set_path(path);
         }
@@ -476,23 +467,13 @@ impl AssetHubService {
 
         let _ = std::fs::remove_file(endpoint());
 
-        // let ipc = Endpoint::new(endpoint());
-        // let ipc_future = ipc
-        //     .incoming(&tokio::reactor::Handle::default())
-        //     .expect("failed to listen for incoming IPC connections")
-        //     .for_each(move |(stream, _id)| {
-        //         let (reader, writer) = stream.split();
-        //         spawn_rpc(reader, writer, self.ctx.clone());
-        //         Ok(())
-        //     });
-
         // NOTE(happens): This will only fail if we can't set the stream
         // parameters on startup, which is a cause for panic in any case.
+        // NOTE(kabergstrom): It also seems to happen when the main thread
+        // is aborted and this is run on a background thread
         runtime
             .block_on(tcp_future)
             .expect("Failed to run tcp listener");
-
-        // runtime.block_on(tcp_future.join(ipc_future))?;
     }
 }
 

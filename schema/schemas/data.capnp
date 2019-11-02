@@ -4,6 +4,13 @@ struct AssetUuid {
     id @0 :Data;
 }
 
+struct AssetRef {
+  union {
+    uuid @0 :AssetUuid;
+    path @1 :Data;
+  }
+}
+
 struct AssetUuidList {
     list @0 :List(AssetUuid);
 }
@@ -51,7 +58,7 @@ struct AssetUuidPair {
 }
 
 struct SourceMetadata {
-  assets @0 :List(AssetUuid);
+  assets @0 :List(AssetMetadata);
   importerVersion @1 :UInt32;
   importerOptionsType @2 :Data;
   importerOptions @3 :Data;
@@ -59,9 +66,19 @@ struct SourceMetadata {
   importerState @5 :Data;
   buildPipelines @6 :List(AssetUuidPair);
   importerType @7 :Data;
+  union {
+    error @8 :Error;
+    noError @9 :Void;
+  }
+  pathRefs @10 :List(Data);
+  importHash @11 :Data;
 }
 
-struct ImportError {
+struct PathRefs {
+  paths @0 :List(Data);
+}
+
+struct Error {
   text @0 :Text;
 }
 
@@ -75,22 +92,23 @@ struct ImportArtifactKey {
 
 struct AssetMetadata {
   id @0 :AssetUuid;
-  loadDeps @1 :List(AssetUuid);
-  buildDeps @2 :List(AssetUuid);
-  instantiateDeps @3 :List(AssetUuid);
-  searchTags @4 :List(KeyValue);
-  buildPipeline @5 :AssetUuid;
-  # The type of the asset in the build artifact
-  builtAssetType @6 :Data;
-  # The type of the asset in the import artifact
-  importedAssetType @7 :Data;
+  loadDeps @1 :List(AssetRef);
+  buildDeps @2 :List(AssetRef);
+  searchTags @3 :List(KeyValue);
+  buildPipeline @4 :AssetUuid;
+  # The type of the asset 
+  assetType @5 :Data;
   # The most recently recorded hash of the input to the import function
   latestArtifact :union {
-    id @8 :ImportArtifactKey;
-    none @9 :Void;
+    id @6 :ImportArtifactKey;
+    none @7 :Void;
   }
   # The source of the imported asset
-  source @10 :AssetSource;
+  source @8 :AssetSource;
+  union {
+    error @9 :Error;
+    noError @10 :Void;
+  }
 }
 
 # The identifier for a build artifact is the hash of 
@@ -151,4 +169,8 @@ struct SerializedAsset {
   uncompressedSize @1 :UInt64;
   typeUuid @2 :Data;
   data @3 :Data;
+}
+
+struct DaemonInfo {
+  version @0 :UInt32;
 }

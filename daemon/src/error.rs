@@ -28,6 +28,7 @@ pub enum Error {
     ImporterError(atelier_importer::Error),
     TokioSpawnError(SpawnError),
     StrUtf8Error(str::Utf8Error),
+    Custom(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -51,6 +52,7 @@ impl std::error::Error for Error {
             Error::ImporterError(ref e) => e.description(),
             Error::TokioSpawnError(ref e) => e.description(),
             Error::StrUtf8Error(ref e) => e.description(),
+            Error::Custom(ref s) => s.as_str(),
         }
     }
 
@@ -72,6 +74,7 @@ impl std::error::Error for Error {
             Error::ImporterError(ref e) => Some(e),
             Error::TokioSpawnError(ref e) => Some(e),
             Error::StrUtf8Error(ref e) => Some(e),
+            Error::Custom(ref _e) => None,
         }
     }
 }
@@ -94,6 +97,7 @@ impl fmt::Display for Error {
             Error::ImporterError(ref e) => e.fmt(f),
             Error::TokioSpawnError(ref e) => e.fmt(f),
             Error::StrUtf8Error(ref e) => e.fmt(f),
+            Error::Custom(ref s) => f.write_str(s.as_str()),
         }
     }
 }

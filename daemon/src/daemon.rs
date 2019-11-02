@@ -1,8 +1,9 @@
 use crate::{
-    asset_hub, asset_hub_service, capnp_db::Environment, file_asset_source,
+    asset_hub, asset_hub_service, capnp_db::Environment, error::Result, file_asset_source,
     file_tracker::FileTracker,
 };
 use atelier_importer::{get_importer_contexts, BoxedImporter, ImporterContext};
+use atelier_schema::data;
 use log::error;
 use std::{
     collections::HashMap,
@@ -15,11 +16,11 @@ use std::{
 };
 
 #[derive(Default)]
-pub(crate) struct ImporterMap(HashMap<&'static str, Box<dyn BoxedImporter>>);
+pub(crate) struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
-    pub fn insert(&mut self, ext: &'static str, importer: Box<dyn BoxedImporter>) {
-        self.0.insert(ext, importer);
+    pub fn insert(&mut self, ext: &str, importer: Box<dyn BoxedImporter>) {
+        self.0.insert(ext.to_lowercase(), importer);
     }
 
     pub fn get_by_path<'a>(&'a self, path: &PathBuf) -> Option<&'a dyn BoxedImporter> {
@@ -31,6 +32,20 @@ impl ImporterMap {
     }
 }
 
+struct AssetDaemonTables {
+    /// Contains metadata about the daemon version and settings
+    /// String -> Blob
+    daemon_info: lmdb::Database,
+}
+impl AssetDaemonTables {
+    fn new(db: &Environment) -> Result<Self> {
+        Ok(Self {
+            daemon_info: db.create_db(Some("daemon_info"), lmdb::DatabaseFlags::default())?,
+        })
+    }
+}
+
+const DAEMON_VERSION: u32 = 1;
 pub struct AssetDaemon {
     db_dir: PathBuf,
     address: SocketAddr,
@@ -108,6 +123,8 @@ impl AssetDaemon {
         let asset_db = Environment::new(&self.db_dir).expect("failed to create asset db");
         let asset_db = Arc::new(asset_db);
 
+        check_db_version(&asset_db).expect("failed to check daemon version in asset db");
+
         let to_watch = self.asset_dirs.iter().map(|p| p.to_str().unwrap());
         let tracker = FileTracker::new(asset_db.clone(), to_watch);
         let tracker = Arc::new(tracker);
@@ -132,12 +149,15 @@ impl AssetDaemon {
 
         // create the assets folder automatically to make it easier to get started.
         // might want to remove later when watched dirs become configurable?
-        let tracker_handle = thread::spawn(move || {
-            let result = panic::catch_unwind(|| tracker.run());
-            if let Err(err) = result {
-                bail(err);
-            }
-        });
+        let tracker_handle = thread::Builder::new()
+            .name("file_tracker".to_string())
+            .spawn(move || {
+                let result = panic::catch_unwind(|| tracker.run());
+                if let Err(err) = result {
+                    bail(err);
+                }
+            })
+            .expect("failed to spawn file_tracker thread");
 
         // NOTE(happens): We have to do a silly little dance here because of the way
         // unwind boundaries work. Since `Cell`s and other pointer types can provide
@@ -145,23 +165,29 @@ impl AssetDaemon {
         // However, Mutexes implement poisoning and can be passed, so we basically
         // wrap these in a useless Mutex that gets locked instantly. This lets us catch
         // any panic and abort after logging the error.
-        let asset_source_handle = thread::spawn(move || {
-            let asset_source = Mutex::new(asset_source);
-            let result = panic::catch_unwind(|| asset_source.lock().unwrap().run());
+        let asset_source_handle = thread::Builder::new()
+            .name("file_asset_source".to_string())
+            .spawn(move || {
+                let asset_source = Mutex::new(asset_source);
+                let result = panic::catch_unwind(|| asset_source.lock().unwrap().run());
 
-            if let Err(err) = result {
-                bail(err);
-            }
-        });
+                if let Err(err) = result {
+                    bail(err);
+                }
+            })
+            .expect("failed to spawn file_asset_source thread");
 
         let addr = self.address;
-        let service_handle = thread::spawn(move || {
-            let service = Mutex::new(service);
-            let result = panic::catch_unwind(|| service.lock().unwrap().run(addr));
-            if let Err(err) = result {
-                bail(err);
-            }
-        });
+        let service_handle = thread::Builder::new()
+            .name("asset_hub_service".to_string())
+            .spawn(move || {
+                let service = Mutex::new(service);
+                let result = panic::catch_unwind(|| service.lock().unwrap().run(addr));
+                if let Err(err) = result {
+                    bail(err);
+                }
+            })
+            .expect("failed to spawn asset_hub_service thread");
 
         tracker_handle
             .join()
@@ -184,4 +210,55 @@ fn bail(err: std::boxed::Box<dyn std::any::Any + std::marker::Send>) {
     }
 
     std::process::exit(1);
+}
+
+fn check_db_version(env: &Environment) -> Result<()> {
+    use crate::capnp_db::DBTransaction;
+    let tables = AssetDaemonTables::new(env).expect("failed to create AssetDaemon tables");
+    let txn = env.ro_txn()?;
+    let info_key = "daemon_info".as_bytes();
+    let daemon_info = txn.get::<data::daemon_info::Owned, &[u8]>(tables.daemon_info, &info_key)?;
+    let mut clear_db = true;
+    if let Some(info) = daemon_info {
+        let info = info.get()?;
+        if info.get_version() == DAEMON_VERSION {
+            clear_db = false;
+        }
+    }
+
+    if clear_db {
+        let unnamed_db = env
+            .create_db(None, lmdb::DatabaseFlags::default())
+            .expect("failed to open unnamed DB when checking daemon info");
+        use lmdb::Cursor;
+        let mut databases = Vec::new();
+        for (key, _) in txn
+            .open_ro_cursor(unnamed_db)
+            .expect("failed to create cursor when checking daemon info")
+            .iter_start()
+        {
+            let db_name = std::str::from_utf8(key).expect("failed to parse db name");
+            databases.push(
+                env.create_db(Some(db_name), lmdb::DatabaseFlags::default())
+                    .unwrap_or_else(|err| {
+                        panic!("failed to open db with name {}: {}", db_name, err)
+                    }),
+            );
+        }
+        let mut txn = env.rw_txn()?;
+        for db in databases {
+            txn.clear_db(db).expect("failed to clear db");
+        }
+        txn.commit()?;
+    }
+    let mut txn = env.rw_txn()?;
+    let mut value_builder = capnp::message::Builder::new_default();
+    {
+        let mut m = value_builder.init_root::<data::daemon_info::Builder<'_>>();
+        m.set_version(DAEMON_VERSION);
+    }
+    txn.put(tables.daemon_info, &info_key, &value_builder)?;
+    txn.commit()?;
+
+    Ok(())
 }

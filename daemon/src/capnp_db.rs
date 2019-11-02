@@ -10,54 +10,67 @@ pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::Sl
 pub struct Environment {
     env: lmdb::Environment,
 }
+pub struct RoTransaction<'a> {
+    txn: lmdb::RoTransaction<'a>,
+}
 pub struct RwTransaction<'a> {
     txn: lmdb::RwTransaction<'a>,
     pub dirty: bool,
 }
-pub type RoTransaction<'a> = lmdb::RoTransaction<'a>;
+// pub type RoTransaction<'a> = lmdb::RoTransaction<'a>;
 
-pub struct Iter<'txn> {
+pub struct Iter<'cursor, 'txn> {
+    cursor: lmdb::RoCursor<'txn>,
     iter: lmdb::Iter<'txn>,
+    _marker: std::marker::PhantomData<&'cursor ()>,
 }
 
 pub trait CapnpCursor<'txn> {
-    fn capnp_iter_start(&mut self) -> Iter<'txn>;
-    fn capnp_iter_from<K>(&mut self, key: &K) -> Iter<'txn>
+    fn capnp_iter_start<'cursor>(self) -> Iter<'cursor, 'txn>;
+    fn capnp_iter_from<'cursor, K>(self, key: &K) -> Iter<'cursor, 'txn>
     where
         K: AsRef<[u8]>;
 }
 impl<'txn> CapnpCursor<'txn> for lmdb::RoCursor<'txn> {
-    fn capnp_iter_start(&mut self) -> Iter<'txn> {
+    fn capnp_iter_start<'cursor>(mut self) -> Iter<'cursor, 'txn> {
         Iter {
             iter: self.iter_start(),
+            cursor: self,
+            _marker: std::marker::PhantomData,
         }
     }
-    fn capnp_iter_from<K>(&mut self, key: &K) -> Iter<'txn>
+    fn capnp_iter_from<'cursor, K>(mut self, key: &K) -> Iter<'cursor, 'txn>
     where
         K: AsRef<[u8]>,
     {
         Iter {
             iter: self.iter_from(key),
+            cursor: self,
+            _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<'txn> Iterator for Iter<'txn> {
+impl<'cursor, 'txn> Iterator for Iter<'cursor, 'txn> {
     type Item = (
         &'txn [u8],
         StdResult<capnp::message::Reader<capnp::serialize::SliceSegments<'txn>>, capnp::Error>,
     );
     fn next(&mut self) -> Option<Self::Item> {
-        let (key_bytes, value_bytes) = self.iter.next()?;
-        let slice;
-        unsafe {
-            slice = capnp::Word::bytes_to_words(value_bytes);
+        match self.iter.next() {
+            Some((key_bytes, value_bytes)) => {
+                let slice;
+                unsafe {
+                    slice = capnp::Word::bytes_to_words(value_bytes);
+                }
+                let value_msg = capnp::serialize::read_message_from_words(
+                    &slice,
+                    capnp::message::ReaderOptions::default(),
+                );
+                Some((key_bytes, value_msg))
+            }
+            None => None,
         }
-        let value_msg = capnp::serialize::read_message_from_words(
-            &slice,
-            capnp::message::ReaderOptions::default(),
-        );
-        Some((key_bytes, value_msg))
     }
 }
 
@@ -135,7 +148,7 @@ impl<'a> DBTransaction<'a, lmdb::RwTransaction<'a>> for RwTransaction<'a> {
 
 impl<'a> DBTransaction<'a, lmdb::RoTransaction<'a>> for RoTransaction<'a> {
     fn txn(&'a self) -> &'a lmdb::RoTransaction<'a> {
-        &self
+        &self.txn
     }
 }
 
@@ -217,9 +230,11 @@ impl<'a> RwTransaction<'a> {
         Ok(())
     }
 
-    pub fn commit(self) -> Result<()> {
-        self.txn.commit()?;
-        Ok(())
+    pub fn commit(mut self) -> Result<()> {
+        unsafe {
+            std::mem::replace(&mut self.txn, std::mem::zeroed()).commit()?;
+            Ok(())
+        }
     }
 
     pub fn open_rw_cursor(&'a mut self, db: lmdb::Database) -> Result<lmdb::RwCursor<'a>> {
@@ -274,6 +289,8 @@ impl Environment {
         Ok(RwTransaction { txn, dirty: false })
     }
     pub fn ro_txn(&self) -> Result<RoTransaction<'_>> {
-        Ok(self.env.begin_ro_txn()?)
+        Ok(RoTransaction {
+            txn: self.env.begin_ro_txn()?,
+        })
     }
 }
