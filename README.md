@@ -12,14 +12,14 @@ To create a solid open-source default alternative for asset management, processi
 
 # Features
 The project contains a number of components that can be used to achieve the following features,
-- **Source file change detection**: A background process ensures source files are only parsed when they change. Metadata and hashes are indexed locally in LMDB and version controlled in .meta files, reducing redundant imports across your whole team.
+- **Source file change detection**: The daemon watches for filesystem changes and ensures source files are only parsed when they change. Metadata and hashes are indexed locally in LMDB and version controlled in .meta files, reducing redundant imports across your whole team.
 - **Import caching**: Assets imported from a source file can be cached by a hash of their source file content and its ID, avoiding expensive parsing and disk operations.
 - **Asset Change Log**: Asset metadata is maintained in LMDB, a transactional database. A consistent snapshot of ordered asset changes provides a way to synchronize external data stores with the current state of the asset metadata.
 - **Lazy builds & caching**: Assets are built on-demand with a set of build parameters and an asset's build artifact can be cached by a hash of its build dependencies, build parameters and source file content.
 - **Platform-specific builds**: Provide customized build parameters when building an asset and tailor the build artifact for a specific platform. _Not implemented yet_
 - **Scalable build pipeline**: Once assets are imported from sources, the build system aims to be completely pure in the functional programming sense. Inputs to asset builds are all known and declared in the import step. This enables parallelizable and even distributed builds. _Not implemented yet_
 - **Networked artifact caching**: Results of imports and builds can be re-used across your whole team using a networked cache server. _Not implemented yet_
-- **Hot Reloading**: By subscribing to the Asset Change Log and fetching changed metadata, hot reloading can be optimally implemented by comparing asset hashes to determine if an asset needs to be reloaded without polling or redundant hashing. 
+- **Hot Reloading**: The provided RpcLoader implementation subscribes to the Asset Change Log over RPC. Changed metadata is fetched and the new asset hashes are compared with loaded assets to determine if a reload needs to be performed without polling or redundant hashing. 
 - **Asset dependency graphs**: Every asset is identified by a 16-byte UUID generated at source file import. Importers also produce an asset's build and load dependencies in terms of UUIDs which can be used to efficiently traverse the dependency graph of an asset without touching the filesystem. 
 - **Move & Rename source files**: Since metadata is stored with the source file and UUIDs are used to identify individual assets, users can move, rename and share source files without breaking references between assets.
 - **Searching**: Search tags can be produced at import and are automatically indexed by [Tantivy](https://github.com/tantivy-search/tantivy) which enables [super fast text search](https://tantivy-search.github.io/bench/). The search index is incrementally maintained by subscribing to the Asset Change Log. _Not implemented yet_
