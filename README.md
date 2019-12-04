@@ -78,4 +78,4 @@ To run:
 Have a look at the generated `.meta` files in the `assets` folder!
 
 # Get involved
-This project's first user will be - [Amethyst](https://github.com/amethyst/amethyst) and casual communication around development happens in the #assets channel of the - [Amethyst Discord server](https://discord.gg/amethyst). Feel free to drop by for a chat, contributions or questions are very welcome! 
+This project's first user will be [Amethyst](https://github.com/amethyst/amethyst) and casual communication around development happens in the #assets channel of the [Amethyst Discord server](https://discord.gg/amethyst). Feel free to drop by for a chat, contributions or questions are very welcome! 
