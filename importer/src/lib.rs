@@ -10,18 +10,25 @@ pub use crate::ron_importer::{RonImporter, RonImporterOptions, RonImporterState}
 #[cfg(feature = "serde_importers")]
 pub use crate::serde_obj::typetag;
 
+pub use bincode;
+pub use serde;
+pub use type_uuid;
+
 use atelier_core::{AssetRef, AssetUuid};
 use serde::Serialize;
 use std::io::Read;
 
 pub use self::error::{Error, Result};
+#[cfg(feature = "serde_importers")]
+pub use crate::serde_obj::SerdeImportable;
 pub use crate::{
     boxed_importer::{
         get_source_importers, AssetMetadata, BoxedImporter, SourceFileImporter, SourceMetadata,
         SOURCEMETADATA_VERSION,
     },
-    serde_obj::{IntoSerdeObj, SerdeImportable, SerdeObj},
+    serde_obj::{IntoSerdeObj, SerdeObj},
 };
+#[cfg(feature = "importer_context")]
 pub use atelier_core::importer_context::{
     get_importer_contexts, ImporterContext, ImporterContextHandle, ImporterContextRegistration,
 };

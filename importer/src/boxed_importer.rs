@@ -2,7 +2,7 @@ use crate::{error::Result, Importer, ImporterValue, SerdeObj};
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
 use ron;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, io::Read};
+use std::io::Read;
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Serializable metadata for an asset.

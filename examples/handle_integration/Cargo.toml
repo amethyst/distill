@@ -1,0 +1,23 @@
+[package]
+name = "handle_integration"
+version = "0.1.0"
+authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
+edition = "2018"
+readme = "README.md"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+atelier-core = { version = "0.1", path = "../../core" }
+atelier-daemon = { version = "0.1", path = "../../daemon" }
+atelier-importer = { version = "0.1", path = "../../importer" }
+atelier-loader = { version = "0.1", path = "../../loader" }
+
+type-uuid = "0.1"
+structopt = "0.3"
+image2 = { version = "0.11", features = [ "ser" ] }
+inventory = "0.1"
+log = { version = "0.4", features = ["serde"] }
+serde = "1"
+uuid = "0.8"
+bincode = "1.2"
+mopa = "0.2"

@@ -18,7 +18,7 @@ pub fn asset_uuid(input: TokenStream) -> TokenStream {
         .as_bytes();
 
     let expanded = quote! {
-        AssetUuid([#(#bytes as u8),*])
+        atelier_core::AssetUuid([#(#bytes as u8),*])
     };
 
     TokenStream::from(expanded)

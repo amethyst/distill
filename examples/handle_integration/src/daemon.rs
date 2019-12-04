@@ -22,7 +22,7 @@ pub struct AssetDaemonOpt {
     #[structopt(
         short,
         long,
-        parse(try_from_str = "parse_socket_addr"),
+        parse(try_from_str = parse_socket_addr),
         default_value = "127.0.0.1:9999"
     )]
     pub address: SocketAddr,

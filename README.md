@@ -1,8 +1,5 @@
 # Atelier Assets
-A "compiler framework for data" aimed at efficiently processing assets for game engines. 
-"Like LLVM, but for game assets."  - atelier-assets aims to solve the problem of offline asset processing and indexing for game engines.
-
-_This project is still in an early phase and does not necessarily work as advertised. DO NOT USE._
+An asset management & processing framework for game engines.
 
 # Motivation
 Popular commercially available game engines struggle to provide a good user experience for game projects with a large volume of content. Game projects are continuously increasing in size with many AAA projects exceeding hundreds of gigabytes in source assets that are being concurrently produced by hundreds of content creators. The time spent by developers waiting on processing or building of content costs the industry immensely every year. This project aims to provide a collection of libraries, tools and services that can be integrated into a game engine to minimize redundant processing and scale builds to the capabilities your hardware. 
@@ -11,45 +8,73 @@ Popular commercially available game engines struggle to provide a good user expe
 To create a solid open-source default alternative for asset management, processing and indexing with mid-to-large sized game development teams as the primary users.
 
 # Features
-The project contains a number of components that can be used to achieve the following features,
-- **Source file change detection**: The daemon watches for filesystem changes and ensures source files are only parsed when they change. Metadata and hashes are indexed locally in LMDB and version controlled in .meta files, reducing redundant imports across your whole team.
-- **Import caching**: Assets imported from a source file can be cached by a hash of their source file content and its ID, avoiding expensive parsing and disk operations.
-- **Asset Change Log**: Asset metadata is maintained in LMDB, a transactional database. A consistent snapshot of ordered asset changes provides a way to synchronize external data stores with the current state of the asset metadata.
-- **Lazy builds & caching**: Assets are built on-demand with a set of build parameters and an asset's build artifact can be cached by a hash of its build dependencies, build parameters and source file content.
-- **Platform-specific builds**: Provide customized build parameters when building an asset and tailor the build artifact for a specific platform. _Not implemented yet_
-- **Scalable build pipeline**: Once assets are imported from sources, the build system aims to be completely pure in the functional programming sense. Inputs to asset builds are all known and declared in the import step. This enables parallelizable and even distributed builds. _Not implemented yet_
-- **Networked artifact caching**: Results of imports and builds can be re-used across your whole team using a networked cache server. _Not implemented yet_
-- **Hot Reloading**: The provided RpcLoader implementation subscribes to the Asset Change Log over RPC. Changed metadata is fetched and the new asset hashes are compared with loaded assets to determine if a reload needs to be performed without polling or redundant hashing. 
-- **Asset dependency graphs**: Every asset is identified by a 16-byte UUID generated at source file import. Importers also produce an asset's build and load dependencies in terms of UUIDs which can be used to efficiently traverse the dependency graph of an asset without touching the filesystem. 
-- **Move & Rename source files**: Since metadata is stored with the source file and UUIDs are used to identify individual assets, users can move, rename and share source files without breaking references between assets.
-- **Searching**: Search tags can be produced at import and are automatically indexed by [Tantivy](https://github.com/tantivy-search/tantivy) which enables [super fast text search](https://tantivy-search.github.io/bench/). The search index is incrementally maintained by subscribing to the Asset Change Log. _Not implemented yet_
-- **Packing for distribution**: To distribute your game, you will want to package assets into files with enough metadata to load them quickly. With the asset dependency graph known, it is possible implement custom asset packing schemes by applying knowledge about your game's usage pattern to optimize for sequential access. _Not implemented yet_
+The project contains a number of different components, and some can be used independently of others. Checkmarks indicate feature support - some features are planned but not implemented.
+
+## Daemon 
+The Daemon is primarily intended for use during development, but can also be used in a distributed game if appropriate. The Daemon uses less than 10MB RAM and only does work when either a file changes or work is requested.
+<details><summary>[x] **Asset UUIDs & Dependency Graphs**</summary><p>Every asset is identified by a 16-byte UUID that is generated when a source file is imported for the first time. Importers also produce an asset's build and load dependencies in terms of UUIDs which can be used to efficiently traverse the dependency graph of an asset without touching the filesystem. </p></details>
+<details><summary>[x] **Source file change detection**</summary><p>The daemon watches for filesystem changes and ensures source files are only imported when they change. Metadata and hashes are indexed locally in LMDB and version controlled in .meta files. Filesystem modification time and hashes are used to reduce redundant imports across your whole team to the greatest extent possible.</p></details>
+<details><summary>[x] **Asset Change Log**</summary><p>Asset metadata is maintained in LMDB, a transactional database. The database's consistency guarantees and snapshot support provides a way to synchronize external data stores with the current state of the asset metadata using the Asset Change Log of asset changes.</p></details>
+<details><summary>[x] **Metadata Tracking & Caching**</summary><p>When assets are imported from source files, metadata is generated and stored in `.meta` files together with source file, as well as cached in a database. Commit these to version control along with your source files.</p></details>
+<details><summary>[x] **Move & Rename Source Files Confidently**</summary><p>Since metadata is stored with the source file and UUIDs are used to identify individual assets, users can move, rename and share source files with others without breaking references between assets.</p></details>
+<details><summary>[x] **Bring Your Own Asset Types**</summary><p>Asset types are not included in this project. You define your own asset types and source file formats by implementing the `Importer` trait and registering these with a file extension. The Daemon will automatically run your `Importer` for files with the registered extension as required. All asset types must implement `serde::Serialize` + `serde::Deserialize` + `type_uuid::TypeUuidDynamic` + `Send`.</p></details>
+<details><summary>[x] **RON Importer** - *OPTIONAL*</summary><p>An optional Importer and derive macro is included to simplify usage of serialized Rust types as source files using `serde`.
+
+Type definition:
+```rust
+#[derive(Serialize, Deserialize, TypeUuid, SerdeImportable)]
+#[uuid = "fab4249b-f95d-411d-a017-7549df090a4f"]
+pub struct CustomAsset {
+    pub cool_string: String,
+    pub handle_from_path: Handle<crate::image::Image>,
+    pub handle_from_uuid: Handle<crate::image::Image>,
+}
+```
+`custom_asset.ron`:
+```
+{
+    "fab4249b-f95d-411d-a017-7549df090a4f": 
+    (
+        cool_string: "thanks",
+        // This references an asset from a file in the same directory called "amethyst.png"
+        handle_from_path: "amethyst.png", 
+        // This references an asset with a UUID (see associated .meta file for an asset's UUID)
+        handle_from_uuid: "6c5ae1ad-ae30-471b-985b-7d017265f19f"
+    )
+}
+```
 
 
-# Technical foundation
-[LMDB](http://www.lmdb.tech/doc/) is the storage engine used for metadata indexing and artifact caching. It is [very fast](http://lmdb.tech/bench/microbench/) and especially optimized for reads. LMDB databases are memory mapped and thus support reading directly from disk pages, offering unparalleled read latency and throughput, requiring no intermediate caches. It will be possible to safely support serving cached artifacts directly from LMDB pages using `sendfile`-like APIs, most likely saturating any I/O hardware you throw at it. It also requires no background compaction or similar write amplification.
-_Windows sparse file patches are used for LMDB, allowing the DB to start small and grow as needed_
+</p></details>
 
-[Capnproto-rust](https://github.com/capnproto/capnproto-rust) is used as the serialization format for persisted data and the RPC library for communication between the game engine and asset services. Capnproto requires no deserialization step when reading data which enables very low latency round-trips when reading from LMDB. The RPC library supports stateful object references over the network which is useful for exposing LMDB read transactions over the network, providing a consistent view of metadata even in the face of concurrent changes.
+## Loader
+The Loader module provides a `Loader` trait for loading assets and an `AssetStorage` trait for storing assets. Game engines usually only need to implement the `AssetStorage` trait, as an optional RpcLoader implementation that loads assets from the Daemon is provided.
+<details><summary>[x] **Hot Reloading** </summary><p>The built-in `RpcLoader` talks to the `Daemon` and automatically reloads assets in the running engine when an asset has changed.</p></details>
+<details><summary>[x] **Automatic Loading of Dependencies** </summary><p>When a source file is imported and an asset is produed, dependencies are gathered for the asset and saved as metadata. Loader implementations automatically ensure that dependencies are loaded before the asset is loaded, and that they are unloaded after the asset is unloaded.</p></details>
+<details><summary>[x] **`serde` Support for Handles** 🎉💯 </summary><p>An optional Handle type is provided with support for deserialization and serialization using `serde`. Deserialization works for both an asset's UUID and its path. The UUID or path is automatically resolved to a Handle that refers to the corresponding loaded asset.</p></details>
+<details><summary>[x] **Automatic Registration of Handle Dependencies** 🎉💯</summary><p>Handle references are automatically registered during import for an asset and the referenced assets are subsequently guaranteed to be loaded by the Loader before the depender asset is loaded. This means Handles in assets are guaranteed to be valid.</p></details>
 
-[Tantivy](https://github.com/tantivy-search/tantivy) is used for textual indexing and search. It seems to be [faster than Lucene](https://github.com/tantivy-search/tantivy) and memory maps its index, providing low memory usage.
 
-[Notify](https://github.com/passcod/notify) provides cross-platform filesystem notifications without polling for Linux, macOS and Windows.
+## TODO
+<details><summary>[ ] **Import Caching**</summary><p>Assets imported from a source file can be cached by a hash of their source file content and its ID, avoiding expensive parsing and disk operations across your whole team.</p></details>
+<details><summary>[ ] **Build Artifact Caching**</summary><p>Assets are built using the provided build parameters only when requested. An asset's build artifact can be cached by a hash of its build dependencies, build parameters and source file content.</p></details>
+<details><summary>[ ] **Networked artifact caching**</summary><p>Results of imports and builds can be re-used across your whole team using a networked cache server.</p></details>
+<details><summary>[ ] **Platform-specific builds**</summary><p>Provide customized build parameters when building an asset and tailor the build artifact for a specific platform.</p></details>
+<details><summary>[ ] **User-defined Asset Build Graphs**</summary><p>Users can define execution graphs for asset pre-processing  that are run when preparing an asset for loading.</p></details>
+<details><summary>[ ] **Scalable build pipeline**</summary><p>Once assets are imported from sources, the build system aims to be completely pure in the functional programming sense. Inputs to asset builds are all known and declared in the import step. This design enables parallelizable and even distributed builds.</p></details>
+<details><summary>[ ] **Searching**</summary><p>Search tags can be produced at import and are automatically indexed by [Tantivy](https://github.com/tantivy-search/tantivy) which enables [super fast text search](https://tantivy-search.github.io/bench/). The search index is incrementally maintained by subscribing to the Asset Change Log. _Not implemented yet_</p></details>
+<details><summary>[ ] **Packing for distribution**</summary><p>To distribute your game, you will want to package assets into files with enough metadata to load them quickly. With the asset dependency graph known, it is possible implement custom asset packing schemes by applying knowledge about your game's usage pattern to optimize for sequential access.</p></details>
 
-# Try it out
+# Examples
 Compilation dependencies:
 - [capnpc in PATH](https://capnproto.org/install.html)
 
 To run:
-- `cargo run --example daemon_with_loader`
-- Try to put some images (png, jpg, tga) in the `examples/daemon_with_loader/assets` folder
+- `cd examples/handle_integration`
+- `cargo run`
+- The example includes an image asset type, so try to put some images (png, jpg, tga) in the `assets` folder!
 
-Enjoy glorious .meta files! 
-
-Check the metadata using the CLI:
-- `cd cli`
-- Run the shell: `cargo run`
-- `help` to list all available commands. Try `show_all` to get UUIDs of all indexed assets, then `get` a returned uuid
+Have a look at the generated `.meta` files in the `assets` folder!
 
 # Get involved
 This project's first user will be [Amethyst](https://github.com/amethyst/amethyst) and casual communication around development happens in the #assets channel of the [Amethyst Discord server](https://discord.gg/amethyst). Feel free to drop by for a chat, contributions or questions are very welcome! 

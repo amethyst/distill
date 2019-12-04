@@ -76,7 +76,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let txn = &**self.txn;
         let mut metadatas = Vec::new();
         for id in params.get_assets()? {
-            let id = utils::uuid_from_slice(id.get_id()?)?;
+            let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
                 metadatas.push(metadata);
@@ -102,7 +102,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let txn = &**self.txn;
         let mut metadatas = HashMap::new();
         for id in params.get_assets()? {
-            let id = utils::uuid_from_slice(id.get_id()?)?;
+            let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
                 metadatas.insert(id, metadata);
@@ -167,7 +167,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut artifacts = Vec::new();
         let mut scratch_buf = Vec::new();
         for id in params.get_assets()? {
-            let id = utils::uuid_from_slice(id.get_id()?)?;
+            let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
                 let metadata = metadata.get()?;
@@ -249,7 +249,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let txn = &**self.txn;
         let mut asset_paths = Vec::new();
         for id in params.get_assets()? {
-            let asset_uuid = utils::uuid_from_slice(id.get_id()?)?;
+            let asset_uuid = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
             if let Some(path) = path {
                 asset_paths.push((id, path));

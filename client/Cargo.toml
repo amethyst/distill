@@ -9,5 +9,4 @@ capnp-rpc = "0.10.0"
 tokio = "0.1"
 futures = "0.1"
 atelier-schema = { path = "../schema" }
-chrono = "0.4.7"
 parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }

@@ -1,7 +1,7 @@
 use crate::image::Image;
 use atelier_loader::{
-    asset_uuid, rpc_loader::RpcLoader, AssetLoadOp, AssetStorage, AssetTypeId, AssetUuid,
-    LoadHandle, LoadStatus, Loader, LoaderInfoProvider, TypeUuid,
+    asset_uuid, rpc_loader::RpcLoader, AssetLoadOp, AssetStorage, AssetTypeId, LoadHandle,
+    LoadStatus, Loader, LoaderInfoProvider, TypeUuid,
 };
 use std::{cell::RefCell, collections::HashMap, error::Error};
 

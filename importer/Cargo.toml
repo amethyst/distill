@@ -5,7 +5,7 @@ edition = "2018"
 
 [dependencies]
 atelier-core = { path = "../core", features = ["serde-1"] }
-uuid = { version = "0.7", features = ["v4", "serde"] }
+uuid = { version = "0.8", features = ["v4"] }
 mopa = "0.2.2"
 serde = "1.0"
 type-uuid = "0.1"
@@ -17,5 +17,6 @@ typetag = { version = "0.1", optional = true }
 serde-importable-derive = { path = "./serde-importable-derive", optional = true }
 
 [features]
-default = ["serde_importers"]
+default = ["serde_importers", "importer_context"]
 serde_importers = ["typetag", "serde-importable-derive"]
+importer_context = ["atelier-core/importer_context"]

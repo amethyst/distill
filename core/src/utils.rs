@@ -4,7 +4,6 @@ use std::{
     hash::{Hash, Hasher},
     path::PathBuf,
 };
-use uuid::BytesError;
 
 pub fn make_array<A, T>(slice: &[T]) -> A
 where
@@ -16,18 +15,18 @@ where
     a
 }
 
-pub fn uuid_from_slice(slice: &[u8]) -> Result<AssetUuid, BytesError> {
+pub fn uuid_from_slice(slice: &[u8]) -> Option<AssetUuid> {
     const BYTES_LEN: usize = 16;
 
     let len = slice.len();
 
     if len != BYTES_LEN {
-        return Err(BytesError::new(BYTES_LEN, len));
+        return None;
     }
 
     let mut bytes: uuid::Bytes = [0; 16];
     bytes.copy_from_slice(slice);
-    Ok(AssetUuid(bytes))
+    Some(AssetUuid(bytes))
 }
 
 pub fn to_meta_path(p: &PathBuf) -> PathBuf {

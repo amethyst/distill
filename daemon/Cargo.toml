@@ -14,8 +14,8 @@ capnp = { version = "0.10.0" }
 capnp-rpc = "0.10.0"
 notify = "4.0.0"
 lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
-rayon = "1.0"
-fern = { version = "0.5", features = ["colored"] }
+rayon = "1.2"
+fern = "0.5"
 log = { version = "0.4", features = ["serde"] }
 tokio = "0.1"
 futures = "0.1"
@@ -26,13 +26,14 @@ serde = "1.0"
 serde_derive = "1.0"
 erased-serde = "0.3"
 bincode = "1.1"
-ron = "0.4"
+ron = "0.5"
 meowhash = "0.1.2"
 scoped_threadpool = "0.1.9"
-num_cpus = "1.0"
-chrono = "0.4.7"
-uuid = "0.7"
-smush = { version = "0.1", default-features = false, features = [ "lz4_support" ] }
+num_cpus = "1.10"
+smush = { version = "0.1", default-features = false, features = [ "lz4_support" ], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+
+[features]
+compression = [ "smush" ]

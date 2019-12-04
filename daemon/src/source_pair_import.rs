@@ -10,7 +10,6 @@ use atelier_importer::{
 };
 use atelier_schema::data::{self, CompressionType};
 use bincode;
-use chrono::Local;
 use log::{debug, error, info};
 use ron;
 use std::{
@@ -19,6 +18,7 @@ use std::{
     hash::{Hash, Hasher},
     io::{BufRead, Read, Write},
     path::PathBuf,
+    time::Instant,
 };
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
@@ -167,7 +167,7 @@ impl<'a> SourcePairImport<'a> {
         options: &dyn SerdeObj,
         state: &dyn SerdeObj,
         importer_version: u32,
-        importer_type: uuid::Bytes,
+        importer_type: [u8; 16],
         scratch_buf: &mut Vec<u8>,
     ) -> Result<u64> {
         let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
@@ -270,7 +270,7 @@ impl<'a> SourcePairImport<'a> {
     }
 
     pub fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<PairImportResult> {
-        let start_time = Local::now();
+        let start_time = Instant::now();
         let importer = self
             .importer
             .expect("cannot import source without importer");
@@ -314,11 +314,12 @@ impl<'a> SourcePairImport<'a> {
                 // TODO write a dummy serializer that doesn't output anything to optimize this
                 SerializedAsset::create(asset_data.as_ref(), CompressionType::None, scratch_buf)?;
                 let serde_refs = ctx.end_serialize_asset(asset.id);
-                let build_pipeline = metadata
-                    .assets
-                    .iter()
-                    .find(|a| a.id == asset.id)
-                    .and_then(|m| m.build_pipeline);
+                // TODO implement build pipeline execution
+                // let build_pipeline = metadata
+                //     .assets
+                //     .iter()
+                //     .find(|a| a.id == asset.id)
+                //     .and_then(|m| m.build_pipeline);
                 // Add the collected serialization dependencies to the build and load dependencies
                 let mut unresolved_load_refs = Vec::new();
                 let mut load_deps = HashSet::new();
@@ -366,7 +367,7 @@ impl<'a> SourcePairImport<'a> {
             }
             info!(
                 "Imported pair in {}",
-                Local::now().signed_duration_since(start_time)
+                Instant::now().duration_since(start_time).as_secs_f32()
             );
             self.source_metadata = Some(SourceMetadata {
                 version: SOURCEMETADATA_VERSION,

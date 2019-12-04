@@ -1,5 +1,5 @@
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use atelier_core::{utils, AssetRef, AssetUuid};
 use atelier_importer::AssetMetadata;
 use atelier_schema::data::{
@@ -373,7 +373,7 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, dep.expect_uuid())? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?).ok_or(Error::UuidLength)?;
                     dependees.push(uuid);
                 }
             }
@@ -384,7 +384,7 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?).ok_or(Error::UuidLength)?;
                     dependees.push(uuid);
                 }
             }
@@ -426,7 +426,7 @@ impl AssetHub {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
                 for uuid in existing_list.get()?.get_list()? {
-                    let uuid = utils::uuid_from_slice(uuid.get_id()?)?;
+                    let uuid = utils::uuid_from_slice(uuid.get_id()?).ok_or(Error::UuidLength)?;
                     dependees.push(uuid);
                 }
             }
@@ -465,7 +465,8 @@ impl AssetHub {
             if affected_assets.insert(id) {
                 if let Some(dependees) = self.get_build_deps_reverse(txn, &id)? {
                     for dependee in dependees.get()?.get_list()? {
-                        let uuid = utils::uuid_from_slice(dependee.get_id()?)?;
+                        let uuid =
+                            utils::uuid_from_slice(dependee.get_id()?).ok_or(Error::UuidLength)?;
                         to_check.push_back(uuid);
                     }
                 }

@@ -13,8 +13,8 @@ use atelier_schema::{
         snapshot::get_build_artifacts_results::Owned as GetBuildArtifactsResults,
     },
 };
-use ccl::dhashmap::DHashMap;
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use dashmap::DashMap;
 use futures::Future;
 use log::{error, warn};
 use std::{
@@ -116,8 +116,8 @@ struct PendingReload {
 
 struct LoaderData {
     handle_allocator: HandleAllocator,
-    load_states: DHashMap<LoadHandle, AssetLoad>,
-    uuid_to_load: DHashMap<AssetUuid, LoadHandle>,
+    load_states: DashMap<LoadHandle, AssetLoad>,
+    uuid_to_load: DashMap<AssetUuid, LoadHandle>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
     op_tx: Arc<Sender<HandleOp>>,
     op_rx: Receiver<HandleOp>,
@@ -134,9 +134,9 @@ unsafe impl Send for RpcRequests {}
 
 impl LoaderData {
     fn add_ref(
-        uuid_to_load: &DHashMap<AssetUuid, LoadHandle>,
+        uuid_to_load: &DashMap<AssetUuid, LoadHandle>,
         handle_allocator: &HandleAllocator,
-        load_states: &DHashMap<LoadHandle, AssetLoad>,
+        load_states: &DashMap<LoadHandle, AssetLoad>,
         id: AssetUuid,
     ) -> LoadHandle {
         let handle = uuid_to_load.get(&id).map(|h| *h);
@@ -175,7 +175,7 @@ impl LoaderData {
             })
             .and_then(|a| a.asset_type.map(|t| (t, load)))
     }
-    fn remove_ref(load_states: &DHashMap<LoadHandle, AssetLoad>, load: LoadHandle) {
+    fn remove_ref(load_states: &DashMap<LoadHandle, AssetLoad>, load: LoadHandle) {
         load_states
             .get(&load)
             .map(|h| h.refs.fetch_sub(1, Ordering::Relaxed));
@@ -269,8 +269,8 @@ impl Loader for RpcLoader {
 
 impl LoaderInfoProvider
     for (
-        &DHashMap<AssetUuid, LoadHandle>,
-        &DHashMap<LoadHandle, AssetLoad>,
+        &DashMap<AssetUuid, LoadHandle>,
+        &DashMap<LoadHandle, AssetLoad>,
         &HandleAllocator,
     )
 {
@@ -289,8 +289,8 @@ impl RpcLoader {
             connect_string: connect_string,
             data: LoaderData {
                 handle_allocator: HandleAllocator(AtomicU64::new(1)),
-                load_states: DHashMap::default(),
-                uuid_to_load: DHashMap::default(),
+                load_states: DashMap::default(),
+                uuid_to_load: DashMap::default(),
                 metadata: HashMap::new(),
                 op_rx: rx,
                 op_tx: Arc::new(tx),
@@ -640,7 +640,7 @@ fn commit_asset(handle: LoadHandle, load: &mut AssetLoad, asset_storage: &dyn As
 
 fn process_load_ops(
     asset_storage: &dyn AssetStorage,
-    load_states: &mut DHashMap<LoadHandle, AssetLoad>,
+    load_states: &mut DashMap<LoadHandle, AssetLoad>,
     op_rx: &Receiver<HandleOp>,
 ) {
     while let Ok(op) = op_rx.try_recv() {
@@ -668,8 +668,8 @@ fn process_load_ops(
 fn process_load_states(
     asset_storage: &dyn AssetStorage,
     handle_allocator: &HandleAllocator,
-    load_states: &mut DHashMap<LoadHandle, AssetLoad>,
-    uuid_to_load: &DHashMap<AssetUuid, LoadHandle>,
+    load_states: &mut DashMap<LoadHandle, AssetLoad>,
+    uuid_to_load: &DashMap<AssetUuid, LoadHandle>,
     metadata: &HashMap<AssetUuid, AssetMetadata>,
 ) {
     let mut to_remove = Vec::new();
@@ -1183,7 +1183,7 @@ mod tests {
             ("c071f3ff-c9ea-4bf5-b3b9-bf5fc29f9b59", "asset_c.txt"),
             ("55adb689-b91c-42a0-941b-de4a9f7f4f03", "asset_d.txt"),
         ]
-        .into_iter()
+        .iter()
         .map(|(id, file_name)| {
             let asset_uuid = *uuid::Uuid::parse_str(id)
                 .unwrap_or_else(|_| panic!("Failed to parse `{}` as `Uuid`.", id))

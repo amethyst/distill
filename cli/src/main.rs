@@ -6,10 +6,9 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
-use chrono::Local;
 use futures::Future;
 use shrust;
-use std::{cell::RefCell, io, rc::Rc};
+use std::{cell::RefCell, io, rc::Rc, time::Instant};
 use tokio::prelude::*;
 use tokio::runtime::current_thread::Runtime;
 
@@ -81,9 +80,9 @@ fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
     shell.new_command("show_all", "Get all asset metadata", 0, |io, ctx, _| {
         let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
         let mut io = io.clone();
-        let start = Local::now();
+        let start = Instant::now();
         Box::new(request.send().promise.then(move |result| {
-            let total_time = Local::now().signed_duration_since(start);
+            let total_time = Instant::now().duration_since(start);
             let response = result.unwrap();
             let response = response.get().unwrap();
             let assets = response.get_assets().unwrap();
@@ -91,7 +90,12 @@ fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
                 let id = asset.get_id().unwrap().get_id().unwrap();
                 writeln!(io, "{:?}", uuid::Uuid::from_bytes(make_array(id)))?;
             }
-            writeln!(io, "got {} assets in {}", assets.len(), total_time)?;
+            writeln!(
+                io,
+                "got {} assets in {}",
+                assets.len(),
+                total_time.as_secs_f32()
+            )?;
             Ok(())
         }))
     });
@@ -100,16 +104,21 @@ fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
         let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
         let mut io = io.clone();
-        let start = Local::now();
+        let start = Instant::now();
         Box::new(request.send().promise.then(move |result| {
-            let total_time = Local::now().signed_duration_since(start);
+            let total_time = Instant::now().duration_since(start);
             let response = result.unwrap();
             let response = response.get().unwrap();
             let assets = response.get_assets().unwrap();
             for asset in assets {
                 print_asset_metadata(&mut io, &asset)?;
             }
-            writeln!(io, "got {} assets in {}", assets.len(), total_time)?;
+            writeln!(
+                io,
+                "got {} assets in {}",
+                assets.len(),
+                total_time.as_secs_f32()
+            )?;
             Ok(())
         }))
     });
@@ -122,9 +131,9 @@ fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
             let mut request = ctx.snapshot.borrow().get_build_artifacts_request();
             request.get().init_assets(1).get(0).set_id(id.as_bytes());
             let mut io = io.clone();
-            let start = Local::now();
+            let start = Instant::now();
             Box::new(request.send().promise.then(move |result| {
-                let total_time = Local::now().signed_duration_since(start);
+                let total_time = Instant::now().duration_since(start);
                 let response = result.unwrap();
                 let response = response.get().unwrap();
                 let artifacts = response.get_artifacts().unwrap();
@@ -139,7 +148,12 @@ fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
                         artifact.get_data()?.get_data()?.len()
                     )?;
                 }
-                writeln!(io, "got {} artifacts in {}", artifacts.len(), total_time)?;
+                writeln!(
+                    io,
+                    "got {} artifacts in {}",
+                    artifacts.len(),
+                    total_time.as_secs_f32()
+                )?;
                 Ok(())
             }))
         },

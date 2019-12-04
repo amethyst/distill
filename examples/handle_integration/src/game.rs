@@ -6,7 +6,7 @@ use atelier_loader::{
     crossbeam_channel::Receiver,
     handle::{AssetHandle, Handle, RefOp, WeakHandle},
     rpc_loader::RpcLoader,
-    AssetUuid, LoadStatus, Loader,
+    LoadStatus, Loader,
 };
 use std::sync::Arc;
 

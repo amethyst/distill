@@ -4,7 +4,6 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
-use chrono::Local;
 use futures::Future;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},

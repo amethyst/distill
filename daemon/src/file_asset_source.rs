@@ -11,13 +11,12 @@ use atelier_core::{utils, AssetRef, AssetUuid};
 use atelier_importer::{AssetMetadata, BoxedImporter, ImporterContext};
 use atelier_schema::data::{self, path_refs, source_metadata, CompressionType};
 use bincode;
-use chrono::Local;
 use crossbeam_channel::{self as channel, Receiver};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use scoped_threadpool::Pool;
 use std::collections::{HashMap, HashSet};
-use std::{path::PathBuf, str, sync::Arc};
+use std::{path::PathBuf, str, sync::Arc, time::Instant};
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -158,7 +157,9 @@ impl FileAssetSource {
                             .get_id()
                             .and_then(|id| id.get_id())
                             .map_err(Error::Capnp)
-                            .and_then(|slice| Ok(utils::uuid_from_slice(slice)?))
+                            .and_then(|slice| {
+                                Ok(utils::uuid_from_slice(slice).ok_or(Error::UuidLength)?)
+                            })
                             .expect("capnp: Failed to read uuid")
                     })
                     .filter(|id| metadata.assets.iter().all(|a| a.id != *id))
@@ -324,7 +325,9 @@ impl FileAssetSource {
                             .get_id()
                             .and_then(|id| id.get_id())
                             .map_err(Error::Capnp)
-                            .and_then(|slice| Ok(utils::uuid_from_slice(slice)?))
+                            .and_then(|slice| {
+                                Ok(utils::uuid_from_slice(slice).ok_or(Error::UuidLength)?)
+                            })
                             .expect("capnp: Failed to read uuid")
                     })
                     .collect()
@@ -360,7 +363,10 @@ impl FileAssetSource {
                         .and_then(|metadata| {
                             let mut assets = Vec::new();
                             for asset in metadata.get_assets()? {
-                                assets.push(utils::uuid_from_slice(asset.get_id()?.get_id()?)?);
+                                assets.push(
+                                    utils::uuid_from_slice(asset.get_id()?.get_id()?)
+                                        .ok_or(Error::UuidLength)?,
+                                );
                             }
                             Ok(assets)
                         })
@@ -1162,7 +1168,7 @@ impl FileAssetSource {
     }
 
     fn handle_update(&self, thread_pool: &mut Pool) {
-        let start_time = Local::now();
+        let start_time = Instant::now();
         let mut changed_files = Vec::new();
 
         // Transactions on the same thread cannot be active at the same time!
@@ -1197,8 +1203,12 @@ impl FileAssetSource {
             })
             .collect();
 
-        let elapsed = Local::now().signed_duration_since(start_time);
-        debug!("Hashed {} pairs in {}", hashed_files.len(), elapsed);
+        let elapsed = Instant::now().duration_since(start_time);
+        debug!(
+            "Hashed {} pairs in {}",
+            hashed_files.len(),
+            elapsed.as_secs_f32()
+        );
 
         let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
         let asset_metadata_changed =
@@ -1212,8 +1222,12 @@ impl FileAssetSource {
             }
         }
 
-        let elapsed = Local::now().signed_duration_since(start_time);
-        info!("Processed {} pairs in {}", hashed_files.len(), elapsed);
+        let elapsed = Instant::now().duration_since(start_time);
+        info!(
+            "Processed {} pairs in {}",
+            hashed_files.len(),
+            elapsed.as_secs_f32()
+        );
     }
 
     pub fn run(&self) {
@@ -1261,8 +1275,9 @@ impl<'a, 'b, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>
             let mut build_pipelines = HashMap::new();
             for pair in saved_metadata.get_build_pipelines()?.iter() {
                 build_pipelines.insert(
-                    utils::uuid_from_slice(&pair.get_key()?.get_id()?)?,
-                    utils::uuid_from_slice(&pair.get_value()?.get_id()?)?,
+                    utils::uuid_from_slice(&pair.get_key()?.get_id()?).ok_or(Error::UuidLength)?,
+                    utils::uuid_from_slice(&pair.get_value()?.get_id()?)
+                        .ok_or(Error::UuidLength)?,
                 );
             }
             if saved_metadata.get_importer_options_type()? == metadata.importer_options.uuid() {

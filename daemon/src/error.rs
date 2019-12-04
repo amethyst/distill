@@ -22,7 +22,7 @@ pub enum Error {
     RonSerError(ron::ser::Error),
     RonDeError(ron::de::Error),
     SetLoggerError(log::SetLoggerError),
-    UuidBytesError(uuid::BytesError),
+    UuidLength,
     RecvError,
     Exit,
     ImporterError(atelier_importer::Error),
@@ -46,7 +46,7 @@ impl std::error::Error for Error {
             Error::RonSerError(ref e) => e.description(),
             Error::RonDeError(ref e) => e.description(),
             Error::SetLoggerError(ref e) => e.description(),
-            Error::UuidBytesError(ref e) => e.description(),
+            Error::UuidLength => "Uuid not 16 bytes",
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
             Error::ImporterError(ref e) => e.description(),
@@ -68,7 +68,7 @@ impl std::error::Error for Error {
             Error::RonSerError(ref e) => Some(e),
             Error::RonDeError(ref e) => Some(e),
             Error::SetLoggerError(ref e) => Some(e),
-            Error::UuidBytesError(ref e) => Some(e),
+            Error::UuidLength => None,
             Error::RecvError => None,
             Error::Exit => None,
             Error::ImporterError(ref e) => Some(e),
@@ -91,7 +91,7 @@ impl fmt::Display for Error {
             Error::RonSerError(ref e) => e.fmt(f),
             Error::RonDeError(ref e) => e.fmt(f),
             Error::SetLoggerError(ref e) => e.fmt(f),
-            Error::UuidBytesError(ref e) => e.fmt(f),
+            Error::UuidLength => f.write_str(self.description()),
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
             Error::ImporterError(ref e) => e.fmt(f),
@@ -149,11 +149,6 @@ impl From<Error> for capnp::Error {
 impl From<log::SetLoggerError> for Error {
     fn from(err: log::SetLoggerError) -> Error {
         Error::SetLoggerError(err)
-    }
-}
-impl From<uuid::BytesError> for Error {
-    fn from(err: uuid::BytesError) -> Error {
-        Error::UuidBytesError(err)
     }
 }
 impl From<atelier_importer::Error> for Error {

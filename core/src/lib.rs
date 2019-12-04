@@ -1,9 +1,13 @@
 use proc_macro_hack::proc_macro_hack;
-use serde::de::{self, Visitor};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(feature = "serde-1")]
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
+#[cfg(feature = "serde-1")]
+use std::str::FromStr;
 use uuid;
 
-use std::str::FromStr;
 use std::{cmp, fmt};
 
 #[proc_macro_hack]
@@ -45,6 +49,7 @@ impl fmt::Display for AssetUuid {
     }
 }
 
+#[cfg(feature = "serde-1")]
 impl Serialize for AssetUuid {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
@@ -55,8 +60,10 @@ impl Serialize for AssetUuid {
     }
 }
 
+#[cfg(feature = "serde-1")]
 struct AssetUuidVisitor;
 
+#[cfg(feature = "serde-1")]
 impl<'a> Visitor<'a> for AssetUuidVisitor {
     type Value = AssetUuid;
 
@@ -71,6 +78,7 @@ impl<'a> Visitor<'a> for AssetUuidVisitor {
     }
 }
 
+#[cfg(feature = "serde-1")]
 impl<'de> Deserialize<'de> for AssetUuid {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
@@ -106,6 +114,7 @@ impl fmt::Display for AssetTypeId {
     }
 }
 
+#[cfg(feature = "serde-1")]
 impl Serialize for AssetTypeId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
@@ -116,8 +125,10 @@ impl Serialize for AssetTypeId {
     }
 }
 
+#[cfg(feature = "serde-1")]
 struct AssetTypeIdVisitor;
 
+#[cfg(feature = "serde-1")]
 impl<'a> Visitor<'a> for AssetTypeIdVisitor {
     type Value = AssetTypeId;
 
@@ -132,6 +143,7 @@ impl<'a> Visitor<'a> for AssetTypeIdVisitor {
     }
 }
 
+#[cfg(feature = "serde-1")]
 impl<'de> Deserialize<'de> for AssetTypeId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
