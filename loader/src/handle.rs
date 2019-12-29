@@ -102,10 +102,16 @@ impl AssetHandle for HandleRef {
 }
 
 /// Handle to an asset.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Eq, Hash)]
 pub struct Handle<T: ?Sized> {
     handle_ref: HandleRef,
     marker: PhantomData<T>,
+}
+
+impl<T: ?Sized> PartialEq for Handle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle_ref == other.handle_ref
+    }
 }
 
 impl<T: ?Sized> Clone for Handle<T> {

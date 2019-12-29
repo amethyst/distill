@@ -810,7 +810,10 @@ fn process_load_states(
         }
     }
     for i in to_remove {
-        load_states.remove(&i);
+        let load_state = load_states.remove(&i);
+        if let Some((_, load_state)) = load_state {
+            uuid_to_load.remove(&load_state.asset_id);
+        }
     }
 }
 
