@@ -1,9 +1,9 @@
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::{Error, Result};
 use atelier_core::{utils, AssetRef, AssetUuid};
-use atelier_importer::AssetMetadata;
+use atelier_importer::{ArtifactMetadata, AssetMetadata};
 use atelier_schema::data::{
-    self, asset_change_log_entry,
+    self, artifact_metadata, asset_change_log_entry,
     asset_metadata::{self, latest_artifact},
     asset_ref,
 };
@@ -101,6 +101,13 @@ pub(crate) fn parse_db_asset_ref(asset_ref: &asset_ref::Reader<'_>) -> AssetRef 
 }
 
 pub fn parse_db_metadata(metadata: &asset_metadata::Reader<'_>) -> AssetMetadata {
+    let asset_id = utils::make_array(
+        metadata
+            .get_id()
+            .expect("capnp: failed to read asset_id")
+            .get_id()
+            .expect("capnp: failed to read asset_id"),
+    );
     let search_tags = metadata
         .get_search_tags()
         .expect("capnp: failed to read search tags")
@@ -123,72 +130,119 @@ pub fn parse_db_metadata(metadata: &asset_metadata::Reader<'_>) -> AssetMetadata
             }
         })
         .collect();
-    let load_deps = metadata
-        .get_load_deps()
-        .expect("capnp: failed to read load deps")
-        .iter()
-        .map(|dep| parse_db_asset_ref(&dep))
-        .collect();
-    let build_deps = metadata
-        .get_build_deps()
-        .expect("capnp: failed to read build deps")
-        .iter()
-        .map(|dep| parse_db_asset_ref(&dep))
-        .collect();
-    let asset_type = utils::make_array(
-        metadata
-            .get_asset_type()
-            .expect("capnp: failed to read asset type"),
-    );
+    let artifact_metadata = if let latest_artifact::Artifact(Ok(artifact)) = metadata
+        .get_latest_artifact()
+        .which()
+        .expect("capnp: failed to read latest_artifact")
+    {
+        let compressed_size = artifact.get_compressed_size();
+        let compressed_size = if compressed_size == 0 {
+            None
+        } else {
+            Some(compressed_size)
+        };
+        let uncompressed_size = artifact.get_uncompressed_size();
+        let uncompressed_size = if uncompressed_size == 0 {
+            None
+        } else {
+            Some(uncompressed_size)
+        };
+        Some(ArtifactMetadata {
+            id: asset_id,
+            hash: u64::from_le_bytes(utils::make_array(
+                artifact.get_hash().expect("capnp: failed to read hash"),
+            )),
+            load_deps: artifact
+                .get_load_deps()
+                .expect("capnp: failed to read load deps")
+                .iter()
+                .map(|dep| parse_db_asset_ref(&dep))
+                .collect(),
+            build_deps: artifact
+                .get_build_deps()
+                .expect("capnp: failed to read build deps")
+                .iter()
+                .map(|dep| parse_db_asset_ref(&dep))
+                .collect(),
+            type_id: utils::make_array(
+                artifact
+                    .get_type_id()
+                    .expect("capnp: failed to read asset type"),
+            ),
+            compression: artifact
+                .get_compression()
+                .expect("capnp: failed to read compression type")
+                .into(),
+            compressed_size: compressed_size,
+            uncompressed_size: uncompressed_size,
+        })
+    } else {
+        None
+    };
     let build_pipeline = metadata
         .get_build_pipeline()
         .expect("capnp: failed to read build pipeline")
         .get_id()
         .expect("capnp: failed to read build pipeline id");
     let build_pipeline = if build_pipeline.len() > 0 {
-        Some(utils::make_array(
-            metadata
-                .get_asset_type()
-                .expect("capnp: failed to read asset type"),
-        ))
+        Some(utils::make_array(build_pipeline))
     } else {
         None
     };
     AssetMetadata {
-        id: utils::make_array(
-            metadata
-                .get_id()
-                .expect("capnp: failed to read asset_id")
-                .get_id()
-                .expect("capnp: failed to read asset_id"),
-        ),
+        id: asset_id,
         search_tags,
-        build_deps,
-        load_deps,
-        asset_type,
         build_pipeline,
+        artifact: artifact_metadata,
     }
 }
+pub(crate) fn build_artifact_metadata(
+    artifact_metadata: &ArtifactMetadata,
+    artifact: &mut artifact_metadata::Builder<'_>,
+) {
+    let mut artifact = artifact.reborrow();
+    artifact
+        .reborrow()
+        .init_asset_id()
+        .set_id(&artifact_metadata.id.0);
+    artifact
+        .reborrow()
+        .set_hash(&artifact_metadata.hash.to_le_bytes());
+    set_assetref_list(
+        &artifact_metadata.load_deps,
+        &mut artifact
+            .reborrow()
+            .init_load_deps(artifact_metadata.load_deps.len() as u32),
+    );
+    set_assetref_list(
+        &artifact_metadata.build_deps,
+        &mut artifact
+            .reborrow()
+            .init_build_deps(artifact_metadata.build_deps.len() as u32),
+    );
+    artifact
+        .reborrow()
+        .set_compression(artifact_metadata.compression.into());
+    artifact
+        .reborrow()
+        .set_compressed_size(artifact_metadata.compressed_size.unwrap_or(0));
+    artifact
+        .reborrow()
+        .set_uncompressed_size(artifact_metadata.uncompressed_size.unwrap_or(0));
+    artifact
+        .reborrow()
+        .set_type_id(&artifact_metadata.type_id.0);
+}
+
 pub(crate) fn build_asset_metadata(
     metadata: &AssetMetadata,
     m: &mut asset_metadata::Builder<'_>,
-    artifact_hash: Option<&[u8]>,
     source: data::AssetSource,
 ) {
     m.reborrow().init_id().set_id(&metadata.id.0);
     if let Some(pipeline) = metadata.build_pipeline {
         m.reborrow().init_build_pipeline().set_id(&pipeline.0);
     }
-    set_assetref_list(
-        &metadata.load_deps,
-        &mut m.reborrow().init_load_deps(metadata.load_deps.len() as u32),
-    );
-    set_assetref_list(
-        &metadata.build_deps,
-        &mut m
-            .reborrow()
-            .init_build_deps(metadata.build_deps.len() as u32),
-    );
     let mut search_tags = m
         .reborrow()
         .init_search_tags(metadata.search_tags.len() as u32);
@@ -204,25 +258,23 @@ pub(crate) fn build_asset_metadata(
                 .set_value(value.as_bytes());
         }
     }
-    if let Some(artifact_hash) = artifact_hash {
-        m.reborrow()
-            .init_latest_artifact()
-            .init_id()
-            .set_hash(artifact_hash);
+    if let Some(artifact_metadata) = &metadata.artifact {
+        let mut artifact = m.reborrow().init_latest_artifact().init_artifact();
+        build_artifact_metadata(&artifact_metadata, &mut artifact);
+    } else {
+        m.reborrow().init_latest_artifact().set_none(());
     }
-    m.reborrow().set_asset_type(&metadata.asset_type.0);
     m.reborrow().set_source(source);
 }
 
 fn build_asset_metadata_message<K>(
     metadata: &AssetMetadata,
-    artifact_hash: Option<&[u8]>,
     source: data::AssetSource,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
         let mut m = value_builder.init_root::<asset_metadata::Builder<'_>>();
-        build_asset_metadata(metadata, &mut m, artifact_hash, source);
+        build_asset_metadata(metadata, &mut m, source);
     }
     value_builder
 }
@@ -330,44 +382,40 @@ impl AssetHub {
     pub fn update_asset(
         &self,
         txn: &mut RwTransaction<'_>,
-        import_hash: u64,
         metadata: &AssetMetadata,
         source: data::AssetSource,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
-        let hash_bytes = import_hash.to_le_bytes();
-        let mut maybe_id = None;
         let existing_metadata: Option<MessageReader<'_, asset_metadata::Owned>> =
             txn.get(self.tables.asset_metadata, &metadata.id)?;
-        let new_metadata =
-            build_asset_metadata_message::<&[u8; 8]>(&metadata, Some(&hash_bytes), source);
+        let new_metadata = build_asset_metadata_message::<&[u8; 8]>(&metadata, source);
         let mut deps_to_delete = Vec::new();
         let mut deps_to_add = Vec::new();
-        if let Some(existing_metadata) = existing_metadata {
-            let existing_metadata = existing_metadata.get()?;
-            let latest_artifact = existing_metadata.get_latest_artifact();
-            if let latest_artifact::Id(Ok(id)) = latest_artifact.which()? {
-                maybe_id = Some(Vec::from(id.get_hash()?));
-            }
-            let mut existing_deps = HashSet::new();
-            for dep in existing_metadata.get_build_deps()? {
-                let dep = *parse_db_asset_ref(&dep).expect_uuid();
-                existing_deps.insert(dep);
-                if !metadata.build_deps.contains(&AssetRef::Uuid(dep)) {
-                    deps_to_delete.push(dep);
-                }
-            }
-            for dep in metadata.build_deps.iter() {
-                if !existing_deps.contains(dep.expect_uuid()) {
-                    deps_to_add.push(dep);
-                }
-            }
-        } else {
-            deps_to_add.extend(metadata.build_deps.iter());
-        }
         let mut artifact_changed = true;
-        if let Some(id) = maybe_id.as_ref() {
-            artifact_changed = hash_bytes != id.as_slice();
+        if let Some(artifact_metadata) = &metadata.artifact {
+            if let Some(existing_metadata) = existing_metadata {
+                let existing_metadata = existing_metadata.get()?;
+                let latest_artifact = existing_metadata.get_latest_artifact();
+                let mut existing_deps = HashSet::new();
+                if let latest_artifact::Artifact(Ok(artifact)) = latest_artifact.which()? {
+                    artifact_changed =
+                        &artifact_metadata.hash.to_le_bytes() != artifact.get_hash()?;
+                    for dep in artifact.get_build_deps()? {
+                        let dep = *parse_db_asset_ref(&dep).expect_uuid();
+                        existing_deps.insert(dep);
+                        if !artifact_metadata.build_deps.contains(&AssetRef::Uuid(dep)) {
+                            deps_to_delete.push(dep);
+                        }
+                    }
+                }
+                for dep in artifact_metadata.build_deps.iter() {
+                    if !existing_deps.contains(dep.expect_uuid()) {
+                        deps_to_add.push(dep);
+                    }
+                }
+            } else {
+                deps_to_add.extend(&artifact_metadata.build_deps);
+            }
         }
         for dep in deps_to_add {
             let mut dependees = Vec::new();
@@ -415,8 +463,12 @@ impl AssetHub {
         let mut deps_to_delete = Vec::new();
         if let Some(metadata) = metadata {
             let metadata = metadata.get()?;
-            for dep in metadata.get_build_deps()? {
-                deps_to_delete.push(*parse_db_asset_ref(&dep).expect_uuid());
+            if let latest_artifact::Artifact(Ok(artifact)) =
+                metadata.get_latest_artifact().which()?
+            {
+                for dep in artifact.get_build_deps()? {
+                    deps_to_delete.push(*parse_db_asset_ref(&dep).expect_uuid());
+                }
             }
         }
         if txn.delete(self.tables.asset_metadata, &id)? {
@@ -487,13 +539,13 @@ impl AssetHub {
                     let metadata = self.get_metadata(txn, &id);
                     if let Some(metadata) = metadata {
                         let metadata = metadata.get()?;
-                        if let latest_artifact::Id(Ok(id)) =
+                        if let latest_artifact::Artifact(Ok(artifact)) =
                             metadata.get_latest_artifact().which()?
                         {
-                            dependency_graph.insert(asset, Vec::from(id.get_hash()?));
-                        }
-                        for dep in metadata.get_build_deps()? {
-                            to_check.push_back(*parse_db_asset_ref(&dep).expect_uuid());
+                            dependency_graph.insert(asset, Vec::from(artifact.get_hash()?));
+                            for dep in artifact.get_build_deps()? {
+                                to_check.push_back(*parse_db_asset_ref(&dep).expect_uuid());
+                            }
                         }
                     }
                 }
@@ -508,8 +560,10 @@ impl AssetHub {
                 }
                 let build_dep_hash = hasher.finish();
                 let import_hash = {
-                    if let latest_artifact::Id(Ok(id)) = metadata.get_latest_artifact().which()? {
-                        Vec::from(id.get_hash()?)
+                    if let latest_artifact::Artifact(Ok(artifact)) =
+                        metadata.get_latest_artifact().which()?
+                    {
+                        Vec::from(artifact.get_hash()?)
                     } else {
                         Vec::new()
                     }

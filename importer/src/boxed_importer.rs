@@ -1,5 +1,5 @@
 use crate::{error::Result, Importer, ImporterValue, SerdeObj};
-use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
+use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use ron;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -13,14 +13,32 @@ pub struct AssetMetadata {
     pub id: AssetUuid,
     /// Search tags are used by asset tooling to search for the imported asset
     pub search_tags: Vec<(String, Option<String>)>,
-    /// Build dependencies will be included in the Builder arguments when building the asset
+    /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset
+    pub build_pipeline: Option<AssetUuid>,
+    /// The latest artifact produced when importing this asset
+    pub artifact: Option<ArtifactMetadata>,
+}
+
+/// Serializable metadata for an artifact.
+/// Stored in .meta files and metadata DB.
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Default)]
+pub struct ArtifactMetadata {
+    /// Hash that identifies this artifact
+    pub hash: u64,
+    /// UUID for this artifact's asset
+    pub id: AssetUuid,
+    /// Build dependencies will be included in the Builder arguments when building an asset
     pub build_deps: Vec<AssetRef>,
     /// Load dependencies are guaranteed to load before this asset by the Loader
     pub load_deps: Vec<AssetRef>,
-    /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset
-    pub build_pipeline: Option<AssetUuid>,
-    /// The UUID of the asset's Rust type
-    pub asset_type: AssetTypeId,
+    /// Type of compression used to compress this artifact
+    pub compression: CompressionType,
+    /// Size of this artifact in bytes when compressed
+    pub compressed_size: Option<u64>,
+    /// Size of this artifact in bytes when serialized and uncompressed
+    pub uncompressed_size: Option<u64>,
+    /// The UUID of the artifact's Rust type
+    pub type_id: AssetTypeId,
 }
 /// Version of the SourceMetadata struct.
 /// Used for forward compatibility to enable changing the .meta file format

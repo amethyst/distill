@@ -7,10 +7,14 @@ use crate::{
 };
 use atelier_core::{utils::make_array, AssetRef, AssetTypeId, AssetUuid};
 use atelier_schema::{
-    data::{artifact, asset_metadata, asset_ref},
+    data::{
+        artifact,
+        asset_metadata::{self, latest_artifact},
+        asset_ref,
+    },
     service::asset_hub::{
         snapshot::get_asset_metadata_with_dependencies_results::Owned as GetAssetMetadataWithDependenciesResults,
-        snapshot::get_build_artifacts_results::Owned as GetBuildArtifactsResults,
+        snapshot::get_import_artifacts_results::Owned as GetImportArtifactsResults,
     },
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -125,7 +129,7 @@ struct LoaderData {
 }
 
 struct RpcRequests {
-    pending_data_requests: Vec<ResponsePromise<GetBuildArtifactsResults, LoadHandle>>,
+    pending_data_requests: Vec<ResponsePromise<GetImportArtifactsResults, LoadHandle>>,
     pending_metadata_requests:
         Vec<ResponsePromise<GetAssetMetadataWithDependenciesResults, Vec<(AssetUuid, LoadHandle)>>>,
 }
@@ -311,17 +315,20 @@ fn update_asset_metadata(
     reader: &asset_metadata::Reader<'_>,
 ) -> Result<(), capnp::Error> {
     let mut load_deps = Vec::new();
-    for dep in reader.get_load_deps()? {
-        let uuid = match dep.which()? {
-            asset_ref::Uuid(uuid) => make_array(uuid.and_then(|id| id.get_id())?),
-            _ => {
-                return Err(capnp::Error::failed(
-                    "capnp: unexpected type when reading load_dep in asset_metadata".to_string(),
-                ))
-            }
-        };
+    if let latest_artifact::Artifact(Ok(artifact)) = reader.get_latest_artifact().which()? {
+        for dep in artifact.get_load_deps()? {
+            let uuid = match dep.which()? {
+                asset_ref::Uuid(uuid) => make_array(uuid.and_then(|id| id.get_id())?),
+                _ => {
+                    return Err(capnp::Error::failed(
+                        "capnp: unexpected type when reading load_dep in asset_metadata"
+                            .to_string(),
+                    ))
+                }
+            };
 
-        load_deps.push(uuid);
+            load_deps.push(uuid);
+        }
     }
     metadata.insert(*uuid, AssetMetadata { load_deps });
     Ok(())
@@ -364,8 +371,7 @@ fn load_data(
             load_state
         ),
     }
-    let serialized_asset = reader.get_data()?;
-    let asset_type: AssetTypeId = make_array(serialized_asset.get_type_uuid()?);
+    let asset_type: AssetTypeId = make_array(reader.get_metadata()?.get_type_id()?);
     if let Some(prev_type) = state.asset_type {
         // TODO handle asset type changing?
         assert!(prev_type == asset_type);
@@ -374,7 +380,7 @@ fn load_data(
     storage.update_asset(
         loader_info,
         &asset_type,
-        &serialized_asset.get_data()?,
+        &reader.get_data()?,
         handle,
         AssetLoadOp::new(chan.clone(), handle),
         new_version,
@@ -519,7 +525,7 @@ fn process_data_requests(
         if assets_to_request.len() > 0 {
             for (asset, handle) in assets_to_request {
                 let response = rpc.request(move |_conn, snapshot| {
-                    let mut request = snapshot.get_build_artifacts_request();
+                    let mut request = snapshot.get_import_artifacts_request();
                     let mut assets = request.get().init_assets(1);
                     assets.reborrow().get(0).set_id(&asset.0);
                     (request, handle)

@@ -184,3 +184,16 @@ impl AssetRef {
         }
     }
 }
+
+#[derive(Debug, Hash, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum CompressionType {
+    None,
+    Lz4,
+}
+
+impl Default for CompressionType {
+    fn default() -> Self {
+        Self::None
+    }
+}

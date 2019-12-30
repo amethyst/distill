@@ -8,7 +8,11 @@ use crate::{
 };
 use atelier_core::utils;
 use atelier_schema::{
-    data::{asset_change_log_entry, asset_metadata, serialized_asset, AssetSource},
+    data::{
+        artifact, asset_change_log_entry,
+        asset_metadata::{self, latest_artifact},
+        AssetSource,
+    },
     service::asset_hub,
 };
 use capnp;
@@ -49,16 +53,14 @@ struct AssetHubSnapshotImpl<'a> {
 struct AssetHubImpl {
     ctx: Arc<ServiceContext>,
 }
-fn build_serialized_asset_message<T: AsRef<[u8]>>(
+fn build_artifact_message<T: AsRef<[u8]>>(
     artifact: &SerializedAsset<T>,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
-        let mut m = value_builder.init_root::<serialized_asset::Builder<'_>>();
-        m.reborrow().set_compression(artifact.compression);
-        m.reborrow()
-            .set_uncompressed_size(artifact.uncompressed_size as u64);
-        m.reborrow().set_type_uuid(&artifact.type_uuid);
+        let mut m = value_builder.init_root::<artifact::Builder<'_>>();
+        let mut metadata = m.reborrow().init_metadata();
+        crate::asset_hub::build_artifact_metadata(&artifact.metadata, &mut metadata);
         let slice: &[u8] = artifact.data.as_ref();
         m.reborrow().set_data(slice);
     }
@@ -110,10 +112,14 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         }
         let mut missing_metadata = HashSet::new();
         for metadata in metadatas.values() {
-            for dep in metadata.get()?.get_load_deps()? {
-                let dep = *crate::asset_hub::parse_db_asset_ref(&dep).expect_uuid();
-                if !metadatas.contains_key(&dep) {
-                    missing_metadata.insert(dep);
+            if let latest_artifact::Artifact(Ok(artifact)) =
+                metadata.get()?.get_latest_artifact().which()?
+            {
+                for dep in artifact.get_load_deps()? {
+                    let dep = *crate::asset_hub::parse_db_asset_ref(&dep).expect_uuid();
+                    if !metadatas.contains_key(&dep) {
+                        missing_metadata.insert(dep);
+                    }
                 }
             }
         }
@@ -156,10 +162,10 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         }
         Ok(())
     }
-    fn get_build_artifacts(
+    fn get_import_artifacts(
         &mut self,
-        params: asset_hub::snapshot::GetBuildArtifactsParams,
-        mut results: asset_hub::snapshot::GetBuildArtifactsResults,
+        params: asset_hub::snapshot::GetImportArtifactsParams,
+        mut results: asset_hub::snapshot::GetImportArtifactsResults,
     ) -> Result<()> {
         let params = params.get()?;
         let ctx = self.txn.as_owner();
@@ -179,7 +185,7 @@ impl<'a> AssetHubSnapshotImpl<'a> {
                             &id,
                             &mut scratch_buf,
                         )?;
-                        let capnp_artifact = build_serialized_asset_message(&artifact);
+                        let capnp_artifact = build_artifact_message(&artifact);
                         artifacts.push((id, hash, capnp_artifact));
                     }
                 }
@@ -190,11 +196,10 @@ impl<'a> AssetHubSnapshotImpl<'a> {
             .reborrow()
             .init_artifacts(artifacts.len() as u32);
         for (idx, (id, hash, artifact)) in artifacts.iter().enumerate() {
-            let mut out = artifact_results.reborrow().get(idx as u32);
-            out.reborrow().init_asset_id().set_id(&id.0);
-            out.reborrow().set_key(&hash.to_le_bytes());
-            out.reborrow()
-                .set_data(artifact.get_root_as_reader::<serialized_asset::Reader<'_>>()?)?;
+            let mut out = artifact_results.reborrow().set_with_caveats(
+                idx as u32,
+                artifact.get_root_as_reader::<artifact::Reader<'_>>()?,
+            )?;
         }
         Ok(())
     }
@@ -505,12 +510,12 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
             self, params, results
         )))
     }
-    fn get_build_artifacts(
+    fn get_import_artifacts(
         &mut self,
-        params: asset_hub::snapshot::GetBuildArtifactsParams,
-        results: asset_hub::snapshot::GetBuildArtifactsResults,
+        params: asset_hub::snapshot::GetImportArtifactsParams,
+        results: asset_hub::snapshot::GetImportArtifactsResults,
     ) -> Promise<()> {
-        Promise::ok(pry!(AssetHubSnapshotImpl::get_build_artifacts(
+        Promise::ok(pry!(AssetHubSnapshotImpl::get_import_artifacts(
             self, params, results
         )))
     }

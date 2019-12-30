@@ -7,9 +7,9 @@ use crate::serialized_asset::SerializedAsset;
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use atelier_core::{utils, AssetRef, AssetUuid};
-use atelier_importer::{AssetMetadata, BoxedImporter, ImporterContext};
-use atelier_schema::data::{self, path_refs, source_metadata, CompressionType};
+use atelier_core::{utils, AssetRef, AssetUuid, CompressionType};
+use atelier_importer::{ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext};
+use atelier_schema::data::{self, path_refs, source_metadata};
 use bincode;
 use crossbeam_channel::{self as channel, Receiver};
 use log::{debug, error, info};
@@ -199,8 +199,15 @@ impl FileAssetSource {
         let new_path_refs = metadata
             .assets
             .iter()
+            .filter_map(|x| x.artifact.as_ref())
             .flat_map(|x| &x.load_deps)
-            .chain(metadata.assets.iter().flat_map(|x| &x.build_deps))
+            .chain(
+                metadata
+                    .assets
+                    .iter()
+                    .filter_map(|x| x.artifact.as_ref())
+                    .flat_map(|x| &x.build_deps),
+            )
             .filter_map(|x| {
                 if let AssetRef::Path(path) = x {
                     Some(path)
@@ -249,7 +256,7 @@ impl FileAssetSource {
 
             for (idx, asset) in metadata.assets.iter().enumerate() {
                 let mut builder = assets.reborrow().get(idx as u32);
-                asset_hub::build_asset_metadata(asset, &mut builder, None, data::AssetSource::File);
+                asset_hub::build_asset_metadata(asset, &mut builder, data::AssetSource::File);
             }
 
             let assets_with_pipelines: Vec<&AssetMetadata> = metadata
@@ -600,6 +607,18 @@ impl FileAssetSource {
                 let hash = utils::calc_asset_hash(id, import_hash, resolved_refs);
                 context_set.begin_serialize_asset(a.metadata.id);
                 let serialized_asset = SerializedAsset::create(
+                    hash,
+                    *id,
+                    a.metadata
+                        .artifact
+                        .as_ref()
+                        .map(|artifact| artifact.build_deps.clone())
+                        .unwrap_or(Vec::new()),
+                    a.metadata
+                        .artifact
+                        .as_ref()
+                        .map(|artifact| artifact.load_deps.clone())
+                        .unwrap_or(Vec::new()),
                     &*a.asset
                         .expect("expected asset obj when regenerating artifact"),
                     CompressionType::None,
@@ -618,36 +637,36 @@ impl FileAssetSource {
         txn: &'a V,
         path: &PathBuf,
         asset_import_result: &AssetImportResultMetadata,
-        asset_metadata: &mut AssetMetadata,
+        artifact: &mut ArtifactMetadata,
     ) {
         for unresolved_build_ref in asset_import_result.unresolved_build_refs.iter() {
             if let Some(build_ref) = self.resolve_asset_ref(txn, path, unresolved_build_ref) {
                 let uuid_ref = AssetRef::Uuid(build_ref);
-                if !asset_metadata.build_deps.contains(&uuid_ref) {
-                    asset_metadata.build_deps.push(uuid_ref);
+                if !artifact.build_deps.contains(&uuid_ref) {
+                    artifact.build_deps.push(uuid_ref);
                 }
                 // remove the AssetRef that was resolved
-                let ref_idx = asset_metadata
+                let ref_idx = artifact
                     .build_deps
                     .iter()
                     .position(|x| x == unresolved_build_ref);
                 if let Some(ref_idx) = ref_idx {
-                    asset_metadata.build_deps.remove(ref_idx);
+                    artifact.build_deps.remove(ref_idx);
                 }
             }
         }
         for unresolved_load_ref in asset_import_result.unresolved_load_refs.iter() {
             if let Some(load_ref) = self.resolve_asset_ref(txn, path, unresolved_load_ref) {
                 let uuid_ref = AssetRef::Uuid(load_ref);
-                if !asset_metadata.load_deps.contains(&uuid_ref) {
-                    asset_metadata.load_deps.push(uuid_ref);
+                if !artifact.load_deps.contains(&uuid_ref) {
+                    artifact.load_deps.push(uuid_ref);
                 }
-                let ref_idx = asset_metadata
+                let ref_idx = artifact
                     .load_deps
                     .iter()
                     .position(|x| x == unresolved_load_ref);
                 if let Some(ref_idx) = ref_idx {
-                    asset_metadata.load_deps.remove(ref_idx);
+                    artifact.load_deps.remove(ref_idx);
                 }
             }
         }
@@ -702,7 +721,9 @@ impl FileAssetSource {
                     .expect("asset in changes but not in affected_assets")
                     .as_mut()
                     .expect("asset None in affected_assets");
-                self.resolve_metadata_asset_refs(txn, path, asset, asset_metadata);
+                if let Some(artifact) = asset_metadata.artifact.as_mut() {
+                    self.resolve_metadata_asset_refs(txn, path, asset, artifact);
+                }
             }
         }
 
@@ -713,21 +734,6 @@ impl FileAssetSource {
                     let mut asset_metadata = maybe_metadata
                         .as_mut()
                         .expect("metadata exists in DB but not in hashmap");
-                    // TODO set error state for unresolved path references?
-                    // this code strips out path references for now, but it will probably crash and burn when loading
-                    asset_metadata.load_deps = asset_metadata
-                        .load_deps
-                        .iter()
-                        .filter(|x| x.is_uuid())
-                        .cloned()
-                        .collect();
-                    asset_metadata.build_deps = asset_metadata
-                        .build_deps
-                        .iter()
-                        .filter(|x| x.is_uuid())
-                        .cloned()
-                        .collect();
-
                     let import_hash = changes
                         .get(path)
                         .expect("path in affected set but no change in hashmap")
@@ -736,21 +742,30 @@ impl FileAssetSource {
                         .import_state
                         .import_hash()
                         .expect("path changed but no import hash present");
-                    self.hub
-                        .update_asset(
-                            txn,
-                            utils::calc_asset_hash(
-                                &asset,
-                                import_hash,
-                                asset_metadata
-                                    .load_deps
-                                    .iter()
-                                    .chain(asset_metadata.build_deps.iter()),
-                            ),
-                            &asset_metadata,
-                            data::AssetSource::File,
-                            change_batch,
+                    // TODO set error state for unresolved path references?
+                    // this code strips out path references for now, but it will probably crash and burn when loading
+                    asset_metadata.artifact.as_mut().map(|a| {
+                        a.load_deps = a
+                            .load_deps
+                            .iter()
+                            .filter(|x| x.is_uuid())
+                            .cloned()
+                            .collect();
+                        a.build_deps = a
+                            .build_deps
+                            .iter()
+                            .filter(|x| x.is_uuid())
+                            .cloned()
+                            .collect();
+                        a.hash = utils::calc_asset_hash(
+                            &asset,
+                            import_hash,
+                            a.load_deps.iter().chain(a.build_deps.iter()),
                         )
+                    });
+
+                    self.hub
+                        .update_asset(txn, &asset_metadata, data::AssetSource::File, change_batch)
                         .expect("hub: Failed to update asset in hub");
                 }
                 None => {
@@ -793,45 +808,41 @@ impl FileAssetSource {
                                     unresolved_load_refs: asset.unresolved_load_refs,
                                     unresolved_build_refs: asset.unresolved_build_refs,
                                 };
-                                self.resolve_metadata_asset_refs(
-                                    txn,
-                                    path_ref_source,
-                                    &result_metadata,
-                                    &mut asset.metadata,
-                                );
-                                // TODO set error state for unresolved path references?
-                                // this code strips out path references for now, but it will probably crash and burn when loading
-                                asset.metadata.load_deps = asset
-                                    .metadata
-                                    .load_deps
-                                    .iter()
-                                    .filter(|x| x.is_uuid())
-                                    .cloned()
-                                    .collect();
-                                asset.metadata.build_deps = asset
-                                    .metadata
-                                    .build_deps
-                                    .iter()
-                                    .filter(|x| x.is_uuid())
-                                    .cloned()
-                                    .collect();
-                                self.hub
-                                    .update_asset(
+                                if let Some(artifact) = &mut asset.metadata.artifact {
+                                    self.resolve_metadata_asset_refs(
                                         txn,
-                                        utils::calc_asset_hash(
-                                            &asset.metadata.id,
-                                            import_hash,
-                                            asset
-                                                .metadata
-                                                .load_deps
-                                                .iter()
-                                                .chain(asset.metadata.build_deps.iter()),
-                                        ),
-                                        &asset.metadata,
-                                        data::AssetSource::File,
-                                        change_batch,
-                                    )
-                                    .expect("hub: Failed to update asset in hub");
+                                        path_ref_source,
+                                        &result_metadata,
+                                        artifact,
+                                    );
+                                    // TODO set error state for unresolved path references?
+                                    // this code strips out path references for now, but it will probably crash and burn when loading
+                                    artifact.load_deps = artifact
+                                        .load_deps
+                                        .iter()
+                                        .filter(|x| x.is_uuid())
+                                        .cloned()
+                                        .collect();
+                                    artifact.build_deps = artifact
+                                        .build_deps
+                                        .iter()
+                                        .filter(|x| x.is_uuid())
+                                        .cloned()
+                                        .collect();
+                                    artifact.hash = utils::calc_asset_hash(
+                                        &asset.metadata.id,
+                                        import_hash,
+                                        artifact.load_deps.iter().chain(artifact.build_deps.iter()),
+                                    );
+                                    self.hub
+                                        .update_asset(
+                                            txn,
+                                            &asset.metadata,
+                                            data::AssetSource::File,
+                                            change_batch,
+                                        )
+                                        .expect("hub: Failed to update asset in hub");
+                                }
                             }
                         }
                         Err(err) => {

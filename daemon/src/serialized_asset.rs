@@ -1,17 +1,19 @@
 use crate::error::Result;
-use atelier_importer::SerdeObj;
-use atelier_schema::data::CompressionType;
+use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use atelier_importer::{ArtifactMetadata, SerdeObj};
 use bincode;
 
 pub struct SerializedAsset<T: AsRef<[u8]>> {
-    pub compression: CompressionType,
-    pub uncompressed_size: usize,
-    pub type_uuid: [u8; 16],
+    pub metadata: ArtifactMetadata,
     pub data: T,
 }
 
 impl SerializedAsset<Vec<u8>> {
     pub fn create(
+        hash: u64,
+        id: AssetUuid,
+        build_deps: Vec<AssetRef>,
+        load_deps: Vec<AssetRef>,
         value: &dyn SerdeObj,
         compression: CompressionType,
         scratch_buf: &mut Vec<u8>,
@@ -37,9 +39,16 @@ impl SerializedAsset<Vec<u8>> {
         };
 
         Ok(SerializedAsset {
-            compression,
-            uncompressed_size: size,
-            type_uuid: value.uuid(),
+            metadata: ArtifactMetadata {
+                id,
+                hash,
+                build_deps,
+                load_deps,
+                compression,
+                uncompressed_size: Some(size as u64),
+                compressed_size: Some(scratch_buf.len() as u64),
+                type_id: AssetTypeId(value.uuid()),
+            },
             data: asset_buf,
         })
     }

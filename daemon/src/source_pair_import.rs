@@ -3,12 +3,12 @@ use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
 use crate::serialized_asset::SerializedAsset;
 use crate::watcher::file_metadata;
-use atelier_core::{utils, AssetRef, AssetTypeId, AssetUuid};
+use atelier_core::{utils, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{
-    AssetMetadata, BoxedImporter, ImporterContext, ImporterContextHandle, SerdeObj,
-    SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
+    ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, ImporterContextHandle,
+    SerdeObj, SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
-use atelier_schema::data::{self, CompressionType};
+use atelier_schema::data;
 use bincode;
 use log::{debug, error, info};
 use ron;
@@ -47,6 +47,7 @@ pub(crate) struct AssetImportResult {
     pub unresolved_load_refs: Vec<AssetRef>,
     pub unresolved_build_refs: Vec<AssetRef>,
     pub asset: Option<Box<dyn SerdeObj>>,
+    pub serialized_asset: Option<SerializedAsset<Vec<u8>>>,
 }
 
 #[derive(Default)]
@@ -253,14 +254,41 @@ impl<'a> SourcePairImport<'a> {
         for asset in source_metadata.assets.iter() {
             use std::iter::FromIterator;
             let unresolved_load_refs: HashSet<AssetRef, std::collections::hash_map::RandomState> =
-                HashSet::from_iter(asset.load_deps.iter().filter(|r| !r.is_uuid()).cloned());
+                HashSet::from_iter(
+                    asset
+                        .artifact
+                        .as_ref()
+                        .map(|artifact| {
+                            artifact
+                                .load_deps
+                                .iter()
+                                .filter(|r| !r.is_uuid())
+                                .cloned()
+                                .collect()
+                        })
+                        .unwrap_or(Vec::new()),
+                );
             let unresolved_build_refs: HashSet<AssetRef, std::collections::hash_map::RandomState> =
-                HashSet::from_iter(asset.build_deps.iter().filter(|r| !r.is_uuid()).cloned());
+                HashSet::from_iter(
+                    asset
+                        .artifact
+                        .as_ref()
+                        .map(|artifact| {
+                            artifact
+                                .build_deps
+                                .iter()
+                                .filter(|r| !r.is_uuid())
+                                .cloned()
+                                .collect()
+                        })
+                        .unwrap_or(Vec::new()),
+                );
             assets.push(AssetImportResult {
                 metadata: asset.clone(),
                 unresolved_load_refs: unresolved_load_refs.into_iter().collect(),
                 unresolved_build_refs: unresolved_build_refs.into_iter().collect(),
                 asset: None,
+                serialized_asset: None,
             });
         }
         Ok(PairImportResult {
@@ -312,7 +340,15 @@ impl<'a> SourcePairImport<'a> {
                 ctx.begin_serialize_asset(asset.id);
                 // We need to serialize each asset to gather references.
                 // TODO write a dummy serializer that doesn't output anything to optimize this
-                SerializedAsset::create(asset_data.as_ref(), CompressionType::None, scratch_buf)?;
+                let serialized_asset = SerializedAsset::create(
+                    0,
+                    asset.id,
+                    Vec::new(),
+                    Vec::new(),
+                    asset_data.as_ref(),
+                    CompressionType::None,
+                    scratch_buf,
+                )?;
                 let serde_refs = ctx.end_serialize_asset(asset.id);
                 // TODO implement build pipeline execution
                 // let build_pipeline = metadata
@@ -350,14 +386,26 @@ impl<'a> SourcePairImport<'a> {
                     metadata: AssetMetadata {
                         id: asset.id,
                         search_tags: asset.search_tags,
-                        build_deps: asset.build_deps.clone(),
-                        load_deps: asset.load_deps.clone(),
+                        artifact: Some(ArtifactMetadata {
+                            id: asset.id,
+                            hash: utils::calc_asset_hash(
+                                &asset.id,
+                                import_hash,
+                                asset.load_deps.iter().chain(asset.build_deps.iter()),
+                            ),
+                            load_deps: asset.load_deps.clone(),
+                            build_deps: asset.build_deps.clone(),
+                            compression: serialized_asset.metadata.compression,
+                            compressed_size: serialized_asset.metadata.compressed_size,
+                            uncompressed_size: serialized_asset.metadata.uncompressed_size,
+                            type_id: AssetTypeId(asset.asset_data.uuid()),
+                        }),
                         build_pipeline: asset.build_pipeline,
-                        asset_type: AssetTypeId(asset.asset_data.uuid()),
                     },
                     unresolved_load_refs,
                     unresolved_build_refs,
                     asset: Some(asset.asset_data),
+                    serialized_asset: Some(serialized_asset),
                 });
                 debug!(
                     "Import success {} read {} bytes",

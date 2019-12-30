@@ -90,24 +90,31 @@ struct ImportArtifactKey {
   hash @0 :Data;
 }
 
+struct ArtifactMetadata {
+  assetId @0 :AssetUuid;
+  hash @1 :Data;
+  loadDeps @2 :List(AssetRef);
+  buildDeps @3 :List(AssetRef);
+  compression @4 :CompressionType;
+  compressedSize @5 :UInt64;
+  uncompressedSize @6 :UInt64;
+  typeId @7 :Data;
+}
+
 struct AssetMetadata {
   id @0 :AssetUuid;
-  loadDeps @1 :List(AssetRef);
-  buildDeps @2 :List(AssetRef);
-  searchTags @3 :List(KeyValue);
-  buildPipeline @4 :AssetUuid;
-  # The type of the asset 
-  assetType @5 :Data;
+  searchTags @1 :List(KeyValue);
+  buildPipeline @2 :AssetUuid;
   # The most recently recorded hash of the input to the import function
   latestArtifact :union {
-    id @6 :ImportArtifactKey;
-    none @7 :Void;
+    artifact @3 :ArtifactMetadata;
+    none @4 :Void;
   }
   # The source of the imported asset
-  source @8 :AssetSource;
+  source @5 :AssetSource;
   union {
-    error @9 :Error;
-    noError @10 :Void;
+    error @6 :Error;
+    noError @7 :Void;
   }
 }
 
@@ -126,9 +133,8 @@ struct AssetMetadata {
 # - Importer options TypeUUID
 
 struct Artifact {
-    assetId @0 :AssetUuid;
-    key @1 :Data;
-    data @2 :SerializedAsset;
+    metadata @0 :ArtifactMetadata;
+    data @1 :Data;
 }
 
 struct BuildParameters {
@@ -162,13 +168,6 @@ struct AssetRemoveEvent {
 enum CompressionType {
   none @0;
   lz4 @1;
-}
-
-struct SerializedAsset {
-  compression @0 :CompressionType;
-  uncompressedSize @1 :UInt64;
-  typeUuid @2 :Data;
-  data @3 :Data;
 }
 
 struct DaemonInfo {

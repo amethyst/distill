@@ -21,7 +21,7 @@ interface AssetHub {
         getAssetChanges @4 (start :UInt64, count :UInt64) -> (changes :List(D.AssetChangeLogEntry));
         getPathForAssets @5 (assets :List(D.AssetUuid)) -> (paths :List(AssetPath));
         getAssetsForPaths @6 (paths :List(Data)) -> (assets :List(PathAssets));
-        getBuildArtifacts @7 (assets :List(D.AssetUuid), parameters :D.BuildParameters) -> (artifacts :List(D.Artifact));
+        getImportArtifacts @7 (assets :List(D.AssetUuid)) -> (artifacts :List(D.Artifact));
     }
 
     interface Listener {

@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 capnp = "0.10.0"
+atelier-core = { path = "../core" }
 
 [build-dependencies]
 capnpc = "0.10.0"

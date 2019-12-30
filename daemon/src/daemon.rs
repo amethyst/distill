@@ -45,7 +45,7 @@ impl AssetDaemonTables {
     }
 }
 
-const DAEMON_VERSION: u32 = 1;
+const DAEMON_VERSION: u32 = 2;
 pub struct AssetDaemon {
     db_dir: PathBuf,
     address: SocketAddr,

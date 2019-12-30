@@ -22,4 +22,22 @@ impl ::std::fmt::Debug for data_capnp::FileState {
     }
 }
 
+impl From<atelier_core::CompressionType> for data_capnp::CompressionType {
+    fn from(c: atelier_core::CompressionType) -> Self {
+        match c {
+            atelier_core::CompressionType::None => Self::None,
+            atelier_core::CompressionType::Lz4 => Self::Lz4,
+        }
+    }
+}
+
+impl From<data_capnp::CompressionType> for atelier_core::CompressionType {
+    fn from(c: data_capnp::CompressionType) -> Self {
+        match c {
+            data_capnp::CompressionType::None => Self::None,
+            data_capnp::CompressionType::Lz4 => Self::Lz4,
+        }
+    }
+}
+
 pub use crate::{data_capnp as data, service_capnp as service};

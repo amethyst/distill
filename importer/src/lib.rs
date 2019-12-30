@@ -23,8 +23,8 @@ pub use self::error::{Error, Result};
 pub use crate::serde_obj::SerdeImportable;
 pub use crate::{
     boxed_importer::{
-        get_source_importers, AssetMetadata, BoxedImporter, SourceFileImporter, SourceMetadata,
-        SOURCEMETADATA_VERSION,
+        get_source_importers, ArtifactMetadata, AssetMetadata, BoxedImporter, SourceFileImporter,
+        SourceMetadata, SOURCEMETADATA_VERSION,
     },
     serde_obj::{IntoSerdeObj, SerdeObj},
 };
