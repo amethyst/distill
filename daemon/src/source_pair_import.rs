@@ -145,6 +145,17 @@ impl<'a> SourcePairImport<'a> {
 
     pub fn needs_source_import(&mut self, scratch_buf: &mut Vec<u8>) -> Result<bool> {
         if let Some(ref metadata) = self.source_metadata {
+            if metadata.version != SOURCEMETADATA_VERSION {
+                return Ok(true);
+            }
+            if metadata.importer_version
+                != self
+                    .importer
+                    .expect("need importer to determine if source import is required")
+                    .version()
+            {
+                return Ok(true);
+            }
             if metadata.import_hash.is_none() {
                 return Ok(true);
             }
