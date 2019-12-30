@@ -731,7 +731,7 @@ impl FileAssetSource {
         for (asset, maybe_metadata) in affected_assets.iter_mut() {
             match self.get_asset_path(txn, &asset) {
                 Some(ref path) => {
-                    let mut asset_metadata = maybe_metadata
+                    let asset_metadata = maybe_metadata
                         .as_mut()
                         .expect("metadata exists in DB but not in hashmap");
                     let import_hash = changes

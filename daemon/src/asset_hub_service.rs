@@ -180,13 +180,13 @@ impl<'a> AssetHubSnapshotImpl<'a> {
                 match metadata.get_source()? {
                     AssetSource::File => {
                         // TODO run build pipeline
-                        let (hash, artifact) = ctx.file_source.regenerate_import_artifact(
+                        let (_, artifact) = ctx.file_source.regenerate_import_artifact(
                             txn,
                             &id,
                             &mut scratch_buf,
                         )?;
                         let capnp_artifact = build_artifact_message(&artifact);
-                        artifacts.push((id, hash, capnp_artifact));
+                        artifacts.push(capnp_artifact);
                     }
                 }
             }
@@ -195,8 +195,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         let mut artifact_results = results_builder
             .reborrow()
             .init_artifacts(artifacts.len() as u32);
-        for (idx, (id, hash, artifact)) in artifacts.iter().enumerate() {
-            let mut out = artifact_results.reborrow().set_with_caveats(
+        for (idx, artifact) in artifacts.iter().enumerate() {
+            artifact_results.reborrow().set_with_caveats(
                 idx as u32,
                 artifact.get_root_as_reader::<artifact::Reader<'_>>()?,
             )?;
