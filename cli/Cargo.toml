@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-capnp = { version = "0.10.0", features = [ "rpc_try" ] }
-capnp-rpc = "0.10.0"
-tokio = "0.1"
-futures = "0.1"
+capnp = { version = "0.11", features = [ "rpc_try" ] }
+capnp-rpc = "0.11"
+tokio = "0.2"
+futures = "0.3"
 atelier-schema = { path = "../schema" }
-parity-tokio-ipc = { git = "https://github.com/NikVolf/parity-tokio-ipc", branch = "master" }
 tokio-stdin-stdout = "0.1"
 shrust = { git = "https://github.com/kabergstrom/shrust", branch = "master" }
 uuid = "0.8"
+futures-tokio-compat = { git = "https://github.com/dwrensha/futures-tokio-compat", branch = "tokio-0.2", optional = true }

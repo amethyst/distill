@@ -9,41 +9,31 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
     thread,
+    time::Instant,
 };
-use tokio::prelude::*;
-use tokio::runtime::current_thread::Runtime;
-fn endpoint() -> String {
-    if cfg!(windows) {
-        r"\\.\pipe\atelier-assets".to_string()
-    } else {
-        r"/tmp/atelier-assets".to_string()
-    }
-}
+use tokio::{prelude::*, runtime::Runtime};
 pub fn main() {
-    use parity_tokio_ipc::IpcConnection;
     use std::net::ToSocketAddrs;
 
     let _addr = "127.0.0.1:9999".to_socket_addrs().unwrap().next().unwrap();
 
     let num_assets = Arc::new(AtomicUsize::new(0));
     let byte_size = Arc::new(AtomicUsize::new(0));
-    let start_time = Local::now();
+    let start_time = Instant::now();
     let mut threads = Vec::new();
     for _ in 0..8 {
         let num_assets = num_assets.clone();
         let byte_size = byte_size.clone();
         threads.push(thread::spawn(move || {
             let mut runtime = Runtime::new().unwrap();
-            // let stream = runtime
-            //     .block_on(::tokio::net::TcpStream::connect(&addr))
-            //     .unwrap();
-            // stream.set_nodelay(true).unwrap();
-            // stream.set_send_buffer_size(1 << 24).unwrap();
-            // stream.set_recv_buffer_size(1 << 24).unwrap();
-            // let (reader, writer) = stream.split();
-            let connection = IpcConnection::connect(endpoint(), &tokio::reactor::Handle::default())
-                .expect("failed to create named pipe");
-            let (reader, writer) = connection.split();
+            let stream = runtime
+                .block_on(::tokio::net::TcpStream::connect(&addr))
+                .unwrap();
+            stream.set_nodelay(true).unwrap();
+            stream.set_send_buffer_size(1 << 24).unwrap();
+            stream.set_recv_buffer_size(1 << 24).unwrap();
+            use futures::AsyncReadExt;
+            let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
             let rpc_network = Box::new(twoparty::VatNetwork::new(
                 reader,
                 writer,

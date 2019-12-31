@@ -5,8 +5,8 @@ build = "build.rs"
 edition = "2018"
 
 [dependencies]
-capnp = "0.10.0"
+capnp = "0.11"
 atelier-core = { path = "../core" }
 
 [build-dependencies]
-capnpc = "0.10.0"
+capnpc = "0.11"

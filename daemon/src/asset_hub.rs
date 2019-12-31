@@ -7,7 +7,6 @@ use atelier_schema::data::{
     asset_metadata::{self, latest_artifact},
     asset_ref,
 };
-use futures::sync::mpsc::Sender;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{Hash, Hasher},
@@ -17,6 +16,7 @@ use std::{
         Arc, Mutex,
     },
 };
+use tokio::sync::mpsc::Sender;
 
 pub type ListenerID = u64;
 
@@ -38,6 +38,7 @@ enum ChangeEvent {
     Remove(AssetUuid),
 }
 
+#[derive(Debug)]
 pub enum AssetBatchEvent {
     Commit,
 }
@@ -614,7 +615,7 @@ impl AssetHub {
         let mut to_remove = Vec::new();
         for (id, listener) in listeners.iter_mut() {
             match listener.try_send(AssetBatchEvent::Commit) {
-                Err(ref err) if err.is_disconnected() => {
+                Err(_) => {
                     to_remove.push(*id);
                 }
                 _ => {}

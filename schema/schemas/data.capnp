@@ -105,7 +105,7 @@ struct AssetMetadata {
   id @0 :AssetUuid;
   searchTags @1 :List(KeyValue);
   buildPipeline @2 :AssetUuid;
-  # The most recently recorded hash of the input to the import function
+  # The most recently recorded artifact of the import function
   latestArtifact :union {
     artifact @3 :ArtifactMetadata;
     none @4 :Void;
@@ -134,7 +134,7 @@ struct AssetMetadata {
 
 struct Artifact {
     metadata @0 :ArtifactMetadata;
-    data @1 :Data;
+    data @1 :Data;  # Serialized data as per metadata
 }
 
 struct BuildParameters {

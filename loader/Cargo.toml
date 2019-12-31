@@ -10,20 +10,17 @@ crossbeam-channel = "0.3"
 
 atelier-core = { path = "../core", features = ["serde-1", "importer_context"] }
 atelier-schema = { path = "../schema", optional = true }
-tokio = { version = "0.1", optional = true }
-tokio-current-thread = { version = "0.1", optional = true }
-tokio-executor = { version = "0.1", optional = true }
-tokio-reactor = { version = "0.1", optional = true }
-tokio-timer = { version = "0.2", optional = true }
-capnp = { version = "0.10.0", optional = true}
-capnp-rpc = { version = "0.10.0", optional = true }
-futures = { version = "0.1", optional = true }
+tokio = { version = "0.2", features = ["tcp", "sync", "rt-core", "rt-util", "stream"], optional = true }
+capnp = { version = "0.11", optional = true}
+capnp-rpc = { version = "0.11.0", optional = true }
+futures = { version = "0.3", optional = true }
 log = { version = "0.4", optional = true }
 dashmap = { version = "1.2", optional = true }
 derivative = { version = "1.0", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true}
 inventory = { version = "0.1", optional = true }
 uuid = { version = "0.8", optional = true }
+futures-tokio-compat = { git = "https://github.com/dwrensha/futures-tokio-compat", branch = "tokio-0.2", optional = true }
 
 [dev-dependencies]
 atelier-daemon = { path = "../daemon" }
@@ -34,5 +31,5 @@ serde = { version = "1.0", features = ["derive"] }
 
 [features]
 default = ["rpc_loader", "handle"]
-rpc_loader = ["atelier-schema", "tokio", "tokio-current-thread", "tokio-executor", "tokio-reactor", "tokio-timer", "capnp", "capnp-rpc", "futures", "log", "dashmap"]
+rpc_loader = ["atelier-schema", "tokio", "capnp", "capnp-rpc", "futures", "log", "dashmap", "futures-tokio-compat"]
 handle = ["derivative", "serde", "inventory", "uuid"]

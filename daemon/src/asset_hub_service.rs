@@ -17,7 +17,8 @@ use atelier_schema::{
 };
 use capnp;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
-use futures::{sync::mpsc, Future, Stream};
+
+use futures::{AsyncReadExt, TryFutureExt};
 use owning_ref::OwningHandle;
 use std::{
     collections::{HashMap, HashSet},
@@ -26,8 +27,7 @@ use std::{
     sync::Arc,
     thread,
 };
-use tokio::prelude::*;
-use tokio::runtime::current_thread::Runtime;
+use tokio::{runtime::Runtime, sync::mpsc};
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
@@ -352,12 +352,13 @@ impl AssetHubImpl {
         let params = params.get()?;
         let listener = Rc::new(params.get_listener()?);
         let ctx = self.ctx.clone();
-        let (mut tx, rx) = mpsc::channel(16);
+        let (mut tx, mut rx) = mpsc::channel(16);
         tx.try_send(AssetBatchEvent::Commit).unwrap();
 
         let tx = self.ctx.hub.register_listener(tx);
-        tokio::runtime::current_thread::TaskExecutor::current()
-            .spawn_local(Box::new(rx.for_each(move |_| {
+
+        tokio::task::spawn_local(async move {
+            while let Some(_) = rx.recv().await {
                 let mut request = listener.update_request();
                 let snapshot = AssetHubSnapshotImpl {
                     txn: Rc::new(OwningHandle::new_with_fn(ctx.clone(), |t| unsafe {
@@ -373,21 +374,12 @@ impl AssetHubImpl {
                     asset_hub::snapshot::ToClient::new(snapshot)
                         .into_client::<::capnp_rpc::Server>(),
                 );
-                let ctx = ctx.clone();
-                let _ = tokio::runtime::current_thread::TaskExecutor::current().spawn_local(
-                    Box::new(request.send().promise.then(move |r| {
-                        match r {
-                            Ok(_) => {}
-                            Err(_) => {
-                                ctx.hub.drop_listener(tx);
-                            }
-                        }
-                        Ok(())
-                    })),
-                );
-                Ok(())
-            })))
-            .map_err(Error::TokioSpawnError)?;
+                if let Err(_) = request.send().promise.await {
+                    ctx.hub.drop_listener(tx);
+                    break;
+                }
+            }
+        });
         Ok(())
     }
 
@@ -416,7 +408,10 @@ fn endpoint() -> String {
         r"/tmp/atelier-assets".to_string()
     }
 }
-fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'static>(
+fn spawn_rpc<
+    R: std::marker::Unpin + futures::AsyncRead + Send + 'static,
+    W: std::marker::Unpin + futures::AsyncWrite + Send + 'static,
+>(
     reader: R,
     writer: W,
     ctx: Arc<ServiceContext>,
@@ -434,7 +429,10 @@ fn spawn_rpc<R: std::io::Read + Send + 'static, W: std::io::Write + Send + 'stat
         );
 
         let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.clone().client));
-        runtime.block_on(rpc_system.map_err(|_| ())).unwrap();
+        let local = tokio::task::LocalSet::new();
+        local
+            .block_on(&mut runtime, rpc_system.map_err(|_| ()))
+            .unwrap();
     });
 }
 impl AssetHubService {
@@ -457,28 +455,27 @@ impl AssetHubService {
     pub fn run(&self, addr: std::net::SocketAddr) {
         let mut runtime = Runtime::new().unwrap();
 
-        let tcp = ::tokio::net::TcpListener::bind(&addr).expect("Failed to bind tcp socket");
+        let local = tokio::task::LocalSet::new();
 
-        let tcp_future = tcp.incoming().for_each(move |stream| {
-            stream.set_nodelay(true)?;
-            stream.set_send_buffer_size(1 << 22)?;
-            stream.set_recv_buffer_size(1 << 22)?;
+        let result: std::result::Result<(), Box<dyn std::error::Error>> =
+            local.block_on(&mut runtime, async {
+                let mut listener: tokio::net::TcpListener =
+                    tokio::net::TcpListener::bind(&addr).await.unwrap();
 
-            let (reader, writer) = stream.split();
-            spawn_rpc(reader, writer, self.ctx.clone());
-
-            Ok(())
-        });
-
-        let _ = std::fs::remove_file(endpoint());
-
+                loop {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    stream.set_nodelay(true).unwrap();
+                    stream.set_send_buffer_size(1 << 22).unwrap();
+                    stream.set_recv_buffer_size(1 << 22).unwrap();
+                    let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+                    spawn_rpc(reader, writer, self.ctx.clone());
+                }
+            });
         // NOTE(happens): This will only fail if we can't set the stream
         // parameters on startup, which is a cause for panic in any case.
         // NOTE(kabergstrom): It also seems to happen when the main thread
         // is aborted and this is run on a background thread
-        runtime
-            .block_on(tcp_future)
-            .expect("Failed to run tcp listener");
+        result.expect("Failed to run tcp listener");
     }
 }
 

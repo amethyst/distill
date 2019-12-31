@@ -8,7 +8,6 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 use std::str;
-use tokio::executor::SpawnError;
 
 #[derive(Debug)]
 pub enum Error {
@@ -26,7 +25,6 @@ pub enum Error {
     RecvError,
     Exit,
     ImporterError(atelier_importer::Error),
-    TokioSpawnError(SpawnError),
     StrUtf8Error(str::Utf8Error),
     Custom(String),
 }
@@ -50,7 +48,6 @@ impl std::error::Error for Error {
             Error::RecvError => "Receive error",
             Error::Exit => "Exit",
             Error::ImporterError(ref e) => e.description(),
-            Error::TokioSpawnError(ref e) => e.description(),
             Error::StrUtf8Error(ref e) => e.description(),
             Error::Custom(ref s) => s.as_str(),
         }
@@ -72,7 +69,6 @@ impl std::error::Error for Error {
             Error::RecvError => None,
             Error::Exit => None,
             Error::ImporterError(ref e) => Some(e),
-            Error::TokioSpawnError(ref e) => Some(e),
             Error::StrUtf8Error(ref e) => Some(e),
             Error::Custom(ref _e) => None,
         }
@@ -95,7 +91,6 @@ impl fmt::Display for Error {
             Error::RecvError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
             Error::ImporterError(ref e) => e.fmt(f),
-            Error::TokioSpawnError(ref e) => e.fmt(f),
             Error::StrUtf8Error(ref e) => e.fmt(f),
             Error::Custom(ref s) => f.write_str(s.as_str()),
         }
@@ -154,11 +149,6 @@ impl From<log::SetLoggerError> for Error {
 impl From<atelier_importer::Error> for Error {
     fn from(err: atelier_importer::Error) -> Error {
         Error::ImporterError(err)
-    }
-}
-impl From<SpawnError> for Error {
-    fn from(err: SpawnError) -> Error {
-        Error::TokioSpawnError(err)
     }
 }
 impl From<str::Utf8Error> for Error {

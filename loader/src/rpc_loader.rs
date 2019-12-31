@@ -19,7 +19,6 @@ use atelier_schema::{
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dashmap::DashMap;
-use futures::Future;
 use log::{error, warn};
 use std::{
     collections::HashMap,
@@ -28,8 +27,8 @@ use std::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
+    task::Poll,
 };
-use tokio::prelude::*;
 
 /// Describes the state of an asset load operation
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -129,9 +128,11 @@ struct LoaderData {
 }
 
 struct RpcRequests {
-    pending_data_requests: Vec<ResponsePromise<GetImportArtifactsResults, LoadHandle>>,
-    pending_metadata_requests:
-        Vec<ResponsePromise<GetAssetMetadataWithDependenciesResults, Vec<(AssetUuid, LoadHandle)>>>,
+    pending_data_requests: Vec<(ResponsePromise<GetImportArtifactsResults>, LoadHandle)>,
+    pending_metadata_requests: Vec<(
+        ResponsePromise<GetAssetMetadataWithDependenciesResults>,
+        Vec<(AssetUuid, LoadHandle)>,
+    )>,
 }
 
 unsafe impl Send for RpcRequests {}
@@ -398,7 +399,7 @@ fn load_data(
 }
 
 fn process_pending_requests<T, U, ProcessFunc>(
-    requests: &mut Vec<ResponsePromise<T, U>>,
+    requests: &mut Vec<(ResponsePromise<T>, U)>,
     mut process_request_func: ProcessFunc,
 ) where
     ProcessFunc: for<'a> FnMut(
@@ -415,22 +416,23 @@ fn process_pending_requests<T, U, ProcessFunc>(
         let request = requests
             .get_mut(i)
             .expect("invalid iteration logic when processing RPC requests");
-        let result: Result<Async<()>, Box<dyn Error>> = match request.poll() {
-            Ok(Async::Ready(response)) => {
-                process_request_func(Ok(response), request.get_user_data()).map(|r| Async::Ready(r))
+        let result: Result<Poll<()>, Box<dyn Error>> = match request.0.try_recv() {
+            Ok(Ok(response)) => {
+                process_request_func(Ok(response), &mut request.1).map(|r| Poll::Ready(r))
             }
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(err) => Err(err),
+            Ok(Err(err)) => Err(Box::new(err)),
+            Err(err @ tokio::sync::oneshot::error::TryRecvError::Closed) => Err(Box::new(err)),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => Ok(Poll::Pending),
         };
         match result {
             Err(err) => {
-                let _ = process_request_func(Err(err), request.get_user_data());
+                let _ = process_request_func(Err(err), &mut request.1);
                 requests.swap_remove(i);
             }
-            Ok(Async::Ready(_)) => {
+            Ok(Poll::Ready(_)) => {
                 requests.swap_remove(i);
             }
-            Ok(Async::NotReady) => {}
+            Ok(Poll::Pending) => {}
         }
     }
 }
@@ -1043,7 +1045,7 @@ mod tests {
 
         fn import(
             &self,
-            source: &mut dyn Read,
+            source: &mut dyn std::io::Read,
             txt_format: Self::Options,
             state: &mut Self::State,
         ) -> atelier_importer::Result<ImporterValue> {

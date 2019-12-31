@@ -13,7 +13,6 @@ atelier-importer = { version = "0.1", path = "../../importer" }
 atelier-loader = { version = "0.1", path = "../../loader" }
 
 type-uuid = "0.1"
-structopt = "0.3"
 image2 = { version = "0.11", features = [ "ser" ] }
 inventory = "0.1"
 log = { version = "0.4", features = ["serde"] }
