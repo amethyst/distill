@@ -10,7 +10,7 @@ mopa = "0.2.2"
 serde = "1.0"
 type-uuid = "0.1"
 erased-serde = "0.3"
-ron = "0.4"
+ron = "0.5"
 bincode = "1.1"
 inventory = "0.1"
 typetag = { version = "0.1", optional = true }
