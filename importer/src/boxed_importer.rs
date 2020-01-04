@@ -130,7 +130,7 @@ where
         Box::new(S::default())
     }
     fn version(&self) -> u32 {
-        self.version()
+        T::version(self)
     }
     fn deserialize_metadata<'a>(
         &self,

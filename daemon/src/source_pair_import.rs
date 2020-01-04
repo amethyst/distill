@@ -206,10 +206,15 @@ impl<'a> SourcePairImport<'a> {
             .importer
             .expect("cannot read metadata without an importer");
         let meta = utils::to_meta_path(&self.source);
-        let mut f = fs::File::open(meta)?;
+        let mut f = fs::File::open(&meta)?;
         scratch_buf.clear();
         f.read_to_end(scratch_buf)?;
-        self.source_metadata = Some(importer.deserialize_metadata(scratch_buf)?);
+        self.source_metadata = Some(importer.deserialize_metadata(scratch_buf).map_err(
+            |e| match e {
+                atelier_importer::Error::RonDeError(e) => Error::MetaDeError(meta, e),
+                e => e.into(),
+            },
+        )?);
         Ok(())
     }
 
@@ -399,7 +404,7 @@ impl<'a> SourcePairImport<'a> {
                         search_tags: asset.search_tags,
                         artifact: Some(ArtifactMetadata {
                             id: asset.id,
-                            hash: utils::calc_asset_hash(
+                            hash: utils::calc_import_artifact_hash(
                                 &asset.id,
                                 import_hash,
                                 asset.load_deps.iter().chain(asset.build_deps.iter()),

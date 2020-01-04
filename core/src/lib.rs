@@ -22,7 +22,7 @@ pub mod utils;
 ///
 /// If using a human-readable format, serializes to a hyphenated UUID format and deserializes from
 /// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
-#[derive(PartialEq, Eq, Debug, Clone, Copy, Default, Hash)]
+#[derive(PartialEq, Eq, Clone, Copy, Default, Hash)]
 pub struct AssetUuid(pub [u8; 16]);
 
 impl AsMut<[u8]> for AssetUuid {
@@ -40,6 +40,14 @@ impl AsRef<[u8]> for AssetUuid {
 impl PartialOrd for AssetUuid {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         self.0.partial_cmp(&other.0)
+    }
+}
+
+impl fmt::Debug for AssetUuid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("AssetUuid")
+            .field(&uuid::Uuid::from_bytes(self.0))
+            .finish()
     }
 }
 

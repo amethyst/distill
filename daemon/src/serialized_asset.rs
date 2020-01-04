@@ -46,7 +46,7 @@ impl SerializedAsset<Vec<u8>> {
                 load_deps,
                 compression,
                 uncompressed_size: Some(size as u64),
-                compressed_size: Some(scratch_buf.len() as u64),
+                compressed_size: Some(asset_buf.len() as u64),
                 type_id: AssetTypeId(value.uuid()),
             },
             data: asset_buf,

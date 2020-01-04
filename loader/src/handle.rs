@@ -1,4 +1,4 @@
-use crate::{AssetRef, AssetUuid, LoadHandle, LoadStatus, Loader, LoaderInfoProvider, TypeUuid};
+use crate::{AssetRef, AssetUuid, LoadHandle, LoadStatus, Loader, LoaderInfoProvider};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use derivative::Derivative;
 use serde::{
@@ -144,6 +144,10 @@ impl<T> Handle<T> {
             },
             marker: PhantomData,
         }
+    }
+
+    pub fn asset<'a>(&self, storage: &'a impl TypedAssetStorage<T>) -> Option<&'a T> {
+        AssetHandle::asset(self, storage)
     }
 }
 
@@ -628,11 +632,7 @@ pub trait AssetHandle {
     /// # Parameters
     ///
     /// * `storage`: Asset storage.
-    ///
-    /// # Type Parameters
-    ///
-    /// * `T`: Asset `TypeUuid`.
-    fn asset<'a, T: TypeUuid, S: TypedAssetStorage<T>>(&self, storage: &'a S) -> Option<&'a T>
+    fn asset<'a, T, S: TypedAssetStorage<T>>(&self, storage: &'a S) -> Option<&'a T>
     where
         Self: Sized,
     {
@@ -644,11 +644,7 @@ pub trait AssetHandle {
     /// # Parameters
     ///
     /// * `storage`: Asset storage.
-    ///
-    /// # Type Parameters
-    ///
-    /// * `T`: Asset `TypeUuid`.
-    fn asset_version<'a, T: TypeUuid, S: TypedAssetStorage<T>>(&self, storage: &'a S) -> Option<u32>
+    fn asset_version<'a, T, S: TypedAssetStorage<T>>(&self, storage: &'a S) -> Option<u32>
     where
         Self: Sized,
     {
@@ -660,11 +656,7 @@ pub trait AssetHandle {
     /// # Parameters
     ///
     /// * `storage`: Asset storage.
-    ///
-    /// # Type Parameters
-    ///
-    /// * `T`: Asset `TypeUuid`.
-    fn asset_with_version<'a, T: TypeUuid, S: TypedAssetStorage<T>>(
+    fn asset_with_version<'a, T, S: TypedAssetStorage<T>>(
         &self,
         storage: &'a S,
     ) -> Option<(&'a T, u32)>

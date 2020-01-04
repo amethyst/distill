@@ -26,8 +26,9 @@ pub fn init_logging() -> Result<()> {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
-                "[{level}][{target}] {message}",
+                "[{timestamp}][{level}][{target}] {message}",
                 level = record.level(),
+                timestamp = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
                 target = record.target(),
                 message = message,
             ))

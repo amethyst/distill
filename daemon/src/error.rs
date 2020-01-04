@@ -7,6 +7,7 @@ use ron;
 use std::error::Error as StdError;
 use std::fmt;
 use std::io;
+use std::path::PathBuf;
 use std::str;
 
 #[derive(Debug)]
@@ -20,6 +21,7 @@ pub enum Error {
     BincodeError(bincode::ErrorKind),
     RonSerError(ron::ser::Error),
     RonDeError(ron::de::Error),
+    MetaDeError(PathBuf, ron::de::Error),
     SetLoggerError(log::SetLoggerError),
     UuidLength,
     RecvError,
@@ -43,6 +45,7 @@ impl std::error::Error for Error {
             Error::BincodeError(ref e) => e.description(),
             Error::RonSerError(ref e) => e.description(),
             Error::RonDeError(ref e) => e.description(),
+            Error::MetaDeError(_, ref e) => e.description(),
             Error::SetLoggerError(ref e) => e.description(),
             Error::UuidLength => "Uuid not 16 bytes",
             Error::RecvError => "Receive error",
@@ -64,6 +67,7 @@ impl std::error::Error for Error {
             Error::BincodeError(ref e) => Some(e),
             Error::RonSerError(ref e) => Some(e),
             Error::RonDeError(ref e) => Some(e),
+            Error::MetaDeError(_, ref e) => Some(e),
             Error::SetLoggerError(ref e) => Some(e),
             Error::UuidLength => None,
             Error::RecvError => None,
@@ -86,6 +90,16 @@ impl fmt::Display for Error {
             Error::BincodeError(ref e) => e.fmt(f),
             Error::RonSerError(ref e) => e.fmt(f),
             Error::RonDeError(ref e) => e.fmt(f),
+            Error::MetaDeError(ref path, ref e) => {
+                if let ron::de::Error::Parser(..) = e {
+                    // Special case for display of errors with known line:column format.
+                    // That way the full message is a well-formed file location link.
+                    write!(f, "metadata {}:", path.display())?;
+                } else {
+                    write!(f, "metadata {} ", path.display())?;
+                }
+                e.fmt(f)
+            }
             Error::SetLoggerError(ref e) => e.fmt(f),
             Error::UuidLength => f.write_str(self.description()),
             Error::RecvError => f.write_str(self.description()),

@@ -1,5 +1,5 @@
-use mopa::*;
 use erased_serde::*;
+use mopa::*;
 use type_uuid::TypeUuidDynamic;
 
 /// A trait for serializing any struct with a TypeUuid

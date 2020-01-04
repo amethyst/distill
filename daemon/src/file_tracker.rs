@@ -577,7 +577,7 @@ impl FileTracker {
     ) -> Vec<FileTrackerEvent> {
         let mut txn = None;
         let mut output_evts = Vec::new();
-        let timeout = Duration::from_millis(100);
+        let timeout = Duration::from_millis(50);
 
         while *is_running {
             select! {

@@ -604,7 +604,7 @@ impl FileAssetSource {
                     .import_hash()
                     .expect("Invalid: Import path should exist");
 
-                let hash = utils::calc_asset_hash(id, import_hash, resolved_refs);
+                let hash = utils::calc_import_artifact_hash(id, import_hash, resolved_refs);
                 context_set.begin_serialize_asset(a.metadata.id);
                 let serialized_asset = SerializedAsset::create(
                     hash,
@@ -757,7 +757,7 @@ impl FileAssetSource {
                             .filter(|x| x.is_uuid())
                             .cloned()
                             .collect();
-                        a.hash = utils::calc_asset_hash(
+                        a.hash = utils::calc_import_artifact_hash(
                             &asset,
                             import_hash,
                             a.load_deps.iter().chain(a.build_deps.iter()),
@@ -829,7 +829,7 @@ impl FileAssetSource {
                                         .filter(|x| x.is_uuid())
                                         .cloned()
                                         .collect();
-                                    artifact.hash = utils::calc_asset_hash(
+                                    artifact.hash = utils::calc_import_artifact_hash(
                                         &asset.metadata.id,
                                         import_hash,
                                         artifact.load_deps.iter().chain(artifact.build_deps.iter()),

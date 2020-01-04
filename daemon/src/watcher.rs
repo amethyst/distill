@@ -65,11 +65,11 @@ pub fn canonicalize_path(path: &PathBuf) -> PathBuf {
 impl DirWatcher {
     pub fn from_path_iter<'a, T>(paths: T, chan: cbSender<FileEvent>) -> Result<DirWatcher>
     where
-        T: Iterator<Item = &'a str>,
+        T: IntoIterator<Item = &'a str>,
     {
         let (tx, rx) = channel();
         let mut asset_watcher = DirWatcher {
-            watcher: watcher(tx.clone(), Duration::from_millis(100))?,
+            watcher: watcher(tx.clone(), Duration::from_millis(50))?,
             symlink_map: HashMap::new(),
             watch_refs: HashMap::new(),
             dirs: Vec::new(),
@@ -88,13 +88,6 @@ impl DirWatcher {
             asset_watcher.watch(&path)?;
         }
         Ok(asset_watcher)
-    }
-    pub fn new<'a, I, T>(paths: I, chan: cbSender<FileEvent>) -> Result<DirWatcher>
-    where
-        I: IntoIterator<Item = &'a str, IntoIter = T>,
-        T: Iterator<Item = &'a str>,
-    {
-        DirWatcher::from_path_iter(paths.into_iter(), chan)
     }
 
     pub fn stop_handle(&self) -> StopHandle {
@@ -165,6 +158,7 @@ impl DirWatcher {
                 Ok(event) => match self.handle_notify_event(event, false) {
                     Ok(maybe_event) => {
                         if let Some(evt) = maybe_event {
+                            log::debug!("File event: {:?}", evt);
                             self.asset_tx.send(evt).unwrap();
                         }
                     }

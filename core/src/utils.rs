@@ -35,7 +35,7 @@ pub fn to_meta_path(p: &PathBuf) -> PathBuf {
     ))
 }
 
-pub fn calc_asset_hash<T>(id: &AssetUuid, import_hash: u64, dep_list: T) -> u64
+pub fn calc_import_artifact_hash<T>(id: &AssetUuid, import_hash: u64, dep_list: T) -> u64
 where
     T: IntoIterator,
     T::Item: Hash,
