@@ -7,6 +7,7 @@ use crate::serialized_asset::SerializedAsset;
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
+use crate::artifact_cache::ArtifactCache;
 use atelier_core::{utils, AssetRef, AssetUuid, CompressionType};
 use atelier_importer::{ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext};
 use atelier_schema::data::{self, path_refs, source_metadata};
@@ -23,6 +24,7 @@ pub(crate) struct FileAssetSource {
     tracker: Arc<FileTracker>,
     rx: Receiver<FileTrackerEvent>,
     db: Arc<Environment>,
+    artifact_cache: Arc<ArtifactCache>,
     tables: FileAssetSourceTables,
     importers: Arc<ImporterMap>,
     importer_contexts: Arc<Vec<Box<dyn ImporterContext>>>,
@@ -104,6 +106,7 @@ impl FileAssetSource {
         hub: &Arc<AssetHub>,
         db: &Arc<Environment>,
         importers: &Arc<ImporterMap>,
+        artifact_cache: &Arc<ArtifactCache>,
         importer_contexts: Arc<Vec<Box<dyn ImporterContext>>>,
     ) -> Result<FileAssetSource> {
         let (tx, rx) = channel::unbounded();
@@ -112,6 +115,7 @@ impl FileAssetSource {
             tracker: tracker.clone(),
             hub: hub.clone(),
             db: db.clone(),
+            artifact_cache: artifact_cache.clone(),
             rx,
             tables: FileAssetSourceTables {
                 path_to_metadata: db
@@ -1087,45 +1091,49 @@ impl FileAssetSource {
                             if local_store.is_none() {
                                 *local_store = Some(Vec::new());
                             }
-                            match self.db.ro_txn() {
-                                Err(e) => {
-                                    panic!("failed to open RO transaction: {}", e);
-                                }
-                                Ok(read_txn) => {
-                                    let cache = DBSourceMetadataCache {
-                                        txn: &read_txn,
-                                        file_asset_source: &self,
-                                        _marker: std::marker::PhantomData,
-                                    };
-                                    let result = source_pair_import::process_pair(
-                                        &cache,
-                                        &self.importers,
-                                        &self.importer_contexts,
-                                        &processed_pair,
-                                        local_store.as_mut().unwrap(),
-                                    );
-                                    // TODO put import artifact in cache if it doesn't have unresolved refs
-                                    let import_result = result.map(|result| {
-                                        result.and_then(|(import, import_output)| {
-                                            import_output.map(|o| PairImportResultMetadata {
-                                                import_state: import,
-                                                assets: o
-                                                    .assets
-                                                    .into_iter()
-                                                    .map(|a| AssetImportResultMetadata {
-                                                        metadata: a.metadata,
-                                                        unresolved_load_refs: a
-                                                            .unresolved_load_refs,
-                                                        unresolved_build_refs: a
-                                                            .unresolved_build_refs,
-                                                    })
-                                                    .collect(),
+                            let read_txn = self.db.ro_txn().unwrap_or_else(|e| panic!("failed to open RO transaction: {}", e));
+                            let cache = DBSourceMetadataCache {
+                                txn: &read_txn,
+                                file_asset_source: &self,
+                                _marker: std::marker::PhantomData,
+                            };
+                            let result = source_pair_import::process_pair(
+                                &cache,
+                                &self.importers,
+                                &self.importer_contexts,
+                                &processed_pair,
+                                local_store.as_mut().unwrap(),
+                            );
+                            let import_result = result.map(|result| {
+                                result.and_then(|(import, import_output)| {
+                                    import_output.map(|o| {
+                                        // put import artifact in cache if it doesn't have unresolved refs
+                                       if o.is_fully_resolved() {
+                                            let mut rw_txn = self.db.rw_txn().unwrap_or_else(|e| panic!("Failed to open RW transaction: {}", e));
+                                            for asset in &o.assets {
+                                                let serialized_asset = asset.serialized_asset.as_ref().expect("Asset missing");
+                                                self.artifact_cache.insert(&mut rw_txn, serialized_asset);
+                                            }
+                                        }
+
+                                        PairImportResultMetadata {
+                                        import_state: import,   
+                                        assets: o
+                                            .assets
+                                            .into_iter()
+                                            .map(|a| AssetImportResultMetadata {
+                                                metadata: a.metadata,
+                                                unresolved_load_refs: a
+                                                    .unresolved_load_refs,
+                                                unresolved_build_refs: a
+                                                    .unresolved_build_refs,
                                             })
-                                        })
-                                    });
-                                    sender.send((processed_pair, import_result)).unwrap();
-                                }
-                            }
+                                            .collect(),             
+                                        }
+                                    })
+                                })
+                            });
+                            sender.send((processed_pair, import_result)).unwrap();
                         });
                     });
                 });
@@ -1265,14 +1273,16 @@ impl FileAssetSource {
     }
 }
 
-struct DBSourceMetadataCache<'a, 'b, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a> {
+struct DBSourceMetadataCache<'a, 'b, V, T> {
     txn: &'a V,
     file_asset_source: &'b FileAssetSource,
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<'a, 'b, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>
-    source_pair_import::SourceMetadataCache for DBSourceMetadataCache<'a, 'b, V, T>
+impl<'a, 'b, V, T> source_pair_import::SourceMetadataCache for DBSourceMetadataCache<'a, 'b, V, T>
+where
+    V: DBTransaction<'a, T>,
+    T: lmdb::Transaction + 'a,
 {
     fn restore_metadata(
         &self,

@@ -50,6 +50,18 @@ pub(crate) struct AssetImportResult {
     pub serialized_asset: Option<SerializedAsset<Vec<u8>>>,
 }
 
+impl AssetImportResult {
+    pub(crate) fn is_fully_resolved(&self) -> bool {
+        self.unresolved_load_refs.is_empty() && self.unresolved_build_refs.is_empty()
+    }
+}
+
+impl PairImportResult {
+    pub(crate) fn is_fully_resolved(&self) -> bool {
+        self.assets.iter().all(|asset| asset.is_fully_resolved())
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct SourcePairImport<'a> {
     source: PathBuf,

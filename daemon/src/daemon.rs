@@ -1,6 +1,6 @@
 use crate::{
     asset_hub, asset_hub_service, capnp_db::Environment, error::Result, file_asset_source,
-    file_tracker::FileTracker,
+    file_tracker::FileTracker, artifact_cache::ArtifactCache,
 };
 use atelier_importer::{get_importer_contexts, BoxedImporter, ImporterContext};
 use atelier_schema::data;
@@ -134,8 +134,10 @@ impl AssetDaemon {
 
         let importers = Arc::new(self.importers);
         let ctxs = Arc::new(self.importer_contexts);
+        let artifact_cache = ArtifactCache::new(&asset_db).expect("failed to create artifact cache");
+        let artifact_cache = Arc::new(artifact_cache);
 
-        let asset_source = FileAssetSource::new(&tracker, &hub, &asset_db, &importers, ctxs)
+        let asset_source = FileAssetSource::new(&tracker, &hub, &asset_db, &importers, &artifact_cache, ctxs)
             .expect("failed to create asset source");
 
         let asset_source = Arc::new(asset_source);
@@ -145,6 +147,7 @@ impl AssetDaemon {
             hub.clone(),
             asset_source.clone(),
             tracker.clone(),
+            artifact_cache.clone(),
         );
 
         // create the assets folder automatically to make it easier to get started.

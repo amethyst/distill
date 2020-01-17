@@ -4,3 +4,4 @@ target
 .vscode
 */tests/assets_db
 Cargo.lock
+.DS_Store

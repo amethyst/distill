@@ -1,4 +1,5 @@
 use crate::{
+    artifact_cache::ArtifactCache,
     asset_hub::{AssetBatchEvent, AssetHub},
     capnp_db::{CapnpCursor, Environment, RoTransaction},
     error::Error,
@@ -37,6 +38,7 @@ struct ServiceContext {
     hub: Arc<AssetHub>,
     file_source: Arc<FileAssetSource>,
     file_tracker: Arc<FileTracker>,
+    artifact_cache: Arc<ArtifactCache>,
     db: Arc<Environment>,
 }
 
@@ -53,6 +55,7 @@ struct AssetHubSnapshotImpl<'a> {
 struct AssetHubImpl {
     ctx: Arc<ServiceContext>,
 }
+
 fn build_artifact_message<T: AsRef<[u8]>>(
     artifact: &SerializedAsset<T>,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
@@ -176,6 +179,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
+                // retreive artifact data from cache if available
+
                 let metadata = metadata.get()?;
                 match metadata.get_source()? {
                     AssetSource::File => {
@@ -441,6 +446,7 @@ impl AssetHubService {
         hub: Arc<AssetHub>,
         file_source: Arc<FileAssetSource>,
         file_tracker: Arc<FileTracker>,
+        artifact_cache: Arc<ArtifactCache>,
     ) -> AssetHubService {
         AssetHubService {
             ctx: Arc::new(ServiceContext {
@@ -448,6 +454,7 @@ impl AssetHubService {
                 db,
                 file_source,
                 file_tracker,
+                artifact_cache,
             }),
         }
     }

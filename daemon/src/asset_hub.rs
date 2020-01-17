@@ -59,7 +59,7 @@ struct AssetHubTables {
     /// Maps an AssetUuid to a list of other assets that have a build dependency on it
     /// AssetUuid -> [AssetUuid]
     build_dep_reverse: lmdb::Database,
-    /// Maps an AssetID to its most recent metadata and artifact
+    /// Maps an AssetID to its most recent metadata
     /// AssetUuid -> ImportedMetadata
     asset_metadata: lmdb::Database,
     /// Maps a SequenceNum to a AssetChangeLogEntry

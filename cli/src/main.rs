@@ -2,17 +2,24 @@ use atelier_schema::{
     data,
     service::asset_hub::{self, snapshot::Client as Snapshot},
 };
-use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
+use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
-use futures::Future;
-use shrust;
-use std::{cell::RefCell, io, rc::Rc, time::Instant};
+use futures::AsyncReadExt;
+use std::{cell::RefCell, rc::Rc, time::Instant};
 use tokio::prelude::*;
-use tokio::runtime::current_thread::Runtime;
+use tokio::runtime::Runtime;
+use async_trait::async_trait;
+
+#[macro_use]
+mod macros;
+
+mod shell;
+use shell::{Shell, Command};
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
+pub type DynResult = Result<(), Box<dyn std::error::Error>>;
 
 struct ListenerImpl {
     snapshot: Rc<RefCell<Snapshot>>,
@@ -23,7 +30,7 @@ impl asset_hub::listener::Server for ListenerImpl {
         params: asset_hub::listener::UpdateParams,
         _results: asset_hub::listener::UpdateResults,
     ) -> Promise<()> {
-        let snapshot = params.get()?.get_snapshot()?;
+        let snapshot = pry!(pry!(params.get()).get_snapshot());
         self.snapshot.replace(snapshot);
         Promise::ok(())
     }
@@ -47,18 +54,123 @@ fn endpoint() -> String {
         r"/tmp/atelier-assets".to_string()
     }
 }
-struct Context {
+pub struct Context {
     snapshot: Rc<RefCell<Snapshot>>,
 }
-fn print_asset_metadata(
-    io: &mut shrust::ShellIO,
-    asset: &data::asset_metadata::Reader,
-) -> io::Result<()> {
-    write!(
-        io,
+
+pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut runtime = Runtime::new().unwrap();
+    let local = tokio::task::LocalSet::new();
+    runtime.block_on(local.run_until(async_main()))
+}
+
+async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
+    use std::net::ToSocketAddrs;
+    let addr = "127.0.0.1:9999".to_socket_addrs()?.next().unwrap();
+    let stream = tokio::net::TcpStream::connect(&addr).await?;
+    stream.set_nodelay(true).unwrap();
+    let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+    let rpc_network = Box::new(twoparty::VatNetwork::new(
+        reader,
+        writer,
+        rpc_twoparty_capnp::Side::Client,
+        *ReaderOptions::new()
+            .nesting_limit(64)
+            .traversal_limit_in_words(64 * 1024 * 1024),
+    ));
+
+    let mut rpc_system = RpcSystem::new(rpc_network, None);
+
+    let hub: asset_hub::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+    let _disconnector = rpc_system.get_disconnector();
+    tokio::task::spawn_local(rpc_system);
+    let snapshot = Rc::new(RefCell::new({
+        let request = hub.get_snapshot_request();
+        request.send().promise.await?.get()?.get_snapshot()?
+    }));
+    let listener = asset_hub::listener::ToClient::new(ListenerImpl {
+        snapshot: snapshot.clone(),
+    })
+    .into_client::<::capnp_rpc::Server>();
+    let mut request = hub.register_listener_request();
+    request.get().set_listener(listener);
+
+    request.send().promise.await?;
+    let ctx = Context { snapshot: snapshot };
+
+    let mut shell = Shell::new();
+
+    shell.register_command("show_all", CmdShowAll);
+    shell.register_command("get", CmdGet);
+    shell.register_command("build", CmdBuild);
+    shell.register_command("path_for_asset", CmdPathForAsset);
+    shell.register_command("assets_for_path", CmdAssetsForPath);
+    
+    shell.run_repl(ctx).await
+}
+
+struct CmdShowAll;
+#[async_trait(?Send)]
+impl Command<Context> for CmdShowAll {
+    fn desc(&self) -> &str { "- Get all asset metadata" }
+    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, _args: Vec<&str>) -> DynResult {
+        let start = Instant::now();
+        let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
+        let response = request.send().promise.await?;
+        let response = response.get()?;
+        let total_time = Instant::now().duration_since(start);
+        let assets = response.get_assets()?;
+        for asset in assets {
+            let id = asset.get_id().unwrap().get_id().unwrap();
+            stdout.write_all(format!("{:?}\n", uuid::Uuid::from_bytes(make_array(id))).as_bytes()).await?;
+        }
+        async_write!(
+            stdout,
+            "got {} assets in {}\n",
+            assets.len(),
+            total_time.as_secs_f32(),
+        ).await?;
+        Ok(())
+    }
+}
+
+struct CmdGet;
+#[async_trait(?Send)]
+impl Command<Context> for CmdGet {
+    fn desc(&self) -> &str { "<uuid> - Get asset metadata from uuid" }
+    fn nargs(&self) -> usize { 1 }
+    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, args: Vec<&str>) -> DynResult {
+        let id = uuid::Uuid::parse_str(args[0])?;
+        let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
+        request.get().init_assets(1).get(0).set_id(id.as_bytes());
+        let start = Instant::now();
+        let response = request.send().promise.await?;
+        let total_time = Instant::now().duration_since(start);
+        let response = response.get()?;
+        let assets = response.get_assets()?;
+        for asset in assets {
+            print_asset_metadata(stdout, &asset).await?;
+        }
+        async_write!(
+            stdout,
+            "got {} assets in {}\n",
+            assets.len(),
+            total_time.as_secs_f32(),
+        ).await?;
+        Ok(())
+    }
+}
+
+async fn print_asset_metadata(
+    stdout: &mut io::Stdout,
+    asset: &data::asset_metadata::Reader<'_>,
+) -> DynResult {
+    async_write!(
+        stdout,
         "{{ id: {:?}",
-        uuid::Uuid::from_bytes(make_array(asset.get_id().unwrap().get_id().unwrap()))
-    )?;
+        uuid::Uuid::from_bytes(make_array(asset.get_id().unwrap().get_id().unwrap())),
+    ).await?;
+
     if let Ok(tags) = asset.get_search_tags() {
         let tags: Vec<String> = tags
             .iter()
@@ -71,220 +183,120 @@ fn print_asset_metadata(
             })
             .collect();
         if !tags.is_empty() {
-            write!(io, ", search_tags: [ {} ]", tags.join(", "))?;
+            async_write!(stdout, ", search_tags: [ {} ]", tags.join(", ")).await?;
         }
     }
-    writeln!(io, "}}")
-}
-fn register_commands(shell: &mut shrust::Shell<Context>) -> io::Result<()> {
-    shell.new_command("show_all", "Get all asset metadata", 0, |io, ctx, _| {
-        let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
-        let mut io = io.clone();
-        let start = Instant::now();
-        Box::new(request.send().promise.then(move |result| {
-            let total_time = Instant::now().duration_since(start);
-            let response = result.unwrap();
-            let response = response.get().unwrap();
-            let assets = response.get_assets().unwrap();
-            for asset in assets {
-                let id = asset.get_id().unwrap().get_id().unwrap();
-                writeln!(io, "{:?}", uuid::Uuid::from_bytes(make_array(id)))?;
-            }
-            writeln!(
-                io,
-                "got {} assets in {}",
-                assets.len(),
-                total_time.as_secs_f32()
-            )?;
-            Ok(())
-        }))
-    });
-    shell.new_command("get", "Get asset metadata from uuid", 1, |io, ctx, args| {
-        let id = uuid::Uuid::parse_str(args[0]).unwrap();
-        let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
-        request.get().init_assets(1).get(0).set_id(id.as_bytes());
-        let mut io = io.clone();
-        let start = Instant::now();
-        Box::new(request.send().promise.then(move |result| {
-            let total_time = Instant::now().duration_since(start);
-            let response = result.unwrap();
-            let response = response.get().unwrap();
-            let assets = response.get_assets().unwrap();
-            for asset in assets {
-                print_asset_metadata(&mut io, &asset)?;
-            }
-            writeln!(
-                io,
-                "got {} assets in {}",
-                assets.len(),
-                total_time.as_secs_f32()
-            )?;
-            Ok(())
-        }))
-    });
-    shell.new_command(
-        "build",
-        "Get build artifact from uuid",
-        1,
-        |io, ctx, args| {
-            let id = uuid::Uuid::parse_str(args[0]).unwrap();
-            let mut request = ctx.snapshot.borrow().get_build_artifacts_request();
-            request.get().init_assets(1).get(0).set_id(id.as_bytes());
-            let mut io = io.clone();
-            let start = Instant::now();
-            Box::new(request.send().promise.then(move |result| {
-                let total_time = Instant::now().duration_since(start);
-                let response = result.unwrap();
-                let response = response.get().unwrap();
-                let artifacts = response.get_artifacts().unwrap();
-                for artifact in artifacts {
-                    let asset_uuid =
-                        uuid::Uuid::from_slice(artifact.get_asset_id()?.get_id()?).unwrap();
-                    writeln!(
-                        io,
-                        "{{ id: {}, hash: {:?}, length: {} }}",
-                        asset_uuid,
-                        artifact.get_key()?,
-                        artifact.get_data()?.get_data()?.len()
-                    )?;
-                }
-                writeln!(
-                    io,
-                    "got {} artifacts in {}",
-                    artifacts.len(),
-                    total_time.as_secs_f32()
-                )?;
-                Ok(())
-            }))
-        },
-    );
-    shell.new_command(
-        "path_for_asset",
-        "Get path from asset uuid",
-        1,
-        |io, ctx, args| {
-            let id = uuid::Uuid::parse_str(args[0]).unwrap();
-            let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
-            request.get().init_assets(1).get(0).set_id(id.as_bytes());
-            let mut io = io.clone();
-            Box::new(request.send().promise.then(move |result| {
-                let response = result.unwrap();
-                let response = response.get().unwrap();
-                for asset in response.get_paths().unwrap() {
-                    let asset_uuid = uuid::Uuid::from_slice(asset.get_id()?.get_id()?).unwrap();
-                    write!(
-                        io,
-                        "{{ asset: {}, path: {} }}",
-                        asset_uuid,
-                        std::str::from_utf8(asset.get_path().unwrap()).unwrap()
-                    )?;
-                }
-                Ok(())
-            }))
-        },
-    );
-    shell.new_command(
-        "assets_for_path",
-        "Get asset metadata from path",
-        1,
-        |io, ctx, args| {
-            let mut request = ctx.snapshot.borrow().get_assets_for_paths_request();
-            request.get().init_paths(1).set(0, args[0].as_bytes());
-            let snapshot = ctx.snapshot.clone();
-            let path_request = request.send().promise.and_then(move |response| {
-                let response = response.get().unwrap();
-                let asset_uuids_to_get: Vec<_> = response
-                    .get_assets()
-                    .unwrap()
-                    .iter()
-                    .flat_map(|a| a.get_assets().unwrap())
-                    .collect();
-                let mut request = snapshot.borrow().get_asset_metadata_request();
-                let mut assets = request.get().init_assets(asset_uuids_to_get.len() as u32);
-                for (idx, asset) in asset_uuids_to_get.iter().enumerate() {
-                    assets
-                        .reborrow()
-                        .get(idx as u32)
-                        .set_id(asset.get_id().unwrap());
-                }
-                Ok(request.send().promise)
-            });
-            let mut io = io.clone();
-            Box::new(path_request.flatten().then(move |result| {
-                let response = result.unwrap();
-                let response = response.get().unwrap();
-                for asset in response.get_assets().unwrap() {
-                    print_asset_metadata(&mut io, &asset)?;
-                }
-                Ok(())
-            }))
-        },
-    );
+    stdout.write_all(b" }}\n").await?;
     Ok(())
 }
 
-fn start_runtime() {
-    use std::net::ToSocketAddrs;
-    let addr = "127.0.0.1:9999".to_socket_addrs().unwrap().next().unwrap();
-    let mut runtime = Runtime::new().unwrap();
-    let stream = runtime
-        .block_on(::tokio::net::TcpStream::connect(&addr))
-        .unwrap();
-    stream.set_nodelay(true).unwrap();
-    let (reader, writer) = stream.split();
-    let rpc_network = Box::new(twoparty::VatNetwork::new(
-        reader,
-        writer,
-        rpc_twoparty_capnp::Side::Client,
-        *ReaderOptions::new()
-            .nesting_limit(64)
-            .traversal_limit_in_words(64 * 1024 * 1024),
-    ));
-
-    let mut rpc_system = RpcSystem::new(rpc_network, None);
-    let hub: asset_hub::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
-    let _disconnector = rpc_system.get_disconnector();
-    runtime.spawn(rpc_system.map_err(|_| ()));
-    let snapshot = Rc::new(RefCell::new({
-        let request = hub.get_snapshot_request();
-        runtime
-            .block_on(request.send().promise)
-            .unwrap()
-            .get()
-            .unwrap()
-            .get_snapshot()
-            .unwrap()
-    }));
-    let listener = asset_hub::listener::ToClient::new(ListenerImpl {
-        snapshot: snapshot.clone(),
-    })
-    .into_client::<::capnp_rpc::Server>();
-    let mut request = hub.register_listener_request();
-    request.get().set_listener(listener);
-    runtime.block_on(request.send().promise).unwrap();
-    let ctx = Context { snapshot: snapshot };
-    let mut shell = shrust::Shell::new(ctx);
-    register_commands(&mut shell).expect("Failed to register commands.");
-
-    runtime
-        .block_on(
-            shell
-                .run_loop(
-                    tokio_stdin_stdout::stdin(0),
-                    tokio_stdin_stdout::stdout(64000),
-                )
-                .map_err(|e| {
-                    if let shrust::ExecError::Quit = e {
-                        ()
-                    } else {
-                        panic!("error in cmd loop {}", e)
-                    }
-                }),
-        )
-        .expect("Failed to register runtime block");
+struct CmdBuild;
+#[async_trait(?Send)]
+impl Command<Context> for CmdBuild {
+    fn desc(&self) -> &str { "<uuid> - Get build artifact from uuid" }
+    fn nargs(&self) -> usize { 1 }
+    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, args: Vec<&str>) -> DynResult {
+        let id = uuid::Uuid::parse_str(args[0])?;
+        let mut request = ctx.snapshot.borrow().get_import_artifacts_request();
+        request.get().init_assets(1).get(0).set_id(id.as_bytes());
+        let start = Instant::now();
+        let response = request.send().promise.await?;
+        let total_time = Instant::now().duration_since(start);
+        let response = response.get()?;
+        let artifacts = response.get_artifacts()?;
+        for artifact in artifacts {
+            let asset_uuid =
+                uuid::Uuid::from_slice(artifact.get_metadata()?.get_asset_id()?.get_id()?)?;
+            async_write!(
+                stdout,
+                "{{ id: {}, hash: {:?}, length: {} }}\n",
+                asset_uuid,
+                artifact.get_metadata()?.get_hash()?,
+                artifact.get_data()?.len()
+            ).await?;
+        }
+        async_write!(
+            stdout,
+            "got {} artifacts in {}\n",
+            artifacts.len(),
+            total_time.as_secs_f32(),
+        ).await?;
+        Ok(())
+    }
 }
 
-pub fn main() {
-    // use parity_tokio_ipc::IpcConnection;
-    start_runtime();
+struct CmdPathForAsset;
+#[async_trait(?Send)]
+impl Command<Context> for CmdPathForAsset {
+    fn desc(&self) -> &str { "<uuid> - Get path from asset uuid" }
+    fn nargs(&self) -> usize { 1 }
+    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, args: Vec<&str>) -> DynResult {
+        let id = uuid::Uuid::parse_str(args[0])?;
+        let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
+        request.get().init_assets(1).get(0).set_id(id.as_bytes());
+        let start = Instant::now();
+        let response = request.send().promise.await?;
+        let total_time = Instant::now().duration_since(start);
+        let response = response.get()?;
+        let asset_paths = response.get_paths()?;
+        for asset_path in asset_paths {
+            let asset_uuid = uuid::Uuid::from_slice(asset_path.get_id()?.get_id()?)?;
+            async_write!(
+                stdout,
+                "{{ asset: {}, path: {} }}\n",
+                asset_uuid,
+                std::str::from_utf8(asset_path.get_path()?)?
+            ).await?;
+        }
+        async_write!(
+            stdout,
+            "got {} asset paths in {}\n",
+            asset_paths.len(),
+            total_time.as_secs_f32(),
+        ).await?;
+        Ok(())
+    }
+}
+
+struct CmdAssetsForPath;
+#[async_trait(?Send)]
+impl Command<Context> for CmdAssetsForPath {
+    fn desc(&self) -> &str { "<path> - Get asset metadata from path" }
+    fn nargs(&self) -> usize { 1 }
+    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, args: Vec<&str>) -> DynResult {
+        let mut request = ctx.snapshot.borrow().get_assets_for_paths_request();
+        request.get().init_paths(1).set(0, args[0].as_bytes());
+        let start = Instant::now();
+        let response = request.send().promise.await?;
+        let response = response.get()?;
+        let asset_uuids_to_get: Vec<_> = response
+            .get_assets()?
+            .iter()
+            .flat_map(|a| a.get_assets().unwrap())
+            .collect();
+        
+        let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
+        let mut assets = request.get().init_assets(asset_uuids_to_get.len() as u32);
+        for (idx, asset) in asset_uuids_to_get.iter().enumerate() {
+            assets
+                .reborrow()
+                .get(idx as u32)
+                .set_id(asset.get_id().unwrap());
+        }
+        let response = request.send().promise.await?;
+        let response = response.get()?;
+        let total_time = Instant::now().duration_since(start);
+
+        let assets = response.get_assets()?;
+        for asset in assets {
+            print_asset_metadata(stdout, &asset).await?;
+        }
+        async_write!(
+            stdout,
+            "got {} assets in {}\n",
+            assets.len(),
+            total_time.as_secs_f32(),
+        ).await?;
+        Ok(())
+    }
 }

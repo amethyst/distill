@@ -1,6 +1,7 @@
 #![allow(unknown_lints)]
 #![warn(clippy::all, rust_2018_idioms, rust_2018_compatibility)]
 
+mod artifact_cache;
 mod asset_hub;
 mod asset_hub_service;
 mod capnp_db;

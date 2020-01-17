@@ -241,7 +241,7 @@ impl RpcState {
                     .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
                 Ok(rpc_conn)
             }
-            .await;
+                .await;
             let _ = conn_tx.send(result);
         });
         self.connection = InternalConnectionState::Connecting(conn_rx)
