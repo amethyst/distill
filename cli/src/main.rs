@@ -6,20 +6,16 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
+use async_trait::async_trait;
 use futures::AsyncReadExt;
 use std::{cell::RefCell, rc::Rc, time::Instant};
-use tokio::prelude::*;
 use tokio::runtime::Runtime;
-use async_trait::async_trait;
-
-#[macro_use]
-mod macros;
 
 mod shell;
-use shell::{Shell, Command};
+use shell::{Autocomplete, Command, Shell};
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
-pub type DynResult = Result<(), Box<dyn std::error::Error>>;
+pub type DynResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 struct ListenerImpl {
     snapshot: Rc<RefCell<Snapshot>>,
@@ -98,22 +94,24 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     request.send().promise.await?;
     let ctx = Context { snapshot: snapshot };
 
-    let mut shell = Shell::new();
+    let mut shell = Shell::new(ctx);
 
     shell.register_command("show_all", CmdShowAll);
     shell.register_command("get", CmdGet);
     shell.register_command("build", CmdBuild);
     shell.register_command("path_for_asset", CmdPathForAsset);
     shell.register_command("assets_for_path", CmdAssetsForPath);
-    
-    shell.run_repl(ctx).await
+
+    shell.run_repl().await
 }
 
 struct CmdShowAll;
 #[async_trait(?Send)]
 impl Command<Context> for CmdShowAll {
-    fn desc(&self) -> &str { "- Get all asset metadata" }
-    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, _args: Vec<&str>) -> DynResult {
+    fn desc(&self) -> &str {
+        "- Get all asset metadata"
+    }
+    async fn run(&self, ctx: &Context, _args: Vec<&str>) -> DynResult {
         let start = Instant::now();
         let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
         let response = request.send().promise.await?;
@@ -122,14 +120,13 @@ impl Command<Context> for CmdShowAll {
         let assets = response.get_assets()?;
         for asset in assets {
             let id = asset.get_id().unwrap().get_id().unwrap();
-            stdout.write_all(format!("{:?}\n", uuid::Uuid::from_bytes(make_array(id))).as_bytes()).await?;
+            println!("{:?}\r", uuid::Uuid::from_bytes(make_array(id)));
         }
-        async_write!(
-            stdout,
-            "got {} assets in {}\n",
+        println!(
+            "got {} assets in {}\r",
             assets.len(),
             total_time.as_secs_f32(),
-        ).await?;
+        );
         Ok(())
     }
 }
@@ -137,9 +134,13 @@ impl Command<Context> for CmdShowAll {
 struct CmdGet;
 #[async_trait(?Send)]
 impl Command<Context> for CmdGet {
-    fn desc(&self) -> &str { "<uuid> - Get asset metadata from uuid" }
-    fn nargs(&self) -> usize { 1 }
-    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, args: Vec<&str>) -> DynResult {
+    fn desc(&self) -> &str {
+        "<uuid> - Get asset metadata from uuid"
+    }
+    fn nargs(&self) -> usize {
+        1
+    }
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -149,27 +150,34 @@ impl Command<Context> for CmdGet {
         let response = response.get()?;
         let assets = response.get_assets()?;
         for asset in assets {
-            print_asset_metadata(stdout, &asset).await?;
+            print_asset_metadata(&asset).await?;
         }
-        async_write!(
-            stdout,
-            "got {} assets in {}\n",
+        println!(
+            "got {} assets in {}\r",
             assets.len(),
             total_time.as_secs_f32(),
-        ).await?;
+        );
         Ok(())
+    }
+
+    async fn autocomplete(
+        &self,
+        ctx: &Context,
+        args: Vec<&str>,
+        whitespaces_last: usize,
+    ) -> DynResult<Autocomplete> {
+        if args.len() > 1 {
+            return Ok(Autocomplete::empty());
+        }
+        autocomplete_asset_uuids(ctx, args.last().copied(), whitespaces_last).await
     }
 }
 
-async fn print_asset_metadata(
-    stdout: &mut io::Stdout,
-    asset: &data::asset_metadata::Reader<'_>,
-) -> DynResult {
-    async_write!(
-        stdout,
+async fn print_asset_metadata(asset: &data::asset_metadata::Reader<'_>) -> DynResult {
+    print!(
         "{{ id: {:?}",
         uuid::Uuid::from_bytes(make_array(asset.get_id().unwrap().get_id().unwrap())),
-    ).await?;
+    );
 
     if let Ok(tags) = asset.get_search_tags() {
         let tags: Vec<String> = tags
@@ -183,19 +191,23 @@ async fn print_asset_metadata(
             })
             .collect();
         if !tags.is_empty() {
-            async_write!(stdout, ", search_tags: [ {} ]", tags.join(", ")).await?;
+            print!(", search_tags: [ {} ]", tags.join(", "));
         }
     }
-    stdout.write_all(b" }}\n").await?;
+    println!(" }}\r");
     Ok(())
 }
 
 struct CmdBuild;
 #[async_trait(?Send)]
 impl Command<Context> for CmdBuild {
-    fn desc(&self) -> &str { "<uuid> - Get build artifact from uuid" }
-    fn nargs(&self) -> usize { 1 }
-    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, args: Vec<&str>) -> DynResult {
+    fn desc(&self) -> &str {
+        "<uuid> - Get build artifact from uuid"
+    }
+    fn nargs(&self) -> usize {
+        1
+    }
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_import_artifacts_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -207,30 +219,44 @@ impl Command<Context> for CmdBuild {
         for artifact in artifacts {
             let asset_uuid =
                 uuid::Uuid::from_slice(artifact.get_metadata()?.get_asset_id()?.get_id()?)?;
-            async_write!(
-                stdout,
-                "{{ id: {}, hash: {:?}, length: {} }}\n",
+            println!(
+                "{{ id: {}, hash: {:?}, length: {} }}\r",
                 asset_uuid,
                 artifact.get_metadata()?.get_hash()?,
                 artifact.get_data()?.len()
-            ).await?;
+            );
         }
-        async_write!(
-            stdout,
-            "got {} artifacts in {}\n",
+        println!(
+            "got {} artifacts in {}\r",
             artifacts.len(),
             total_time.as_secs_f32(),
-        ).await?;
+        );
         Ok(())
+    }
+
+    async fn autocomplete(
+        &self,
+        ctx: &Context,
+        args: Vec<&str>,
+        whitespaces_last: usize,
+    ) -> DynResult<Autocomplete> {
+        if args.len() > 1 {
+            return Ok(Autocomplete::empty());
+        }
+        autocomplete_asset_uuids(ctx, args.last().copied(), whitespaces_last).await
     }
 }
 
 struct CmdPathForAsset;
 #[async_trait(?Send)]
 impl Command<Context> for CmdPathForAsset {
-    fn desc(&self) -> &str { "<uuid> - Get path from asset uuid" }
-    fn nargs(&self) -> usize { 1 }
-    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, args: Vec<&str>) -> DynResult {
+    fn desc(&self) -> &str {
+        "<uuid> - Get path from asset uuid"
+    }
+    fn nargs(&self) -> usize {
+        1
+    }
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -241,29 +267,43 @@ impl Command<Context> for CmdPathForAsset {
         let asset_paths = response.get_paths()?;
         for asset_path in asset_paths {
             let asset_uuid = uuid::Uuid::from_slice(asset_path.get_id()?.get_id()?)?;
-            async_write!(
-                stdout,
-                "{{ asset: {}, path: {} }}\n",
+            println!(
+                "{{ asset: {}, path: {} }}\r",
                 asset_uuid,
                 std::str::from_utf8(asset_path.get_path()?)?
-            ).await?;
+            );
         }
-        async_write!(
-            stdout,
-            "got {} asset paths in {}\n",
+        println!(
+            "got {} asset paths in {}\r",
             asset_paths.len(),
             total_time.as_secs_f32(),
-        ).await?;
+        );
         Ok(())
+    }
+
+    async fn autocomplete(
+        &self,
+        ctx: &Context,
+        args: Vec<&str>,
+        whitespaces_last: usize,
+    ) -> DynResult<Autocomplete> {
+        if args.len() > 1 {
+            return Ok(Autocomplete::empty());
+        }
+        autocomplete_asset_uuids(ctx, args.last().copied(), whitespaces_last).await
     }
 }
 
 struct CmdAssetsForPath;
 #[async_trait(?Send)]
 impl Command<Context> for CmdAssetsForPath {
-    fn desc(&self) -> &str { "<path> - Get asset metadata from path" }
-    fn nargs(&self) -> usize { 1 }
-    async fn run(&self, ctx: &mut Context, stdout: &mut io::Stdout, args: Vec<&str>) -> DynResult {
+    fn desc(&self) -> &str {
+        "<path> - Get asset metadata from path"
+    }
+    fn nargs(&self) -> usize {
+        1
+    }
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
         let mut request = ctx.snapshot.borrow().get_assets_for_paths_request();
         request.get().init_paths(1).set(0, args[0].as_bytes());
         let start = Instant::now();
@@ -274,7 +314,7 @@ impl Command<Context> for CmdAssetsForPath {
             .iter()
             .flat_map(|a| a.get_assets().unwrap())
             .collect();
-        
+
         let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
         let mut assets = request.get().init_assets(asset_uuids_to_get.len() as u32);
         for (idx, asset) in asset_uuids_to_get.iter().enumerate() {
@@ -289,14 +329,102 @@ impl Command<Context> for CmdAssetsForPath {
 
         let assets = response.get_assets()?;
         for asset in assets {
-            print_asset_metadata(stdout, &asset).await?;
+            print_asset_metadata(&asset).await?;
         }
-        async_write!(
-            stdout,
-            "got {} assets in {}\n",
+        println!(
+            "got {} assets in {}\r",
             assets.len(),
             total_time.as_secs_f32(),
-        ).await?;
+        );
         Ok(())
     }
+
+    async fn autocomplete(
+        &self,
+        ctx: &Context,
+        args: Vec<&str>,
+        whitespaces_last: usize,
+    ) -> DynResult<Autocomplete> {
+        if args.len() > 1 {
+            return Ok(Autocomplete::empty());
+        }
+        autocomplete_asset_paths(ctx, args.last().copied(), whitespaces_last).await
+    }
+}
+
+async fn autocomplete_asset_paths(
+    ctx: &Context,
+    starting_str: Option<&str>,
+    whitespaces_last: usize,
+) -> DynResult<Autocomplete> {
+    let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
+    let response = request.send().promise.await?;
+    let response = response.get()?;
+    let assets = response.get_assets()?;
+
+    let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
+    let mut req_assets = request.get().init_assets(assets.len());
+    for (i, asset) in assets.iter().enumerate() {
+        let id = asset.get_id()?.get_id()?;
+        req_assets.reborrow().get(i as u32).set_id(id);
+    }
+    let response = request.send().promise.await?;
+    let response = response.get()?;
+    let asset_paths = response.get_paths()?;
+
+    let mut items = Vec::new();
+    if let Some(starting_str) = starting_str {
+        for asset_path in asset_paths {
+            let path = std::str::from_utf8(asset_path.get_path()?)?;
+            if path.starts_with(starting_str) {
+                items.push(path.to_owned());
+            }
+        }
+    } else {
+        for asset_path in asset_paths {
+            let path = std::str::from_utf8(asset_path.get_path()?)?;
+            items.push(path.to_owned());
+        }
+    }
+
+    Ok(Autocomplete {
+        overlap: starting_str
+            .map(|s| s.len() + whitespaces_last)
+            .unwrap_or(0),
+        items,
+    })
+}
+
+async fn autocomplete_asset_uuids(
+    ctx: &Context,
+    starting_str: Option<&str>,
+    whitespaces_last: usize,
+) -> DynResult<Autocomplete> {
+    let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
+    let response = request.send().promise.await?;
+    let response = response.get()?;
+    let assets = response.get_assets()?;
+
+    let mut items = Vec::new();
+    if let Some(starting_str) = starting_str {
+        for asset in assets.iter() {
+            let asset_uuid = uuid::Uuid::from_slice(asset.get_id()?.get_id()?)?;
+            let formatted = format!("{}", asset_uuid);
+            if formatted.starts_with(starting_str) {
+                items.push(formatted);
+            }
+        }
+    } else {
+        for asset in assets.iter() {
+            let asset_uuid = uuid::Uuid::from_slice(asset.get_id()?.get_id()?)?;
+            items.push(format!("{}", asset_uuid));
+        }
+    }
+
+    Ok(Autocomplete {
+        overlap: starting_str
+            .map(|s| s.len() + whitespaces_last)
+            .unwrap_or(0),
+        items,
+    })
 }

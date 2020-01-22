@@ -13,6 +13,8 @@ pub struct Environment {
 pub struct RoTransaction<'a> {
     txn: lmdb::RoTransaction<'a>,
 }
+
+#[must_use]
 pub struct RwTransaction<'a> {
     txn: lmdb::RwTransaction<'a>,
     pub dirty: bool,

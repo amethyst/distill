@@ -13,3 +13,5 @@ atelier-schema = { path = "../schema" }
 uuid = "0.8"
 futures-tokio-compat = { git = "https://github.com/dwrensha/futures-tokio-compat", branch = "tokio-0.2" }
 async-trait = "0.1.22"
+crossterm = { version = "0.14.2", features = ["event-stream"] }
+defer = "0.1.0"
