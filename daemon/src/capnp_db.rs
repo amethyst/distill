@@ -19,6 +19,11 @@ pub struct RwTransaction<'a> {
     txn: lmdb::RwTransaction<'a>,
     pub dirty: bool,
 }
+
+// Safety: We are always using NO_TLS environment flag, which guarantees that
+// lmdb RwTransactions are not using thread-local storage.
+unsafe impl Send for RwTransaction<'_> {}
+
 // pub type RoTransaction<'a> = lmdb::RoTransaction<'a>;
 
 pub struct Iter<'cursor, 'txn> {
@@ -251,6 +256,7 @@ impl Environment {
         #[cfg(target_pointer_width = "64")]
         let map_size = 1 << 42;
 
+        // safety notice: NO_TLS flag is required for RwTransaction Send derive to be safe.
         #[cfg(not(target_os = "macos"))]
         let flags = lmdb::EnvironmentFlags::NO_TLS | lmdb::EnvironmentFlags::WRITE_MAP;
         #[cfg(target_os = "macos")]

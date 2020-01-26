@@ -1071,7 +1071,9 @@ impl FileAssetSource {
         use std::cell::RefCell;
         thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
 
-        let mut asset_metadata_changed = false;
+        let txn = std::sync::Mutex::new(txn);
+        let txn_ref = &txn;
+        let mut metadata_changes = HashMap::new();
 
         // Should get rid of this scoped_threadpool madness somehow,
         // but can't use par_iter directly since I need to process the results
@@ -1109,11 +1111,14 @@ impl FileAssetSource {
                                     import_output.map(|o| {
                                         // put import artifact in cache if it doesn't have unresolved refs
                                        if o.is_fully_resolved() {
-                                            let mut rw_txn = self.db.rw_txn().unwrap_or_else(|e| panic!("Failed to open RW transaction: {}", e));
-                                            for asset in &o.assets {
-                                                let serialized_asset = asset.serialized_asset.as_ref().expect("Asset missing");
-                                                self.artifact_cache.insert(&mut rw_txn, serialized_asset);
-                                            }
+                                           if o.assets.len() > 0 {
+                                               let mut txn = txn_ref.lock().unwrap();
+                                               for asset in &o.assets {
+                                                    if let Some(ref serialized_asset) = asset.serialized_asset {
+                                                        self.artifact_cache.insert(&mut txn, serialized_asset);
+                                                    }
+                                                }
+                                           }
                                         }
 
                                         PairImportResultMetadata {
@@ -1144,7 +1149,6 @@ impl FileAssetSource {
                 }
 
                 let mut num_processed = 0;
-                let mut metadata_changes = HashMap::new();
                 while num_processed < to_process {
                     match rx.recv() {
                         Ok((pair, maybe_result)) => {
@@ -1159,7 +1163,10 @@ impl FileAssetSource {
                                         "a successful import must have a source or meta FileState",
                                     )
                                     .path;
-                                    self.ack_dirty_file_states(txn, &pair);
+                                    {
+                                        let mut txn = txn_ref.lock().unwrap();
+                                        self.ack_dirty_file_states(&mut txn, &pair);
+                                    }
                                     metadata_changes.insert(path.clone(), result);
                                 }
                                 Err(e) => error!(
@@ -1176,12 +1183,15 @@ impl FileAssetSource {
                         }
                     }
                 }
-                let mut change_batch = asset_hub::ChangeBatch::new();
-                self.process_metadata_changes(txn, metadata_changes, &mut change_batch);
-                asset_metadata_changed = self.hub.add_changes(txn, change_batch)?;
+
                 Ok(())
             })
             .expect("threadpool: Failed to process metadata changes");
+
+        let mut change_batch = asset_hub::ChangeBatch::new();
+        let mut txn = txn.into_inner().unwrap();
+        self.process_metadata_changes(&mut txn, metadata_changes, &mut change_batch);
+        let asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch).expect("Failed to process metadata changes");
 
         asset_metadata_changed
     }

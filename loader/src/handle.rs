@@ -14,6 +14,7 @@ use std::{
 };
 
 /// Operations on an asset reference.
+#[derive(Debug)]
 pub enum RefOp {
     Decrease(LoadHandle),
     Increase(LoadHandle),
