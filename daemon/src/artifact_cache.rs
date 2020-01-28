@@ -33,7 +33,11 @@ impl ArtifactCache {
             .expect("db: Failed to delete entry from hash_to_artifact table")
     }
 
-    pub fn insert<T: AsRef<[u8]>>(&self, txn: &mut RwTransaction<'_>, artifact: &SerializedAsset<T>) {
+    pub fn insert<T: AsRef<[u8]>>(
+        &self,
+        txn: &mut RwTransaction<'_>,
+        artifact: &SerializedAsset<T>,
+    ) {
         txn.put(
             self.tables.hash_to_artifact,
             &artifact.metadata.hash.to_le_bytes(),
