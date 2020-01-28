@@ -84,6 +84,13 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync {
     fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>>;
     fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>>;
 }
+
+impl std::fmt::Debug for dyn BoxedImporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("BoxedImporter").field(&self.uuid()).finish()
+    }
+}
+
 /// Trait object wrapper for [ImporterValue] implementations.
 /// See [ImporterValue] for documentation on fields.
 pub struct BoxedImporterValue {

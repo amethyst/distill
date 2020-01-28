@@ -1,3 +1,4 @@
+use crate::artifact_cache::ArtifactCache;
 use crate::asset_hub::{self, AssetHub};
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::daemon::ImporterMap;
@@ -7,7 +8,6 @@ use crate::serialized_asset::SerializedAsset;
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use crate::artifact_cache::ArtifactCache;
 use atelier_core::{utils, AssetRef, AssetUuid, CompressionType};
 use atelier_importer::{ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext};
 use atelier_schema::data::{self, path_refs, source_metadata};
@@ -946,51 +946,41 @@ impl FileAssetSource {
                 .iter()
                 .filter_map(|file_state| {
                     let metadata = self.get_metadata(&txn, &file_state.path);
-                    let changed = self
-                        .importers
-                        .get_by_path(&file_state.path)
-                        .map(|importer| {
-                            match &metadata {
-                                None => {
-                                    // there's no existing import metadata, but we have an importer,
-                                    // so we should process this file - it probably just got a new importer
-                                    return true;
-                                }
-                                Some(metadata) => {
-                                    let metadata =
-                                        metadata.get().expect("capnp: Failed to get metadata");
-                                    let importer_version = metadata.get_importer_version();
+                    let importer = self.importers.get_by_path(&file_state.path);
 
-                                    let options_type = metadata
-                                        .get_importer_options_type()
-                                        .expect("capnp: Failed to get importer options type");
+                    let changed = match (importer, metadata) {
+                        // there's no importer, and no existing metadata.
+                        // no need to process it
+                        (None, None) => false,
+                        // there's no importer, but we have metadata.
+                        // we should process it, as its importer could've been removed
+                        (None, Some(_)) => true,
+                        // there's no existing import metadata, but we have an importer,
+                        // so we should process this file - it probably just got a new importer
+                        (Some(_), None) => true,
+                        // There is an importer and existing metadata, check if those match
+                        (Some(importer), Some(metadata)) => {
+                            let metadata = metadata.get().expect("capnp: Failed to get metadata");
+                            let importer_version = metadata.get_importer_version();
 
-                                    let state_type = metadata
-                                        .get_importer_state_type()
-                                        .expect("capnp: Failed to get importer state type");
+                            let options_type = metadata
+                                .get_importer_options_type()
+                                .expect("capnp: Failed to get importer options type");
 
-                                    let importer_type = metadata
-                                        .get_importer_type()
-                                        .expect("capnp: Failed to get importer type");
+                            let state_type = metadata
+                                .get_importer_state_type()
+                                .expect("capnp: Failed to get importer state type");
 
-                                    importer_version != importer.version()
-                                        || options_type != importer.default_options().uuid()
-                                        || state_type != importer.default_state().uuid()
-                                        || importer_type != importer.uuid()
-                                }
-                            }
-                        })
-                        .unwrap_or_else(|| {
-                            if let None = metadata {
-                                // there's no importer, and no existing metadata.
-                                // no need to process it
-                                false
-                            } else {
-                                // there's no importer, but we have metadata.
-                                // we should process it, as its importer could've been removed
-                                true
-                            }
-                        });
+                            let importer_type = metadata
+                                .get_importer_type()
+                                .expect("capnp: Failed to get importer type");
+
+                            importer_version != importer.version()
+                                || options_type != importer.default_options().uuid()
+                                || state_type != importer.default_state().uuid()
+                                || importer_type != importer.uuid()
+                        }
+                    };
 
                     if changed {
                         Some(file_state.path.clone())
@@ -1093,7 +1083,10 @@ impl FileAssetSource {
                             if local_store.is_none() {
                                 *local_store = Some(Vec::new());
                             }
-                            let read_txn = self.db.ro_txn().unwrap_or_else(|e| panic!("failed to open RO transaction: {}", e));
+                            let read_txn = self
+                                .db
+                                .ro_txn()
+                                .unwrap_or_else(|e| panic!("failed to open RO transaction: {}", e));
                             let cache = DBSourceMetadataCache {
                                 txn: &read_txn,
                                 file_asset_source: &self,
@@ -1110,30 +1103,31 @@ impl FileAssetSource {
                                 result.and_then(|(import, import_output)| {
                                     import_output.map(|o| {
                                         // put import artifact in cache if it doesn't have unresolved refs
-                                       if o.is_fully_resolved() {
-                                           if o.assets.len() > 0 {
-                                               let mut txn = txn_ref.lock().unwrap();
-                                               for asset in &o.assets {
-                                                    if let Some(ref serialized_asset) = asset.serialized_asset {
-                                                        self.artifact_cache.insert(&mut txn, serialized_asset);
+                                        if o.is_fully_resolved() {
+                                            if o.assets.len() > 0 {
+                                                let mut txn = txn_ref.lock().unwrap();
+                                                for asset in &o.assets {
+                                                    if let Some(ref serialized_asset) =
+                                                        asset.serialized_asset
+                                                    {
+                                                        self.artifact_cache
+                                                            .insert(&mut txn, serialized_asset);
                                                     }
                                                 }
-                                           }
+                                            }
                                         }
 
                                         PairImportResultMetadata {
-                                        import_state: import,   
-                                        assets: o
-                                            .assets
-                                            .into_iter()
-                                            .map(|a| AssetImportResultMetadata {
-                                                metadata: a.metadata,
-                                                unresolved_load_refs: a
-                                                    .unresolved_load_refs,
-                                                unresolved_build_refs: a
-                                                    .unresolved_build_refs,
-                                            })
-                                            .collect(),             
+                                            import_state: import,
+                                            assets: o
+                                                .assets
+                                                .into_iter()
+                                                .map(|a| AssetImportResultMetadata {
+                                                    metadata: a.metadata,
+                                                    unresolved_load_refs: a.unresolved_load_refs,
+                                                    unresolved_build_refs: a.unresolved_build_refs,
+                                                })
+                                                .collect(),
                                         }
                                     })
                                 })
@@ -1191,7 +1185,10 @@ impl FileAssetSource {
         let mut change_batch = asset_hub::ChangeBatch::new();
         let mut txn = txn.into_inner().unwrap();
         self.process_metadata_changes(&mut txn, metadata_changes, &mut change_batch);
-        let asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch).expect("Failed to process metadata changes");
+        let asset_metadata_changed = self
+            .hub
+            .add_changes(&mut txn, change_batch)
+            .expect("Failed to process metadata changes");
 
         asset_metadata_changed
     }
