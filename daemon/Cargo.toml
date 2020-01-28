@@ -10,8 +10,8 @@ atelier-importer = { path = "../importer" }
 dunce = "1.0"
 path-clean = "0.1"
 path-slash = "0.1.1"
-capnp = "0.11"
-capnp-rpc = "0.11.0"
+capnp = { version = "0.12", features = ["unaligned"] }
+capnp-rpc = "0.12"
 notify = "4.0.0"
 lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
 rayon = "1.2"

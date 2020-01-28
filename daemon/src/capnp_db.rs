@@ -66,12 +66,9 @@ impl<'cursor, 'txn> Iterator for Iter<'cursor, 'txn> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             Some((key_bytes, value_bytes)) => {
-                let slice;
-                unsafe {
-                    slice = capnp::Word::bytes_to_words(value_bytes);
-                }
-                let value_msg = capnp::serialize::read_message_from_words(
-                    &slice,
+                let mut slice = value_bytes;
+                let value_msg = capnp::serialize::read_message_from_flat_slice(
+                    &mut slice,
                     capnp::message::ReaderOptions::default(),
                 );
                 Some((key_bytes, value_msg))
@@ -100,12 +97,9 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
         if get_result.is_err() {
             Ok(None)
         } else {
-            let slice;
-            unsafe {
-                slice = capnp::Word::bytes_to_words(get_result.unwrap());
-            }
-            let msg = capnp::serialize::read_message_from_words(
-                slice,
+            let mut slice = get_result.unwrap();
+            let msg = capnp::serialize::read_message_from_flat_slice(
+                &mut slice,
                 capnp::message::ReaderOptions::default(),
             )?
             .into_typed::<V>();
@@ -129,16 +123,13 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
         key: &capnp::message::Builder<K>,
     ) -> Result<Option<MessageReader<'a, V>>> {
         let key_vec = capnp::serialize::write_message_to_words(key);
-        let get_result = self.txn().get(db, &capnp::Word::words_to_bytes(&key_vec));
+        let get_result = self.txn().get(db, &key_vec);
         if get_result.is_err() {
             Ok(None)
         } else {
-            let slice;
-            unsafe {
-                slice = capnp::Word::bytes_to_words(get_result.unwrap());
-            }
-            let msg = capnp::serialize::read_message_from_words(
-                slice,
+            let mut slice = get_result.unwrap();
+            let msg = capnp::serialize::read_message_from_flat_slice(
+                &mut slice,
                 capnp::message::ReaderOptions::default(),
             )?
             .into_typed::<V>();
@@ -170,12 +161,8 @@ impl<'a> RwTransaction<'a> {
         K: AsRef<[u8]>,
     {
         let value_vec = capnp::serialize::write_message_to_words(value);
-        self.txn.put(
-            db,
-            key,
-            &capnp::Word::words_to_bytes(&value_vec),
-            lmdb::WriteFlags::default(),
-        )?;
+        self.txn
+            .put(db, key, &value_vec, lmdb::WriteFlags::default())?;
         self.dirty = true;
         Ok(())
     }
@@ -188,12 +175,8 @@ impl<'a> RwTransaction<'a> {
     ) -> Result<()> {
         let key_vec = capnp::serialize::write_message_to_words(key);
         let value_vec = capnp::serialize::write_message_to_words(value);
-        self.txn.put(
-            db,
-            &capnp::Word::words_to_bytes(&key_vec),
-            &capnp::Word::words_to_bytes(&value_vec),
-            lmdb::WriteFlags::default(),
-        )?;
+        self.txn
+            .put(db, &key_vec, &value_vec, lmdb::WriteFlags::default())?;
         self.dirty = true;
         Ok(())
     }
@@ -226,8 +209,7 @@ impl<'a> RwTransaction<'a> {
         key: &capnp::message::Builder<K>,
     ) -> Result<()> {
         let key_vec = capnp::serialize::write_message_to_words(key);
-        self.txn
-            .del(db, &capnp::Word::words_to_bytes(&key_vec), Option::None)?;
+        self.txn.del(db, &key_vec, Option::None)?;
         self.dirty = true;
         Ok(())
     }
