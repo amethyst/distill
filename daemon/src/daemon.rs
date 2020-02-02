@@ -5,7 +5,6 @@ use crate::{
 use atelier_importer::{get_importer_contexts, BoxedImporter, ImporterContext};
 use atelier_schema::data;
 use futures::prelude::*;
-use log::error;
 use std::{
     collections::HashMap,
     fs,

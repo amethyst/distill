@@ -344,9 +344,11 @@ impl<'a> SourcePairImport<'a> {
             .expect("cannot import source file without source_metadata");
 
         let mut ctx = Self::get_importer_context_set(self.importer_contexts);
+
+        let source = &self.source;
         let imported = ctx
-            .scope(async {
-                let mut f = fs::File::open(&self.source)?;
+            .scope(async move {
+                let mut f = fs::File::open(source)?;
                 importer.import_boxed(&mut f, metadata.importer_options, metadata.importer_state)
             })
             .await?;
@@ -373,23 +375,25 @@ impl<'a> SourcePairImport<'a> {
                         .to_string(),
                 ),
             ));
-            let asset_data = &asset.asset_data;
             ctx.begin_serialize_asset(asset.id);
-            let serialized_asset = ctx
+            let scope_result: Result<_> = ctx
                 .scope(async {
                     // We need to serialize each asset to gather references.
                     // TODO write a dummy serializer that doesn't output anything to optimize this
-                    SerializedAsset::create(
+                    let serialized_asset = SerializedAsset::create(
                         0,
                         asset.id,
                         Vec::new(),
                         Vec::new(),
-                        asset_data.as_ref(),
+                        asset.asset_data.as_ref(),
                         CompressionType::None,
                         scratch_buf,
-                    )
+                    )?;
+                    Ok((asset, serialized_asset))
                 })
-                .await?;
+                .await;
+
+            let (mut asset, serialized_asset) = scope_result?;
             let serde_refs = ctx.end_serialize_asset(asset.id);
             // TODO implement build pipeline execution
             // let build_pipeline = metadata

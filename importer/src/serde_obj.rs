@@ -3,8 +3,8 @@ use mopa::*;
 use type_uuid::TypeUuidDynamic;
 
 /// A trait for serializing any struct with a TypeUuid
-pub trait SerdeObj: Any + Serialize + TypeUuidDynamic + Send + Sync {}
-impl<T: Serialize + TypeUuidDynamic + Send + Sync + 'static> SerdeObj for T {}
+pub trait SerdeObj: Any + Serialize + TypeUuidDynamic + Send {}
+impl<T: Serialize + TypeUuidDynamic + Send + 'static> SerdeObj for T {}
 
 pub trait IntoSerdeObj {
     fn into_serde_obj(self: Box<Self>) -> Box<dyn SerdeObj>
