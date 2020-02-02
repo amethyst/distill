@@ -1,3 +1,4 @@
+#![recursion_limit = "1024"] // required for select!
 #![allow(unknown_lints)]
 #![warn(clippy::all, rust_2018_idioms, rust_2018_compatibility)]
 
@@ -9,6 +10,7 @@ mod daemon;
 mod error;
 mod file_asset_source;
 mod file_tracker;
+mod scope;
 mod serialized_asset;
 mod source_pair_import;
 mod watcher;

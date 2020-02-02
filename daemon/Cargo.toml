@@ -17,11 +17,9 @@ lmdb = { git = "http://github.com/kabergstrom/lmdb-rs" }
 rayon = "1.2"
 fern = "0.5"
 log = { version = "0.4", features = ["serde"] }
-tokio = { version = "0.2", features = ["tcp", "sync", "rt-core", "rt-util", "stream"] }
+tokio = { version = "0.2", features = ["tcp", "fs", "sync", "time", "rt-core", "rt-util", "stream", "rt-threaded"] }
 futures = "0.3"
 futures-tokio-compat = { git = "https://github.com/dwrensha/futures-tokio-compat", branch = "tokio-0.2" }
-owning_ref = "0.4"
-crossbeam-channel = "0.3"
 mopa = "0.2.2"
 serde = "1.0"
 serde_derive = "1.0"
@@ -33,6 +31,7 @@ scoped_threadpool = "0.1.9"
 num_cpus = "1.10"
 smush = { version = "0.1", default-features = false, features = [ "lz4_support" ], optional = true }
 chrono = "0.4.10"
+pin-project = "0.4.8"
 
 [dev-dependencies]
 tempfile = "3"

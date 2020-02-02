@@ -1,6 +1,6 @@
 (
     version: 1,
-    import_hash: Some(12648769022169391677),
+    import_hash: Some(7865795340298362770),
     importer_version: 1,
     importer_type: "162ede20-6fdd-44c1-8387-8f93983c067c",
     importer_options: (),
@@ -15,7 +15,7 @@
             ],
             build_pipeline: None,
             artifact: Some((
-                hash: 6599715826146143777,
+                hash: 6357766718212502690,
                 id: "6f91796a-6a14-4dd2-8b7b-cb5369417032",
                 build_deps: [
                     Path("amethyst.png"),

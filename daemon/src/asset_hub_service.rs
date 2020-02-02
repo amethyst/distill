@@ -1,7 +1,7 @@
 use crate::{
     artifact_cache::ArtifactCache,
     asset_hub::{AssetBatchEvent, AssetHub},
-    capnp_db::{CapnpCursor, Environment, RoTransaction},
+    capnp_db::{CapnpCursor as _, Environment, RoTransaction},
     error::Error,
     file_asset_source::FileAssetSource,
     file_tracker::FileTracker,
@@ -20,15 +20,13 @@ use capnp;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use futures::{AsyncReadExt, TryFutureExt};
-use owning_ref::OwningHandle;
 use std::{
     collections::{HashMap, HashSet},
     path,
     rc::Rc,
     sync::Arc,
-    thread,
 };
-use tokio::{runtime::Runtime, sync::mpsc};
+use tokio::sync::mpsc;
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
@@ -46,10 +44,34 @@ pub(crate) struct AssetHubService {
     ctx: Arc<ServiceContext>,
 }
 
+struct SnapshotTxn {
+    ctx: Arc<ServiceContext>,
+    // txn is owned by service context, so it's lifetime is bound to this object's lifetime
+    txn: RoTransaction<'static>,
+}
+
+impl SnapshotTxn {
+    fn new(ctx: Arc<ServiceContext>) -> Self {
+        let txn = ctx.db.ro_txn().unwrap();
+        // The transaction can live at least as long as ServiceContext, which this object holds onto.
+        // It is only ever borrowed for a lifetime bound to the self reference.
+        let txn = unsafe { std::mem::transmute::<RoTransaction<'_>, RoTransaction<'static>>(txn) };
+        Self { ctx, txn }
+    }
+
+    fn txn<'a>(&'a self) -> &'a RoTransaction<'a> {
+        &self.txn
+    }
+
+    fn ctx(&self) -> &Arc<ServiceContext> {
+        &self.ctx
+    }
+}
+
 // RPC interface implementations
 
-struct AssetHubSnapshotImpl<'a> {
-    txn: Rc<OwningHandle<Arc<ServiceContext>, Rc<RoTransaction<'a>>>>,
+struct AssetHubSnapshotImpl {
+    txn: Arc<SnapshotTxn>,
 }
 
 struct AssetHubImpl {
@@ -70,15 +92,21 @@ fn build_artifact_message<T: AsRef<[u8]>>(
     value_builder
 }
 
-impl<'a> AssetHubSnapshotImpl<'a> {
+impl AssetHubSnapshotImpl {
+    fn new(ctx: Arc<ServiceContext>) -> Self {
+        Self {
+            txn: Arc::new(SnapshotTxn::new(ctx)),
+        }
+    }
+
     fn get_asset_metadata(
         &mut self,
         params: asset_hub::snapshot::GetAssetMetadataParams,
         mut results: asset_hub::snapshot::GetAssetMetadataResults,
     ) -> Result<()> {
         let params = params.get()?;
-        let ctx = self.txn.as_owner();
-        let txn = &**self.txn;
+        let ctx = self.txn.ctx();
+        let txn = self.txn.txn();
         let mut metadatas = Vec::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
@@ -103,8 +131,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         mut results: asset_hub::snapshot::GetAssetMetadataWithDependenciesResults,
     ) -> Result<()> {
         let params = params.get()?;
-        let ctx = self.txn.as_owner();
-        let txn = &**self.txn;
+        let ctx = self.txn.ctx();
+        let txn = self.txn.txn();
         let mut metadatas = HashMap::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
@@ -147,8 +175,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         _params: asset_hub::snapshot::GetAllAssetMetadataParams,
         mut results: asset_hub::snapshot::GetAllAssetMetadataResults,
     ) -> Result<()> {
-        let ctx = self.txn.as_owner();
-        let txn = &**self.txn;
+        let ctx = self.txn.ctx();
+        let txn = self.txn.txn();
         let mut metadatas = Vec::new();
         for (_, value) in ctx.hub.get_metadata_iter(txn)?.capnp_iter_start() {
             let value = value?;
@@ -165,14 +193,14 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         }
         Ok(())
     }
-    fn get_import_artifacts(
-        &mut self,
+    async fn get_import_artifacts(
+        snapshot: Arc<SnapshotTxn>,
         params: asset_hub::snapshot::GetImportArtifactsParams,
         mut results: asset_hub::snapshot::GetImportArtifactsResults,
     ) -> Result<()> {
         let params = params.get()?;
-        let ctx = self.txn.as_owner();
-        let txn = &**self.txn;
+        let ctx = snapshot.ctx();
+        let txn = snapshot.txn();
         let mut artifacts = Vec::new();
         let mut scratch_buf = Vec::new();
         for id in params.get_assets()? {
@@ -185,11 +213,10 @@ impl<'a> AssetHubSnapshotImpl<'a> {
                 match metadata.get_source()? {
                     AssetSource::File => {
                         // TODO run build pipeline
-                        let (_, artifact) = ctx.file_source.regenerate_import_artifact(
-                            txn,
-                            &id,
-                            &mut scratch_buf,
-                        )?;
+                        let (_, artifact) = ctx
+                            .file_source
+                            .regenerate_import_artifact(txn, &id, &mut scratch_buf)
+                            .await?;
                         let capnp_artifact = build_artifact_message(&artifact);
                         artifacts.push(capnp_artifact);
                     }
@@ -213,8 +240,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         _params: asset_hub::snapshot::GetLatestAssetChangeParams,
         mut results: asset_hub::snapshot::GetLatestAssetChangeResults,
     ) -> Result<()> {
-        let ctx = self.txn.as_owner();
-        let txn = &**self.txn;
+        let ctx = self.txn.ctx();
+        let txn = self.txn.txn();
         let change_num = ctx.hub.get_latest_asset_change(txn)?;
         results.get().set_num(change_num);
         Ok(())
@@ -225,8 +252,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         mut results: asset_hub::snapshot::GetAssetChangesResults,
     ) -> Result<()> {
         let params = params.get()?;
-        let ctx = self.txn.as_owner();
-        let txn = &**self.txn;
+        let ctx = self.txn.ctx();
+        let txn = self.txn.txn();
         let mut changes = Vec::new();
         let iter = ctx.hub.get_asset_changes_iter(txn)?;
         let iter = iter.capnp_iter_from(&params.get_start().to_le_bytes());
@@ -255,8 +282,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         mut results: asset_hub::snapshot::GetPathForAssetsResults,
     ) -> Result<()> {
         let params = params.get()?;
-        let ctx = self.txn.as_owner();
-        let txn = &**self.txn;
+        let ctx = self.txn.ctx();
+        let txn = self.txn.txn();
         let mut asset_paths = Vec::new();
         for id in params.get_assets()? {
             let asset_uuid = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
@@ -288,8 +315,8 @@ impl<'a> AssetHubSnapshotImpl<'a> {
         mut results: asset_hub::snapshot::GetAssetsForPathsResults,
     ) -> Result<()> {
         let params = params.get()?;
-        let ctx = self.txn.as_owner();
-        let txn = &**self.txn;
+        let ctx = self.txn.ctx();
+        let txn = self.txn.txn();
         let mut metadatas = Vec::new();
         for request_path in params.get_paths()? {
             let request_path = request_path?;
@@ -365,14 +392,10 @@ impl AssetHubImpl {
         tokio::task::spawn_local(async move {
             while let Some(_) = rx.recv().await {
                 let mut request = listener.update_request();
-                let snapshot = AssetHubSnapshotImpl {
-                    txn: Rc::new(OwningHandle::new_with_fn(ctx.clone(), |t| unsafe {
-                        Rc::new((*t).db.ro_txn().unwrap())
-                    })),
-                };
+                let snapshot = AssetHubSnapshotImpl::new(ctx.clone());
                 let latest_change = ctx
                     .hub
-                    .get_latest_asset_change(&**snapshot.txn)
+                    .get_latest_asset_change(snapshot.txn.txn())
                     .expect("failed to get latest change");
                 request.get().set_latest_change(latest_change);
                 request.get().set_snapshot(
@@ -393,12 +416,7 @@ impl AssetHubImpl {
         _params: asset_hub::GetSnapshotParams,
         mut results: asset_hub::GetSnapshotResults,
     ) -> Result<()> {
-        let ctx = self.ctx.clone();
-        let snapshot = AssetHubSnapshotImpl {
-            txn: Rc::new(OwningHandle::new_with_fn(ctx, |t| unsafe {
-                Rc::new((*t).db.ro_txn().unwrap())
-            })),
-        };
+        let snapshot = AssetHubSnapshotImpl::new(self.ctx.clone());
         results.get().set_snapshot(
             asset_hub::snapshot::ToClient::new(snapshot).into_client::<::capnp_rpc::Server>(),
         );
@@ -406,13 +424,6 @@ impl AssetHubImpl {
     }
 }
 
-fn endpoint() -> String {
-    if cfg!(windows) {
-        r"\\.\pipe\atelier-assets".to_string()
-    } else {
-        r"/tmp/atelier-assets".to_string()
-    }
-}
 fn spawn_rpc<
     R: std::marker::Unpin + futures::AsyncRead + Send + 'static,
     W: std::marker::Unpin + futures::AsyncWrite + Send + 'static,
@@ -421,24 +432,18 @@ fn spawn_rpc<
     writer: W,
     ctx: Arc<ServiceContext>,
 ) {
-    thread::spawn(move || {
-        let mut runtime = Runtime::new().unwrap();
-        let service_impl = AssetHubImpl { ctx };
-        let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
+    let service_impl = AssetHubImpl { ctx };
+    let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
 
-        let network = twoparty::VatNetwork::new(
-            reader,
-            writer,
-            rpc_twoparty_capnp::Side::Server,
-            Default::default(),
-        );
+    let network = twoparty::VatNetwork::new(
+        reader,
+        writer,
+        rpc_twoparty_capnp::Side::Server,
+        Default::default(),
+    );
 
-        let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.clone().client));
-        let local = tokio::task::LocalSet::new();
-        local
-            .block_on(&mut runtime, rpc_system.map_err(|_| ()))
-            .unwrap();
-    });
+    let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.client));
+    tokio::task::spawn_local(rpc_system.map_err(|_| ()));
 }
 impl AssetHubService {
     pub fn new(
@@ -459,25 +464,21 @@ impl AssetHubService {
         }
     }
 
-    pub fn run(&self, addr: std::net::SocketAddr) {
-        let mut runtime = Runtime::new().unwrap();
+    pub async fn run(&self, addr: std::net::SocketAddr) {
+        let result: std::result::Result<(), Box<dyn std::error::Error>> = async {
+            let mut listener: tokio::net::TcpListener =
+                tokio::net::TcpListener::bind(&addr).await?;
 
-        let local = tokio::task::LocalSet::new();
-
-        let result: std::result::Result<(), Box<dyn std::error::Error>> =
-            local.block_on(&mut runtime, async {
-                let mut listener: tokio::net::TcpListener =
-                    tokio::net::TcpListener::bind(&addr).await.unwrap();
-
-                loop {
-                    let (stream, _) = listener.accept().await.unwrap();
-                    stream.set_nodelay(true).unwrap();
-                    stream.set_send_buffer_size(1 << 22).unwrap();
-                    stream.set_recv_buffer_size(1 << 22).unwrap();
-                    let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
-                    spawn_rpc(reader, writer, self.ctx.clone());
-                }
-            });
+            loop {
+                let (stream, _) = listener.accept().await?;
+                stream.set_nodelay(true).unwrap();
+                stream.set_send_buffer_size(1 << 22).unwrap();
+                stream.set_recv_buffer_size(1 << 22).unwrap();
+                let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+                spawn_rpc(reader, writer, self.ctx.clone());
+            }
+        }
+        .await;
         // NOTE(happens): This will only fail if we can't set the stream
         // parameters on startup, which is a cause for panic in any case.
         // NOTE(kabergstrom): It also seems to happen when the main thread
@@ -486,7 +487,7 @@ impl AssetHubService {
     }
 }
 
-impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
+impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
     fn get_asset_metadata(
         &mut self,
         params: asset_hub::snapshot::GetAssetMetadataParams,
@@ -519,9 +520,8 @@ impl<'a> asset_hub::snapshot::Server for AssetHubSnapshotImpl<'a> {
         params: asset_hub::snapshot::GetImportArtifactsParams,
         results: asset_hub::snapshot::GetImportArtifactsResults,
     ) -> Promise<()> {
-        Promise::ok(pry!(AssetHubSnapshotImpl::get_import_artifacts(
-            self, params, results
-        )))
+        let fut = AssetHubSnapshotImpl::get_import_artifacts(self.txn.clone(), params, results);
+        Promise::from_future(async { fut.await.map_err(|e| e.into()) })
     }
     fn get_latest_asset_change(
         &mut self,

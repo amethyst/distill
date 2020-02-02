@@ -1,7 +1,9 @@
 use crate::{AssetRef, AssetUuid};
-pub trait ImporterContextHandle {
-    fn exit(&mut self);
-    fn enter(&mut self);
+use futures::future::BoxFuture;
+
+pub trait ImporterContextHandle: Send + Sync {
+    fn scope<'a>(&'a self, fut: BoxFuture<'a, ()>) -> BoxFuture<'a, ()>;
+
     fn begin_serialize_asset(&mut self, asset: AssetUuid);
     /// Returns any registered dependencies
     fn end_serialize_asset(&mut self, asset: AssetUuid) -> std::collections::HashSet<AssetRef>;
@@ -10,7 +12,7 @@ pub trait ImporterContextHandle {
 }
 
 pub trait ImporterContext: 'static + Send + Sync {
-    fn enter(&self) -> Box<dyn ImporterContextHandle>;
+    fn handle(&self) -> Box<dyn ImporterContextHandle>;
 }
 
 /// Use [inventory::submit!] to register an importer context to be entered for import operations.

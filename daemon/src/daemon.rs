@@ -4,6 +4,7 @@ use crate::{
 };
 use atelier_importer::{get_importer_contexts, BoxedImporter, ImporterContext};
 use atelier_schema::data;
+use futures::prelude::*;
 use log::error;
 use std::{
     collections::HashMap,
@@ -11,8 +12,7 @@ use std::{
     iter::FromIterator,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-    thread,
+    sync::Arc,
 };
 
 #[derive(Default)]
@@ -110,10 +110,19 @@ impl AssetDaemon {
     }
 
     pub fn run(self) {
+        let mut rpc_runtime = tokio::runtime::Builder::new()
+            .basic_scheduler()
+            .enable_all()
+            .build()
+            .unwrap();
+        let local = tokio::task::LocalSet::new();
+        rpc_runtime.block_on(local.run_until(async { self.run_rpc_runtime().await }));
+    }
+
+    async fn run_rpc_runtime(self) {
         use asset_hub::AssetHub;
         use asset_hub_service::AssetHubService;
         use file_asset_source::FileAssetSource;
-        use std::panic;
 
         let _ = fs::create_dir(&self.db_dir);
         for dir in self.asset_dirs.iter() {
@@ -123,7 +132,9 @@ impl AssetDaemon {
         let asset_db = Environment::new(&self.db_dir).expect("failed to create asset db");
         let asset_db = Arc::new(asset_db);
 
-        check_db_version(&asset_db).expect("failed to check daemon version in asset db");
+        check_db_version(&asset_db)
+            .await
+            .expect("failed to check daemon version in asset db");
 
         let to_watch = self.asset_dirs.iter().map(|p| p.to_str().unwrap());
         let tracker = FileTracker::new(asset_db.clone(), to_watch);
@@ -138,9 +149,23 @@ impl AssetDaemon {
             ArtifactCache::new(&asset_db).expect("failed to create artifact cache");
         let artifact_cache = Arc::new(artifact_cache);
 
-        let asset_source =
-            FileAssetSource::new(&tracker, &hub, &asset_db, &importers, &artifact_cache, ctxs)
-                .expect("failed to create asset source");
+        let work_runtime = tokio::runtime::Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .build()
+            .unwrap();
+        let work_runtime = Arc::new(work_runtime);
+
+        let asset_source = FileAssetSource::new(
+            &tracker,
+            &hub,
+            &asset_db,
+            &importers,
+            &artifact_cache,
+            ctxs,
+            work_runtime,
+        )
+        .expect("failed to create asset source");
 
         let asset_source = Arc::new(asset_source);
 
@@ -152,72 +177,25 @@ impl AssetDaemon {
             artifact_cache.clone(),
         );
 
-        // create the assets folder automatically to make it easier to get started.
-        // might want to remove later when watched dirs become configurable?
-        let tracker_handle = thread::Builder::new()
-            .name("file_tracker".to_string())
-            .spawn(move || {
-                let result = panic::catch_unwind(|| tracker.run());
-                if let Err(err) = result {
-                    bail(err);
-                }
-            })
-            .expect("failed to spawn file_tracker thread");
-
-        // NOTE(happens): We have to do a silly little dance here because of the way
-        // unwind boundaries work. Since `Cell`s and other pointer types can provide
-        // interior mutability, they're not allowed to cross `catch_unwind` boundaries.
-        // However, Mutexes implement poisoning and can be passed, so we basically
-        // wrap these in a useless Mutex that gets locked instantly. This lets us catch
-        // any panic and abort after logging the error.
-        let asset_source_handle = thread::Builder::new()
-            .name("file_asset_source".to_string())
-            .spawn(move || {
-                let asset_source = Mutex::new(asset_source);
-                let result = panic::catch_unwind(|| asset_source.lock().unwrap().run());
-
-                if let Err(err) = result {
-                    bail(err);
-                }
-            })
-            .expect("failed to spawn file_asset_source thread");
-
         let addr = self.address;
-        let service_handle = thread::Builder::new()
-            .name("asset_hub_service".to_string())
-            .spawn(move || {
-                let service = Mutex::new(service);
-                let result = panic::catch_unwind(|| service.lock().unwrap().run(addr));
-                if let Err(err) = result {
-                    bail(err);
-                }
-            })
-            .expect("failed to spawn asset_hub_service thread");
+        let mut service_handle =
+            tokio::task::spawn_local(async move { service.run(addr).await }).fuse();
+        let mut tracker_handle =
+            tokio::task::spawn_local(async move { tracker.run().await }).fuse(); // TODO: use tokio channel to make this Send
+        let mut asset_source_handle =
+            tokio::task::spawn_local(async move { asset_source.run().await }).fuse();
 
-        tracker_handle
-            .join()
-            .expect("Invalid: Thread panic should be caught");
-
-        asset_source_handle
-            .join()
-            .expect("Invalid: Thread panic should be caught");
-
-        service_handle
-            .join()
-            .expect("Invalid: Thread panic should be caught");
+        loop {
+            futures::select! {
+                e = tracker_handle => e.expect("FileTracker panicked"),
+                e = asset_source_handle => e.expect("AssetSource panicked"),
+                e = service_handle => e.expect("ServiceHandle panicked"),
+            }
+        }
     }
 }
 
-fn bail(err: std::boxed::Box<dyn std::any::Any + std::marker::Send>) {
-    error!("Something unexpected happened - bailing out to prevent corrupt state");
-    if let Ok(msg) = err.downcast::<&'static str>() {
-        error!("panic: {}", msg);
-    }
-
-    std::process::exit(1);
-}
-
-fn check_db_version(env: &Environment) -> Result<()> {
+async fn check_db_version(env: &Environment) -> Result<()> {
     use crate::capnp_db::DBTransaction;
     let tables = AssetDaemonTables::new(env).expect("failed to create AssetDaemon tables");
     let txn = env.ro_txn()?;
@@ -250,13 +228,13 @@ fn check_db_version(env: &Environment) -> Result<()> {
                     }),
             );
         }
-        let mut txn = env.rw_txn()?;
+        let mut txn = env.rw_txn().await?;
         for db in databases {
             txn.clear_db(db).expect("failed to clear db");
         }
         txn.commit()?;
     }
-    let mut txn = env.rw_txn()?;
+    let mut txn = env.rw_txn().await?;
     let mut value_builder = capnp::message::Builder::new_default();
     {
         let mut m = value_builder.init_root::<data::daemon_info::Builder<'_>>();

@@ -5,10 +5,15 @@ use crate::error::{Error, Result};
 use crate::watcher::{self, FileEvent, FileMetadata};
 use atelier_core::utils;
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
-use crossbeam_channel::{self as channel, select, Receiver, Sender};
+use futures::select;
+use futures::{
+    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    prelude::*,
+};
 use lmdb::Cursor;
 use log::{debug, error, info};
 use std::{
+    cell::Cell,
     cmp::PartialEq,
     collections::{HashMap, HashSet},
     fs,
@@ -19,7 +24,10 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
     thread,
-    time::Duration,
+};
+use tokio::{
+    sync::Mutex,
+    time::{self, Duration},
 };
 
 #[derive(Clone)]
@@ -39,8 +47,8 @@ pub enum FileTrackerEvent {
 pub struct FileTracker {
     db: Arc<Environment>,
     tables: FileTrackerTables,
-    listener_rx: Receiver<Sender<FileTrackerEvent>>,
-    listener_tx: Sender<Sender<FileTrackerEvent>>,
+    listener_rx: Mutex<Cell<UnboundedReceiver<UnboundedSender<FileTrackerEvent>>>>,
+    listener_tx: UnboundedSender<UnboundedSender<FileTrackerEvent>>,
     is_running: AtomicBool,
     watch_dirs: Vec<PathBuf>,
 }
@@ -365,7 +373,7 @@ impl FileTracker {
             .create_db(Some("rename_file_events"), lmdb::DatabaseFlags::INTEGER_KEY)
             .expect("db: Failed to create rename_file_events table");
 
-        let (listener_tx, listener_rx) = channel::unbounded();
+        let (listener_tx, listener_rx) = unbounded();
 
         FileTracker {
             is_running: AtomicBool::new(false),
@@ -375,7 +383,7 @@ impl FileTracker {
                 rename_file_events,
             },
             db,
-            listener_rx,
+            listener_rx: Mutex::new(Cell::new(listener_rx)),
             listener_tx,
             watch_dirs,
         }
@@ -385,10 +393,12 @@ impl FileTracker {
         self.watch_dirs.iter()
     }
 
-    pub fn get_rw_txn<'a>(&'a self) -> RwTransaction<'a> {
-        self.db.rw_txn().expect("db: Failed to open rw txn")
+    #[allow(dead_code)]
+    pub async fn get_rw_txn<'a>(&'a self) -> RwTransaction<'a> {
+        self.db.rw_txn().await.expect("db: Failed to open rw txn")
     }
 
+    #[allow(dead_code)]
     pub fn get_ro_txn<'a>(&'a self) -> RoTransaction<'a> {
         self.db.ro_txn().expect("db: Failed to open ro txn")
     }
@@ -509,6 +519,7 @@ impl FileTracker {
             .expect("db: Failed to delete entry from dirty_files table")
     }
 
+    #[allow(dead_code)] // used for tests
     pub fn get_dirty_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
@@ -557,35 +568,40 @@ impl FileTracker {
             })
     }
 
-    pub fn register_listener(&self, sender: Sender<FileTrackerEvent>) {
-        self.listener_tx.send(sender).unwrap();
+    pub fn register_listener(&self, sender: UnboundedSender<FileTrackerEvent>) {
+        self.listener_tx
+            .unbounded_send(sender)
+            .expect("Failed registering listener")
     }
 
+    #[allow(dead_code)]
     pub fn stop(&self) {
         self.is_running.store(false, Ordering::Release);
     }
 
+    #[allow(dead_code)]
     pub fn is_running(&self) -> bool {
         self.is_running.load(Ordering::Acquire)
     }
 
-    fn read_file_events(
+    async fn read_file_events(
         &self,
         is_running: &mut bool,
-        rx: &Receiver<FileEvent>,
+        rx: &mut UnboundedReceiver<FileEvent>,
         scan_stack: &mut Vec<ScanContext>,
     ) -> Vec<FileTrackerEvent> {
         let mut txn = None;
         let mut output_evts = Vec::new();
-        let timeout = Duration::from_millis(50);
+        let mut timeout = time::delay_for(Duration::from_millis(50)).fuse();
 
         while *is_running {
             select! {
-                recv(rx) -> evt => {
-                    if let Ok(evt) = evt {
+                evt = rx.next() => {
+                    if let Some(evt) = evt {
                         if txn.is_none() {
                             let new_txn = self.db
                                 .rw_txn()
+                                .await
                                 .expect("db: Failed to renew rw txn");
 
                             txn = Some(new_txn);
@@ -601,11 +617,8 @@ impl FileTracker {
                         *is_running = false;
                         break;
                     }
-                }
-
-                recv(channel::after(timeout)) -> _msg => {
-                    break;
-                }
+                },
+                _ = timeout => break,
             }
         }
 
@@ -621,7 +634,7 @@ impl FileTracker {
         output_evts
     }
 
-    pub fn run(&self) {
+    pub async fn run(&self) {
         let already_running = self
             .is_running
             .compare_and_swap(false, true, Ordering::AcqRel);
@@ -630,7 +643,7 @@ impl FileTracker {
             return;
         }
 
-        let (tx, rx) = channel::unbounded();
+        let (tx, mut rx) = unbounded();
         let to_watch = self
             .watch_dirs
             .iter()
@@ -648,23 +661,28 @@ impl FileTracker {
         while self.is_running.load(Ordering::Acquire) {
             scan_stack.clear();
             let mut is_running = true;
-            let events = self.read_file_events(&mut is_running, &rx, &mut scan_stack);
+            let events = self
+                .read_file_events(&mut is_running, &mut rx, &mut scan_stack)
+                .await;
 
-            select! {
-                recv(self.listener_rx) -> listener => {
-                    if let Ok(listener) = listener {
-                        listeners.push(listener);
+            {
+                let mut tx = self.listener_rx.lock().await;
+                select! {
+                    new_listener = tx.get_mut().next() => {
+                        if let Some(new_listener) = new_listener {
+                            listeners.push(new_listener);
+                        }
                     }
-                },
-                default => {}
+                    default => {}
+                }
             }
+
             for event in events {
                 for listener in listeners.iter() {
                     debug!("Sent to listener");
-                    select! {
-                        send(listener, event) -> _ => {}
-                        default => {}
-                    }
+                    listener
+                        .unbounded_send(event)
+                        .expect("failed to send event to listener");
                 }
             }
             assert!(scan_stack.is_empty());
@@ -683,20 +701,22 @@ pub mod tests {
     use super::*;
     use crate::capnp_db::Environment;
     use crate::file_tracker::{FileTracker, FileTrackerEvent};
-    use crossbeam_channel::{self as channel, select, Receiver};
     use std::{
         fs,
         path::{Path, PathBuf},
         sync::Arc,
-        thread,
         time::Duration,
     };
     use tempfile;
 
-    pub fn with_tracker<F>(f: F)
+    pub fn with_tracker<F, T>(f: F)
     where
-        F: FnOnce(Arc<FileTracker>, Receiver<FileTrackerEvent>, &Path),
+        T: Future<Output = ()>,
+        F: FnOnce(Arc<FileTracker>, UnboundedReceiver<FileTrackerEvent>, PathBuf) -> T,
     {
+        let mut runtime = tokio::runtime::Runtime::new().unwrap();
+        let local = tokio::task::LocalSet::new();
+
         let db_dir = tempfile::tempdir().unwrap();
         let asset_dir = tempfile::tempdir().unwrap();
         {
@@ -712,56 +732,48 @@ pub mod tests {
                 ),
             );
             let tracker = Arc::new(FileTracker::new(db, asset_paths));
-            let (tx, rx) = channel::unbounded();
+            let (tx, mut rx) = unbounded();
             tracker.register_listener(tx);
 
-            let handle = {
-                let run_tracker = tracker.clone();
-                thread::spawn(move || {
-                    run_tracker.clone().run();
-                })
-            };
-            while !tracker.is_running() {
-                thread::sleep(Duration::from_millis(1));
-            }
+            runtime.block_on(local.run_until(async move {
+                tokio::task::spawn_local({
+                    let tracker = tracker.clone();
+                    async move { tracker.run().await }
+                });
+                expect_event(&mut rx).await;
 
-            expect_event(&rx);
+                f(tracker.clone(), rx, asset_dir.into_path()).await;
 
-            f(tracker.clone(), rx, asset_dir.path());
-
-            tracker.stop();
-
-            handle.join().unwrap();
+                tracker.stop();
+            }))
         }
     }
 
-    fn expect_no_event(rx: &Receiver<FileTrackerEvent>) {
+    async fn expect_no_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) {
+        let mut timeout = time::delay_for(Duration::from_millis(1000)).fuse();
         select! {
-            recv(rx) -> evt => {
-                if let Ok(evt) = evt {
+            evt = rx.next() => {
+                if let Some(evt) = evt {
                     assert!(false, "Received unexpected event {:?}", evt);
-                } else {
-                    assert!(false, "Receive error when waiting for file event");
                 }
             }
-            recv(channel::after(Duration::from_millis(1000))) -> _ => {
+            _ = timeout => {
                 return;
             }
         };
         unreachable!();
     }
 
-    fn expect_event(rx: &Receiver<FileTrackerEvent>) -> FileTrackerEvent {
+    async fn expect_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) -> FileTrackerEvent {
+        let mut timeout = time::delay_for(Duration::from_millis(1000)).fuse();
         select! {
-            recv(rx) -> evt => {
-                if let Ok(evt) = evt {
+            evt = rx.next() => {
+                if let Some(evt) = evt {
                     return evt;
-                } else {
-                    assert!(false, "Receive error when waiting for file event");
                 }
             }
-            recv(channel::after(Duration::from_millis(1000))) -> _ => {
-                    assert!(false, "Timed out waiting for file event");
+            _ = timeout => {
+                assert!(false, "Timed out waiting for file event");
             }
         };
         unreachable!();
@@ -787,17 +799,18 @@ pub mod tests {
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
 
-    pub fn add_test_dir(asset_dir: &Path, name: &str) -> PathBuf {
+    pub async fn add_test_dir(asset_dir: &Path, name: &str) -> PathBuf {
         let path = PathBuf::from(asset_dir).join(name);
-        fs::create_dir(&path).expect("create dir");
+        tokio::fs::create_dir(&path).await.expect("create dir");
         path
     }
 
-    pub fn add_test_file(asset_dir: &Path, name: &str) {
-        fs::copy(
+    pub async fn add_test_file(asset_dir: &Path, name: &str) {
+        tokio::fs::copy(
             PathBuf::from("tests/file_tracker/").join(name),
             asset_dir.join(name),
         )
+        .await
         .expect("copy test file");
     }
 
@@ -816,8 +829,8 @@ pub mod tests {
             .unwrap_or_else(|| panic!("expected dirty file state for file {}", name));
     }
 
-    fn clear_dirty_file_state(t: &FileTracker) {
-        let mut txn = t.get_rw_txn();
+    async fn clear_dirty_file_state(t: &FileTracker) {
+        let mut txn = t.get_rw_txn().await;
         for f in t.read_dirty_files(&txn) {
             t.delete_dirty_file_state(&mut txn, &f.path);
         }
@@ -825,74 +838,84 @@ pub mod tests {
 
     #[test]
     fn test_create_file() {
-        with_tracker(|t, rx, asset_dir| {
-            add_test_file(asset_dir, "test.txt");
-            expect_event(&rx);
-            expect_no_event(&rx);
-            expect_file_state(&t, asset_dir, "test.txt");
-            expect_dirty_file_state(&t, asset_dir, "test.txt");
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                add_test_file(&asset_dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "test.txt");
+                expect_dirty_file_state(&t, &asset_dir, "test.txt");
+            }
         });
     }
 
     #[test]
     fn test_modify_file() {
-        with_tracker(|t, rx, asset_dir| {
-            add_test_file(asset_dir, "test.txt");
-            expect_event(&rx);
-            expect_file_state(&t, asset_dir, "test.txt");
-            expect_dirty_file_state(&t, asset_dir, "test.txt");
-            clear_dirty_file_state(&t);
-            truncate_test_file(asset_dir, "test.txt");
-            expect_event(&rx);
-            expect_no_event(&rx);
-            expect_file_state(&t, asset_dir, "test.txt");
-            expect_dirty_file_state(&t, asset_dir, "test.txt");
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                add_test_file(&asset_dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "test.txt");
+                expect_dirty_file_state(&t, &asset_dir, "test.txt");
+                clear_dirty_file_state(&t);
+                truncate_test_file(&asset_dir, "test.txt");
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "test.txt");
+                expect_dirty_file_state(&t, &asset_dir, "test.txt");
+            }
         })
     }
 
     #[test]
     fn test_delete_file() {
-        with_tracker(|t, rx, asset_dir| {
-            add_test_file(asset_dir, "test.txt");
-            expect_event(&rx);
-            expect_file_state(&t, asset_dir, "test.txt");
-            expect_dirty_file_state(&t, asset_dir, "test.txt");
-            clear_dirty_file_state(&t);
-            delete_test_file(asset_dir, "test.txt");
-            expect_event(&rx);
-            expect_no_event(&rx);
-            expect_no_file_state(&t, asset_dir, "test.txt");
-            expect_dirty_file_state(&t, asset_dir, "test.txt");
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                add_test_file(&asset_dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "test.txt");
+                expect_dirty_file_state(&t, &asset_dir, "test.txt");
+                clear_dirty_file_state(&t);
+                delete_test_file(&asset_dir, "test.txt");
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_no_file_state(&t, &asset_dir, "test.txt");
+                expect_dirty_file_state(&t, &asset_dir, "test.txt");
+            }
         })
     }
 
     #[test]
     fn test_create_dir() {
-        with_tracker(|t, rx, asset_dir| {
-            add_test_dir(asset_dir, "testdir");
-            expect_event(&rx);
-            expect_no_event(&rx);
-            expect_file_state(&t, asset_dir, "testdir");
-            expect_dirty_file_state(&t, asset_dir, "testdir");
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                add_test_dir(&asset_dir, "testdir").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "testdir");
+                expect_dirty_file_state(&t, &asset_dir, "testdir");
+            }
         });
     }
 
     #[test]
     fn test_create_file_in_dir() {
-        with_tracker(|t, rx, asset_dir| {
-            let dir = add_test_dir(asset_dir, "testdir");
-            {
-                expect_event(&rx);
-                expect_no_event(&rx);
-                expect_file_state(&t, asset_dir, "testdir");
-                expect_dirty_file_state(&t, asset_dir, "testdir");
-            }
-            {
-                add_test_file(&dir, "test.txt");
-                expect_event(&rx);
-                expect_no_event(&rx);
-                expect_file_state(&t, &dir, "test.txt");
-                expect_dirty_file_state(&t, &dir, "test.txt");
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                let dir = add_test_dir(&asset_dir, "testdir").await;
+                {
+                    expect_event(&mut rx).await;
+                    expect_no_event(&mut rx).await;
+                    expect_file_state(&t, &asset_dir, "testdir");
+                    expect_dirty_file_state(&t, &asset_dir, "testdir");
+                }
+                {
+                    add_test_file(&dir, "test.txt").await;
+                    expect_event(&mut rx).await;
+                    expect_no_event(&mut rx).await;
+                    expect_file_state(&t, &dir, "test.txt");
+                    expect_dirty_file_state(&t, &dir, "test.txt");
+                }
             }
         });
     }

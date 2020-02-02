@@ -12,22 +12,26 @@ use atelier_core::{utils, AssetRef, AssetUuid, CompressionType};
 use atelier_importer::{ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext};
 use atelier_schema::data::{self, path_refs, source_metadata};
 use bincode;
-use crossbeam_channel::{self as channel, Receiver};
+use futures::{
+    channel::mpsc::{unbounded, UnboundedReceiver},
+    prelude::*,
+};
 use log::{debug, error, info};
 use rayon::prelude::*;
-use scoped_threadpool::Pool;
 use std::collections::{HashMap, HashSet};
-use std::{path::PathBuf, str, sync::Arc, time::Instant};
+use std::{cell::Cell, path::PathBuf, str, sync::Arc, time::Instant};
+use tokio::{runtime::Runtime, sync::Mutex};
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
     tracker: Arc<FileTracker>,
-    rx: Receiver<FileTrackerEvent>,
+    rx: Mutex<Cell<UnboundedReceiver<FileTrackerEvent>>>,
     db: Arc<Environment>,
     artifact_cache: Arc<ArtifactCache>,
     tables: FileAssetSourceTables,
     importers: Arc<ImporterMap>,
     importer_contexts: Arc<Vec<Box<dyn ImporterContext>>>,
+    work_runtime: Arc<Runtime>,
 }
 
 struct FileAssetSourceTables {
@@ -108,15 +112,16 @@ impl FileAssetSource {
         importers: &Arc<ImporterMap>,
         artifact_cache: &Arc<ArtifactCache>,
         importer_contexts: Arc<Vec<Box<dyn ImporterContext>>>,
+        work_runtime: Arc<Runtime>,
     ) -> Result<FileAssetSource> {
-        let (tx, rx) = channel::unbounded();
+        let (tx, rx) = unbounded();
         tracker.register_listener(tx);
         Ok(FileAssetSource {
             tracker: tracker.clone(),
             hub: hub.clone(),
             db: db.clone(),
             artifact_cache: artifact_cache.clone(),
-            rx,
+            rx: Mutex::new(Cell::new(rx)),
             tables: FileAssetSourceTables {
                 path_to_metadata: db
                     .create_db(Some("path_to_metadata"), lmdb::DatabaseFlags::default())?,
@@ -127,6 +132,7 @@ impl FileAssetSource {
             },
             importers: importers.clone(),
             importer_contexts,
+            work_runtime,
         })
     }
 
@@ -306,6 +312,7 @@ impl FileAssetSource {
             .expect("db: Failed to get source metadata from path_to_metadata table")
     }
 
+    #[allow(dead_code)]
     pub fn iter_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
@@ -557,7 +564,11 @@ impl FileAssetSource {
         }
     }
 
-    pub fn regenerate_import_artifact<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+    pub async fn regenerate_import_artifact<
+        'a,
+        V: DBTransaction<'a, T>,
+        T: lmdb::Transaction + 'a,
+    >(
         &self,
         txn: &'a V,
         id: &AssetUuid,
@@ -577,7 +588,7 @@ impl FileAssetSource {
         import.set_importer_contexts(&self.importer_contexts);
         import.generate_source_metadata(&cache);
         import.hash_source();
-        let imported_assets = import.import_source(scratch_buf)?;
+        let imported_assets = import.import_source(scratch_buf).await?;
         let mut context_set = imported_assets
             .importer_context_set
             .expect("importer context set required");
@@ -597,43 +608,53 @@ impl FileAssetSource {
             }
         }
 
-        context_set.enter();
-        let serialized_asset = imported_assets
-            .assets
-            .into_iter()
-            .find(|a| a.metadata.id == *id)
-            .ok_or_else(|| Error::Custom("Asset does not exist in source file".to_string()))
-            .and_then(|a| {
-                let import_hash = import
-                    .import_hash()
-                    .expect("Invalid: Import path should exist");
+        let assets = imported_assets.assets;
+        let this_asset = match assets.into_iter().find(|a| a.metadata.id == *id) {
+            Some(asset) => asset,
+            None => {
+                return Err(Error::Custom(
+                    "Asset does not exist in source file".to_string(),
+                ));
+            }
+        };
 
+        let import_hash = import
+            .import_hash()
+            .expect("Invalid: Import path should exist");
+
+        let asset_id = this_asset.metadata.id;
+        context_set.begin_serialize_asset(asset_id);
+
+        let pair = context_set
+            .scope(async move {
                 let hash = utils::calc_import_artifact_hash(id, import_hash, resolved_refs);
-                context_set.begin_serialize_asset(a.metadata.id);
                 let serialized_asset = SerializedAsset::create(
                     hash,
                     *id,
-                    a.metadata
+                    this_asset
+                        .metadata
                         .artifact
                         .as_ref()
                         .map(|artifact| artifact.build_deps.clone())
                         .unwrap_or(Vec::new()),
-                    a.metadata
+                    this_asset
+                        .metadata
                         .artifact
                         .as_ref()
                         .map(|artifact| artifact.load_deps.clone())
                         .unwrap_or(Vec::new()),
-                    &*a.asset
+                    &*this_asset
+                        .asset
                         .expect("expected asset obj when regenerating artifact"),
                     CompressionType::None,
                     scratch_buf,
                 )?;
-                context_set.end_serialize_asset(a.metadata.id);
-
                 Ok((hash, serialized_asset))
-            });
-        context_set.exit();
-        serialized_asset
+            })
+            .await;
+
+        context_set.end_serialize_asset(asset_id);
+        pair
     }
 
     fn resolve_metadata_asset_refs<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -679,7 +700,7 @@ impl FileAssetSource {
     fn process_metadata_changes(
         &self,
         txn: &mut RwTransaction<'_>,
-        changes: HashMap<PathBuf, Option<PairImportResultMetadata<'_>>>,
+        changes: &HashMap<PathBuf, Option<PairImportResultMetadata<'_>>>,
         change_batch: &mut asset_hub::ChangeBatch,
     ) {
         let mut affected_assets = HashMap::new();
@@ -937,7 +958,7 @@ impl FileAssetSource {
         }
     }
 
-    fn check_for_importer_changes(&self) -> bool {
+    async fn check_for_importer_changes(&self) -> bool {
         let changed_paths: Vec<PathBuf> = {
             let txn = self.db.ro_txn().expect("db: Failed to open ro txn");
 
@@ -992,7 +1013,7 @@ impl FileAssetSource {
         };
         let has_changed_paths = !changed_paths.is_empty();
         if has_changed_paths {
-            let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
+            let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
             changed_paths.iter().for_each(|p| {
                 self.tracker
                     .add_dirty_file(&mut txn, &p)
@@ -1052,139 +1073,115 @@ impl FileAssetSource {
     // TODO(happens): Return for this is asset_metadata_changed. This function needs a lot
     // of work, and in the process it will hopefully clear up and get a name that will
     // make the return value more obvious.
-    fn process_asset_metadata(
+    async fn process_asset_metadata(
         &self,
-        thread_pool: &mut Pool,
         txn: &mut RwTransaction<'_>,
         hashed_files: &[HashedSourcePair],
     ) -> bool {
-        use std::cell::RefCell;
-        thread_local!(static SCRATCH_STORE: RefCell<Option<Vec<u8>>> = RefCell::new(None));
-
-        let txn = std::sync::Mutex::new(txn);
+        let txn = Mutex::new(txn);
         let txn_ref = &txn;
-        let mut metadata_changes = HashMap::new();
+        let metadata_changes = Mutex::new(HashMap::new());
+        let metadata_changes_ref = &metadata_changes;
 
-        // Should get rid of this scoped_threadpool madness somehow,
-        // but can't use par_iter directly since I need to process the results
-        // as soon as they are completed. So essentially I want futures::stream::FuturesUnordered.
-        // But I couldn't figure all that future stuff out, so here we are. Scoped threadpool.
-        // TODO(happens): Handle errors inside of this scope
-        thread_pool
-            .scoped(|scope| -> Result<()> {
-                let (tx, rx) = channel::unbounded();
-                let to_process = hashed_files.len();
-                let mut import_iter = hashed_files.iter().map(|p| {
-                    let processed_pair = p.clone();
-                    let sender = tx.clone();
-                    scope.execute(move || {
-                        SCRATCH_STORE.with(|cell| {
-                            let mut local_store = cell.borrow_mut();
-                            if local_store.is_none() {
-                                *local_store = Some(Vec::new());
-                            }
-                            let read_txn = self
-                                .db
-                                .ro_txn()
-                                .unwrap_or_else(|e| panic!("failed to open RO transaction: {}", e));
-                            let cache = DBSourceMetadataCache {
-                                txn: &read_txn,
-                                file_asset_source: &self,
-                                _marker: std::marker::PhantomData,
-                            };
-                            let result = source_pair_import::process_pair(
-                                &cache,
-                                &self.importers,
-                                &self.importer_contexts,
-                                &processed_pair,
-                                local_store.as_mut().unwrap(),
-                            );
-                            let import_result = result.map(|result| {
-                                result.and_then(|(import, import_output)| {
-                                    import_output.map(|o| {
-                                        // put import artifact in cache if it doesn't have unresolved refs
-                                        if o.is_fully_resolved() {
-                                            if o.assets.len() > 0 {
-                                                let mut txn = txn_ref.lock().unwrap();
-                                                for asset in &o.assets {
-                                                    if let Some(ref serialized_asset) =
-                                                        asset.serialized_asset
-                                                    {
-                                                        self.artifact_cache
-                                                            .insert(&mut txn, serialized_asset);
-                                                    }
-                                                }
-                                            }
+        // safety: mem::forget is not used on the scope.
+        let mut import_scope = unsafe { crate::scope::Scope::create() };
+
+        self.work_runtime.clone().enter(|| {
+            for p in hashed_files {
+                let processed_pair = p.clone();
+                import_scope.spawn(async move {
+                    let read_txn = self.db.ro_txn().expect("failed to open RO transaction");
+                    let cache = DBSourceMetadataCache {
+                        txn: &read_txn,
+                        file_asset_source: &self,
+                        _marker: std::marker::PhantomData,
+                    };
+                    let result = source_pair_import::process_pair(
+                        &cache,
+                        &self.importers,
+                        &self.importer_contexts,
+                        &processed_pair,
+                        &mut Vec::new(),
+                    )
+                    .await;
+
+                    let result = match result {
+                        Err(e) => return (processed_pair, Err(e)),
+                        Ok(result) => result,
+                    };
+
+                    if let Some((import, import_output)) = result {
+                        let metadata = if let Some(import_output) = import_output {
+                            // put import artifact in cache if it doesn't have unresolved refs
+                            if import_output.is_fully_resolved() {
+                                if import_output.assets.len() > 0 {
+                                    let mut txn = txn_ref.lock().await;
+                                    for asset in &import_output.assets {
+                                        if let Some(ref serialized_asset) = asset.serialized_asset {
+                                            self.artifact_cache.insert(&mut txn, serialized_asset);
                                         }
-
-                                        PairImportResultMetadata {
-                                            import_state: import,
-                                            assets: o
-                                                .assets
-                                                .into_iter()
-                                                .map(|a| AssetImportResultMetadata {
-                                                    metadata: a.metadata,
-                                                    unresolved_load_refs: a.unresolved_load_refs,
-                                                    unresolved_build_refs: a.unresolved_build_refs,
-                                                })
-                                                .collect(),
-                                        }
-                                    })
-                                })
-                            });
-                            sender.send((processed_pair, import_result)).unwrap();
-                        });
-                    });
-                });
-
-                let num_queued_imports = num_cpus::get() * 2;
-                for _ in 0..num_queued_imports {
-                    import_iter.next();
-                }
-
-                let mut num_processed = 0;
-                while num_processed < to_process {
-                    match rx.recv() {
-                        Ok((pair, maybe_result)) => {
-                            match maybe_result {
-                                // Successful import
-                                Ok(result) => {
-                                    let path = &pair
-                                    .source
-                                    .as_ref()
-                                    .or_else(|| pair.meta.as_ref())
-                                    .expect(
-                                        "a successful import must have a source or meta FileState",
-                                    )
-                                    .path;
-                                    {
-                                        let mut txn = txn_ref.lock().unwrap();
-                                        self.ack_dirty_file_states(&mut txn, &pair);
                                     }
-                                    metadata_changes.insert(path.clone(), result);
                                 }
-                                Err(e) => error!(
-                                    "Error processing pair at {:?}: {}",
-                                    pair.source.as_ref().map(|s| &s.path),
-                                    e
-                                ),
                             }
-                            num_processed += 1;
-                            import_iter.next();
-                        }
-                        _ => {
-                            break;
-                        }
-                    }
-                }
 
-                Ok(())
-            })
-            .expect("threadpool: Failed to process metadata changes");
+                            Some(PairImportResultMetadata {
+                                import_state: import,
+                                assets: import_output
+                                    .assets
+                                    .into_iter()
+                                    .map(|a| AssetImportResultMetadata {
+                                        metadata: a.metadata,
+                                        unresolved_load_refs: a.unresolved_load_refs,
+                                        unresolved_build_refs: a.unresolved_build_refs,
+                                    })
+                                    .collect(),
+                            })
+                        } else {
+                            None
+                        };
+
+                        let path = &processed_pair
+                            .source
+                            .as_ref()
+                            .or_else(|| processed_pair.meta.as_ref())
+                            .expect("a successful import must have a source or meta FileState")
+                            .path;
+
+                        metadata_changes_ref
+                            .lock()
+                            .await
+                            .insert(path.clone(), metadata);
+                    };
+
+                    (processed_pair, Ok(()))
+                });
+            }
+        });
+
+        while let Some((pair, maybe_result)) = import_scope.next().await {
+            match maybe_result {
+                // Successful import
+                Ok(()) => {
+                    let mut txn = txn_ref.lock().await;
+                    self.ack_dirty_file_states(&mut txn, &pair);
+                }
+                Err(e) => error!(
+                    "Error processing pair at {:?}: {}",
+                    pair.source.as_ref().map(|s| &s.path),
+                    e
+                ),
+            }
+        }
+
+        drop(import_scope);
 
         let mut change_batch = asset_hub::ChangeBatch::new();
-        let mut txn = txn.into_inner().unwrap();
-        self.process_metadata_changes(&mut txn, metadata_changes, &mut change_batch);
+
+        // the locking should no longer be necessary, but there is no `into_inner()` on tokio mutex.
+        let mut txn = txn.lock().await;
+        let metadata_changes = metadata_changes.lock().await;
+
+        self.process_metadata_changes(&mut txn, &metadata_changes, &mut change_batch);
         let asset_metadata_changed = self
             .hub
             .add_changes(&mut txn, change_batch)
@@ -1193,14 +1190,14 @@ impl FileAssetSource {
         asset_metadata_changed
     }
 
-    fn handle_update(&self, thread_pool: &mut Pool) {
+    async fn handle_update(&self) {
         let start_time = Instant::now();
         let mut changed_files = Vec::new();
 
         // Transactions on the same thread cannot be active at the same time!
         // This scope is important, even if it may look like it does nothing..
         {
-            let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
+            let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
 
             // Before reading the filesystem state we need to process rename events.
             // This must be done in the same transaction to guarantee database consistency.
@@ -1236,9 +1233,8 @@ impl FileAssetSource {
             elapsed.as_secs_f32()
         );
 
-        let mut txn = self.db.rw_txn().expect("Failed to open rw txn");
-        let asset_metadata_changed =
-            self.process_asset_metadata(thread_pool, &mut txn, &hashed_files);
+        let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
+        let asset_metadata_changed = self.process_asset_metadata(&mut txn, &hashed_files).await;
 
         if txn.dirty {
             txn.commit().expect("Failed to commit txn");
@@ -1256,23 +1252,23 @@ impl FileAssetSource {
         );
     }
 
-    pub fn run(&self) {
-        let mut thread_pool = Pool::new(num_cpus::get() as u32);
+    pub async fn run(&self) {
+        // let mut thread_pool = Pool::new(num_cpus::get() as u32);
         let mut started = false;
         let mut update = false;
 
-        while let Ok(evt) = self.rx.recv() {
+        while let Some(evt) = self.rx.lock().await.get_mut().next().await {
             match evt {
                 FileTrackerEvent::Start => {
                     started = true;
-                    if self.check_for_importer_changes() || update {
-                        self.handle_update(&mut thread_pool);
+                    if self.check_for_importer_changes().await || update {
+                        self.handle_update().await;
                     }
                 }
                 FileTrackerEvent::Update => {
                     update = true;
                     if started {
-                        self.handle_update(&mut thread_pool);
+                        self.handle_update().await;
                     }
                 }
             }
@@ -1283,7 +1279,7 @@ impl FileAssetSource {
 struct DBSourceMetadataCache<'a, 'b, V, T> {
     txn: &'a V,
     file_asset_source: &'b FileAssetSource,
-    _marker: std::marker::PhantomData<T>,
+    _marker: std::marker::PhantomData<fn(T) -> T>,
 }
 
 impl<'a, 'b, V, T> source_pair_import::SourceMetadataCache for DBSourceMetadataCache<'a, 'b, V, T>

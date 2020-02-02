@@ -28,6 +28,8 @@ impl ArtifactCache {
         })
     }
 
+    // TODO: invalidate cache
+    #[allow(dead_code)]
     pub fn delete(&self, txn: &mut RwTransaction<'_>, hash: u64) -> bool {
         txn.delete(self.tables.hash_to_artifact, &hash.to_le_bytes())
             .expect("db: Failed to delete entry from hash_to_artifact table")
@@ -46,6 +48,8 @@ impl ArtifactCache {
         .expect("lmdb: failed to put path ref");
     }
 
+    // TODO: actually use cache
+    #[allow(dead_code)]
     pub fn get<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,

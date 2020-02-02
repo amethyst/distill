@@ -203,7 +203,7 @@ pub trait Loader {
 
 /// Provides information about mappings between `AssetUuid` and `LoadHandle`.
 /// Intended to be used for `Handle` serde.
-pub trait LoaderInfoProvider {
+pub trait LoaderInfoProvider: Send + Sync {
     /// Returns the load handle for the asset with the given UUID, if present.
     ///
     /// This will only return `Some(..)` if there has been a previous call to [`Loader::add_ref`].

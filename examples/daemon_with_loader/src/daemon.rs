@@ -66,7 +66,7 @@ pub fn run() {
 
     let opt = AssetDaemonOpt::from_args();
 
-    AssetDaemon::default()
+    let deamon = AssetDaemon::default()
         .with_importers(atelier_importer::get_source_importers())
         .with_db_path(opt.db_dir)
         .with_address(opt.address)
