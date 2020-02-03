@@ -15,8 +15,9 @@ pub use serde;
 pub use type_uuid;
 
 use atelier_core::{AssetRef, AssetUuid};
+use futures::future::BoxFuture;
 use serde::Serialize;
-use std::io::Read;
+use tokio::io::AsyncRead;
 
 pub use self::error::{Error, Result};
 #[cfg(feature = "serde_importers")]
@@ -58,12 +59,12 @@ pub trait Importer: Send + 'static {
     type State: Serialize + Send + 'static;
 
     /// Reads the given bytes and produces assets.
-    fn import(
-        &self,
-        source: &mut dyn Read,
+    fn import<'a>(
+        &'a self,
+        source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         options: Self::Options,
-        state: &mut Self::State,
-    ) -> Result<ImporterValue>;
+        state: &'a mut Self::State,
+    ) -> BoxFuture<'a, Result<ImporterValue>>;
 }
 
 /// Contains metadata and asset data for an imported asset.

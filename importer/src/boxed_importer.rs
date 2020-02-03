@@ -1,8 +1,9 @@
 use crate::{error::Result, Importer, ImporterValue, SerdeObj};
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use futures::future::BoxFuture;
 use ron;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+use tokio::io::AsyncRead;
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Serializable metadata for an asset.
@@ -68,12 +69,12 @@ pub struct SourceMetadata<Options: 'static, State: 'static> {
 /// Enables using Importers without knowing the concrete type.
 /// See [Importer] for documentation on fields.
 pub trait BoxedImporter: TypeUuidDynamic + Send + Sync {
-    fn import_boxed(
-        &self,
-        source: &mut dyn Read,
+    fn import_boxed<'a>(
+        &'a self,
+        source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         options: Box<dyn SerdeObj>,
         state: Box<dyn SerdeObj>,
-    ) -> Result<BoxedImporterValue>;
+    ) -> BoxFuture<'a, Result<BoxedImporterValue>>;
     fn default_options(&self) -> Box<dyn SerdeObj>;
     fn default_state(&self) -> Box<dyn SerdeObj>;
     fn version(&self) -> u32;
@@ -105,29 +106,32 @@ where
     S: SerdeObj + Serialize + Default + Send + Sync + for<'a> Deserialize<'a>,
     T: Importer<State = S, Options = O> + TypeUuid + Send + Sync,
 {
-    fn import_boxed(
-        &self,
-        source: &mut dyn Read,
+    fn import_boxed<'a>(
+        &'a self,
+        source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         options: Box<dyn SerdeObj>,
         state: Box<dyn SerdeObj>,
-    ) -> Result<BoxedImporterValue> {
-        let s = state.downcast::<S>();
-        let mut s = if let Ok(s) = s {
-            s
-        } else {
-            panic!("Failed to downcast Importer::State");
-        };
-        let o = options.downcast::<O>();
-        let o = if let Ok(o) = o {
-            *o
-        } else {
-            panic!("Failed to downcast Importer::Options");
-        };
-        let result = self.import(source, o.clone(), &mut s)?;
-        Ok(BoxedImporterValue {
-            value: result,
-            options: Box::new(o),
-            state: s,
+    ) -> BoxFuture<'a, Result<BoxedImporterValue>> {
+        Box::pin(async move {
+            let s = state.downcast::<S>();
+            let mut s = if let Ok(s) = s {
+                s
+            } else {
+                panic!("Failed to downcast Importer::State");
+            };
+            let o = options.downcast::<O>();
+            let o = if let Ok(o) = o {
+                *o
+            } else {
+                panic!("Failed to downcast Importer::Options");
+            };
+
+            let result = self.import(source, o.clone(), &mut s).await?;
+            Ok(BoxedImporterValue {
+                value: result,
+                options: Box::new(o),
+                state: s,
+            })
         })
     }
     fn default_options(&self) -> Box<dyn SerdeObj> {

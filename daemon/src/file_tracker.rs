@@ -814,11 +814,15 @@ pub mod tests {
         .expect("copy test file");
     }
 
-    pub fn delete_test_file(asset_dir: &Path, name: &str) {
-        fs::remove_file(asset_dir.join(name)).expect("delete test file");
+    pub async fn delete_test_file(asset_dir: &Path, name: &str) {
+        tokio::fs::remove_file(asset_dir.join(name))
+            .await
+            .expect("delete test file");
     }
-    pub fn truncate_test_file(asset_dir: &Path, name: &str) {
-        fs::File::create(asset_dir.join(name)).expect("truncate test file");
+    pub async fn truncate_test_file(asset_dir: &Path, name: &str) {
+        tokio::fs::File::create(asset_dir.join(name))
+            .await
+            .expect("truncate test file");
     }
 
     fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
@@ -857,8 +861,8 @@ pub mod tests {
                 expect_event(&mut rx).await;
                 expect_file_state(&t, &asset_dir, "test.txt");
                 expect_dirty_file_state(&t, &asset_dir, "test.txt");
-                clear_dirty_file_state(&t);
-                truncate_test_file(&asset_dir, "test.txt");
+                clear_dirty_file_state(&t).await;
+                truncate_test_file(&asset_dir, "test.txt").await;
                 expect_event(&mut rx).await;
                 expect_no_event(&mut rx).await;
                 expect_file_state(&t, &asset_dir, "test.txt");
@@ -875,8 +879,8 @@ pub mod tests {
                 expect_event(&mut rx).await;
                 expect_file_state(&t, &asset_dir, "test.txt");
                 expect_dirty_file_state(&t, &asset_dir, "test.txt");
-                clear_dirty_file_state(&t);
-                delete_test_file(&asset_dir, "test.txt");
+                clear_dirty_file_state(&t).await;
+                delete_test_file(&asset_dir, "test.txt").await;
                 expect_event(&mut rx).await;
                 expect_no_event(&mut rx).await;
                 expect_no_file_state(&t, &asset_dir, "test.txt");

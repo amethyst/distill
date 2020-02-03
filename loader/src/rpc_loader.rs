@@ -930,7 +930,10 @@ mod tests {
     use crate::TypeUuid;
     use atelier_core::AssetUuid;
     use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{BoxedImporter, ImportedAsset, Importer, ImporterValue};
+    use atelier_importer::{
+        BoxedImporter, ImportedAsset, Importer, ImporterValue, Result as ImportResult,
+    };
+    use futures::future::BoxFuture;
     use serde::{Deserialize, Serialize};
     use std::{
         iter::FromIterator,
@@ -940,6 +943,7 @@ mod tests {
         sync::RwLock,
         thread::{self, JoinHandle},
     };
+    use tokio::io::{AsyncRead, AsyncReadExt};
     use uuid::Uuid;
 
     #[derive(Debug)]
@@ -1043,36 +1047,38 @@ mod tests {
             Self::version_static()
         }
 
-        fn import(
-            &self,
-            source: &mut dyn std::io::Read,
+        fn import<'a>(
+            &'a self,
+            source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
             txt_format: Self::Options,
-            state: &mut Self::State,
-        ) -> atelier_importer::Result<ImporterValue> {
-            if state.id.is_none() {
-                state.id = Some(AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
-            }
-            let mut bytes = Vec::new();
-            source.read_to_end(&mut bytes)?;
-            let parsed_asset_data = txt_format
-                .from_utf8(bytes)
-                .expect("Failed to construct string asset.");
+            state: &'a mut Self::State,
+        ) -> BoxFuture<'a, ImportResult<ImporterValue>> {
+            Box::pin(async move {
+                if state.id.is_none() {
+                    state.id = Some(AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+                }
+                let mut bytes = Vec::new();
+                source.read_to_end(&mut bytes).await?;
+                let parsed_asset_data = txt_format
+                    .from_utf8(bytes)
+                    .expect("Failed to construct string asset.");
 
-            let load_deps = parsed_asset_data
-                .lines()
-                .filter_map(|line| Uuid::from_str(line).ok())
-                .map(|uuid| AssetRef::Uuid(AssetUuid(*uuid.as_bytes())))
-                .collect::<Vec<AssetRef>>();
+                let load_deps = parsed_asset_data
+                    .lines()
+                    .filter_map(|line| Uuid::from_str(line).ok())
+                    .map(|uuid| AssetRef::Uuid(AssetUuid(*uuid.as_bytes())))
+                    .collect::<Vec<AssetRef>>();
 
-            Ok(ImporterValue {
-                assets: vec![ImportedAsset {
-                    id: state.id.expect("AssetUuid not generated"),
-                    search_tags: Vec::new(),
-                    build_deps: Vec::new(),
-                    load_deps,
-                    asset_data: Box::new(parsed_asset_data),
-                    build_pipeline: None,
-                }],
+                Ok(ImporterValue {
+                    assets: vec![ImportedAsset {
+                        id: state.id.expect("AssetUuid not generated"),
+                        search_tags: Vec::new(),
+                        build_deps: Vec::new(),
+                        load_deps,
+                        asset_data: Box::new(parsed_asset_data),
+                        build_pipeline: None,
+                    }],
+                })
             })
         }
     }

@@ -17,10 +17,11 @@ use std::{
     collections::HashSet,
     fs,
     hash::{Hash, Hasher},
-    io::{BufRead, Read, Write},
+    io::{BufRead, Write},
     path::PathBuf,
     time::Instant,
 };
+use tokio::{fs::File, prelude::*};
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -232,14 +233,14 @@ impl<'a> SourcePairImport<'a> {
         self.import_hash
     }
 
-    pub fn read_metadata_from_file(&mut self, scratch_buf: &mut Vec<u8>) -> Result<()> {
+    pub async fn read_metadata_from_file(&mut self, scratch_buf: &mut Vec<u8>) -> Result<()> {
         let importer = self
             .importer
             .expect("cannot read metadata without an importer");
         let meta = utils::to_meta_path(&self.source);
-        let mut f = fs::File::open(&meta)?;
+        let mut f = File::open(&meta).await?;
         scratch_buf.clear();
-        f.read_to_end(scratch_buf)?;
+        f.read_to_end(scratch_buf).await?;
         self.source_metadata = Some(importer.deserialize_metadata(scratch_buf).map_err(
             |e| match e {
                 atelier_importer::Error::RonDeError(e) => Error::MetaDeError(meta, e),
@@ -348,8 +349,10 @@ impl<'a> SourcePairImport<'a> {
         let source = &self.source;
         let imported = ctx
             .scope(async move {
-                let mut f = fs::File::open(source)?;
-                importer.import_boxed(&mut f, metadata.importer_options, metadata.importer_state)
+                let mut f = File::open(source).await?;
+                importer
+                    .import_boxed(&mut f, metadata.importer_options, metadata.importer_state)
+                    .await
             })
             .await?;
         let options = imported.options;
@@ -563,7 +566,7 @@ pub(crate) async fn process_pair<'a, C: SourceMetadataCache>(
             if !import.set_importer_from_map(&importer_map) {
                 Ok(None)
             } else {
-                import.read_metadata_from_file(scratch_buf)?;
+                import.read_metadata_from_file(scratch_buf).await?;
                 if import.needs_source_import(scratch_buf)? {
                     debug!("needs source import {:?}", import.source);
                     let imported_assets = import.import_source(scratch_buf).await?;

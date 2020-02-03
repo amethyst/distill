@@ -1,8 +1,9 @@
-use crate::{ImportedAsset, Importer, ImporterValue, SerdeImportable, SourceFileImporter};
+use crate::{ImportedAsset, Importer, ImporterValue, Result, SerdeImportable, SourceFileImporter};
 use atelier_core::AssetUuid;
-use ron::de::from_reader;
+use futures::future::BoxFuture;
+use ron::de::from_bytes;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use type_uuid::TypeUuid;
 
 #[derive(Default, Deserialize, Serialize, TypeUuid, Clone, Copy)]
@@ -33,27 +34,30 @@ impl Importer for RonImporter {
         Self::version_static()
     }
 
-    fn import(
-        &self,
-        source: &mut dyn Read,
+    fn import<'a>(
+        &'a self,
+        source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         _: Self::Options,
-        state: &mut Self::State,
-    ) -> crate::Result<ImporterValue> {
-        if state.id.is_none() {
-            state.id = Some(AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
-        }
+        state: &'a mut Self::State,
+    ) -> BoxFuture<'a, Result<ImporterValue>> {
+        Box::pin(async move {
+            if state.id.is_none() {
+                state.id = Some(AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+            }
+            let mut bytes = Vec::new();
+            source.read_to_end(&mut bytes).await?;
+            let de: Box<dyn SerdeImportable> = from_bytes(&bytes)?;
 
-        let de: Box<dyn SerdeImportable> = from_reader(source)?;
-
-        Ok(ImporterValue {
-            assets: vec![ImportedAsset {
-                id: state.id.expect("AssetUuid not generated"),
-                search_tags: Vec::new(),
-                build_deps: Vec::new(),
-                load_deps: Vec::new(),
-                asset_data: de.into_serde_obj(),
-                build_pipeline: None,
-            }],
+            Ok(ImporterValue {
+                assets: vec![ImportedAsset {
+                    id: state.id.expect("AssetUuid not generated"),
+                    search_tags: Vec::new(),
+                    build_deps: Vec::new(),
+                    load_deps: Vec::new(),
+                    asset_data: de.into_serde_obj(),
+                    build_pipeline: None,
+                }],
+            })
         })
     }
 }
