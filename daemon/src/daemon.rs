@@ -189,6 +189,7 @@ impl AssetDaemon {
                 e = tracker_handle => e.expect("FileTracker panicked"),
                 e = asset_source_handle => e.expect("AssetSource panicked"),
                 e = service_handle => e.expect("ServiceHandle panicked"),
+                complete => break,
             }
         }
     }
