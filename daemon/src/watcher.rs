@@ -102,11 +102,11 @@ impl DirWatcher {
         let canonical_dir = canonicalize_path(dir);
         self.asset_tx
             .unbounded_send(FileEvent::ScanStart(canonical_dir.clone()))
-            .unwrap();
+            .map_err(|_| Error::SendError)?;
         let result = self.scan_directory_recurse(&canonical_dir, evt_create);
         self.asset_tx
             .unbounded_send(FileEvent::ScanEnd(canonical_dir, self.dirs.clone()))
-            .unwrap();
+            .map_err(|_| Error::SendError)?;
         result
     }
     fn scan_directory_recurse<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<()>
@@ -123,8 +123,10 @@ impl DirWatcher {
                         Err(e) => return Err(Error::IO(e)),
                         Ok(entry) => {
                             let evt = self.handle_notify_event(evt_create(entry.path()), true)?;
-                            if evt.is_some() {
-                                self.asset_tx.unbounded_send(evt.unwrap()).unwrap();
+                            if let Some(evt) = evt {
+                                self.asset_tx
+                                    .unbounded_send(evt)
+                                    .map_err(|_| Error::SendError)?;
                             }
                             let metadata;
                             match entry.metadata() {
@@ -302,8 +304,8 @@ impl DirWatcher {
     }
 }
 
-impl StopHandle {
-    pub fn stop(&self) {
+impl Drop for StopHandle {
+    fn drop(&mut self) {
         let _ = self.tx.send(DebouncedEvent::Error(
             notify::Error::Generic("EXIT".to_string()),
             Option::None,

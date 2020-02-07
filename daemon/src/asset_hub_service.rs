@@ -51,8 +51,8 @@ struct SnapshotTxn {
 }
 
 impl SnapshotTxn {
-    fn new(ctx: Arc<ServiceContext>) -> Self {
-        let txn = ctx.db.ro_txn().unwrap();
+    async fn new(ctx: Arc<ServiceContext>) -> Self {
+        let txn = ctx.db.ro_txn().await.unwrap();
         // The transaction can live at least as long as ServiceContext, which this object holds onto.
         // It is only ever borrowed for a lifetime bound to the self reference.
         let txn = unsafe { std::mem::transmute::<RoTransaction<'_>, RoTransaction<'static>>(txn) };
@@ -93,9 +93,9 @@ fn build_artifact_message<T: AsRef<[u8]>>(
 }
 
 impl AssetHubSnapshotImpl {
-    fn new(ctx: Arc<ServiceContext>) -> Self {
+    async fn new(ctx: Arc<ServiceContext>) -> Self {
         Self {
-            txn: Arc::new(SnapshotTxn::new(ctx)),
+            txn: Arc::new(SnapshotTxn::new(ctx).await),
         }
     }
 
@@ -372,7 +372,8 @@ impl asset_hub::Server for AssetHubImpl {
         params: asset_hub::GetSnapshotParams,
         results: asset_hub::GetSnapshotResults,
     ) -> Promise<()> {
-        Promise::ok(pry!(AssetHubImpl::get_snapshot(self, params, results)))
+        let fut = AssetHubImpl::get_snapshot(self.ctx.clone(), params, results);
+        Promise::from_future(async { fut.await.map_err(|e| e.into()) })
     }
 }
 impl AssetHubImpl {
@@ -392,7 +393,7 @@ impl AssetHubImpl {
         tokio::task::spawn_local(async move {
             while let Some(_) = rx.recv().await {
                 let mut request = listener.update_request();
-                let snapshot = AssetHubSnapshotImpl::new(ctx.clone());
+                let snapshot = AssetHubSnapshotImpl::new(ctx.clone()).await;
                 let latest_change = ctx
                     .hub
                     .get_latest_asset_change(snapshot.txn.txn())
@@ -411,12 +412,12 @@ impl AssetHubImpl {
         Ok(())
     }
 
-    fn get_snapshot(
-        &mut self,
+    async fn get_snapshot(
+        ctx: Arc<ServiceContext>,
         _params: asset_hub::GetSnapshotParams,
         mut results: asset_hub::GetSnapshotResults,
     ) -> Result<()> {
-        let snapshot = AssetHubSnapshotImpl::new(self.ctx.clone());
+        let snapshot = AssetHubSnapshotImpl::new(ctx).await;
         results.get().set_snapshot(
             asset_hub::snapshot::ToClient::new(snapshot).into_client::<::capnp_rpc::Server>(),
         );

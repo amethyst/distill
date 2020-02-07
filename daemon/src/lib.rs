@@ -20,9 +20,9 @@ pub use crate::{
     error::{Error, Result},
 };
 
-#[cfg(debug)]
+#[cfg(debug_assertions)]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
-#[cfg(not(debug))]
+#[cfg(not(debug_assertions))]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Info;
 
 pub fn init_logging() -> Result<()> {

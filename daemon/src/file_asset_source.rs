@@ -12,20 +12,16 @@ use atelier_core::{utils, AssetRef, AssetUuid, CompressionType};
 use atelier_importer::{ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext};
 use atelier_schema::data::{self, path_refs, source_metadata};
 use bincode;
-use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver},
-    prelude::*,
-};
+use futures::{channel::mpsc::unbounded, prelude::*};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::{cell::Cell, path::PathBuf, str, sync::Arc, time::Instant};
+use std::{path::PathBuf, str, sync::Arc, time::Instant};
 use tokio::{runtime::Runtime, sync::Mutex};
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
     tracker: Arc<FileTracker>,
-    rx: Mutex<Cell<UnboundedReceiver<FileTrackerEvent>>>,
     db: Arc<Environment>,
     artifact_cache: Arc<ArtifactCache>,
     tables: FileAssetSourceTables,
@@ -114,14 +110,11 @@ impl FileAssetSource {
         importer_contexts: Arc<Vec<Box<dyn ImporterContext>>>,
         work_runtime: Arc<Runtime>,
     ) -> Result<FileAssetSource> {
-        let (tx, rx) = unbounded();
-        tracker.register_listener(tx);
         Ok(FileAssetSource {
             tracker: tracker.clone(),
             hub: hub.clone(),
             db: db.clone(),
             artifact_cache: artifact_cache.clone(),
-            rx: Mutex::new(Cell::new(rx)),
             tables: FileAssetSourceTables {
                 path_to_metadata: db
                     .create_db(Some("path_to_metadata"), lmdb::DatabaseFlags::default())?,
@@ -782,6 +775,8 @@ impl FileAssetSource {
                             .filter(|x| x.is_uuid())
                             .cloned()
                             .collect();
+                        a.load_deps.sort_unstable();
+                        a.build_deps.sort_unstable();
                         a.hash = utils::calc_import_artifact_hash(
                             &asset,
                             import_hash,
@@ -854,6 +849,8 @@ impl FileAssetSource {
                                         .filter(|x| x.is_uuid())
                                         .cloned()
                                         .collect();
+                                    artifact.load_deps.sort_unstable();
+                                    artifact.build_deps.sort_unstable();
                                     artifact.hash = utils::calc_import_artifact_hash(
                                         &asset.metadata.id,
                                         import_hash,
@@ -960,7 +957,7 @@ impl FileAssetSource {
 
     async fn check_for_importer_changes(&self) -> bool {
         let changed_paths: Vec<PathBuf> = {
-            let txn = self.db.ro_txn().expect("db: Failed to open ro txn");
+            let txn = self.db.ro_txn().await.expect("db: Failed to open ro txn");
 
             self.tracker
                 .read_all_files(&txn)
@@ -1014,11 +1011,12 @@ impl FileAssetSource {
         let has_changed_paths = !changed_paths.is_empty();
         if has_changed_paths {
             let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
-            changed_paths.iter().for_each(|p| {
+            for p in changed_paths.iter() {
                 self.tracker
                     .add_dirty_file(&mut txn, &p)
+                    .await
                     .unwrap_or_else(|err| error!("Failed to add dirty file, {}", err));
-            });
+            }
             txn.commit().expect("Failed to commit txn");
         }
 
@@ -1090,7 +1088,11 @@ impl FileAssetSource {
             for p in hashed_files {
                 let processed_pair = p.clone();
                 import_scope.spawn(async move {
-                    let read_txn = self.db.ro_txn().expect("failed to open RO transaction");
+                    let read_txn = self
+                        .db
+                        .ro_txn()
+                        .await
+                        .expect("failed to open RO transaction");
                     let cache = DBSourceMetadataCache {
                         txn: &read_txn,
                         file_asset_source: &self,
@@ -1194,23 +1196,17 @@ impl FileAssetSource {
         let start_time = Instant::now();
         let mut changed_files = Vec::new();
 
-        // Transactions on the same thread cannot be active at the same time!
-        // This scope is important, even if it may look like it does nothing..
-        {
-            let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
+        let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
 
-            // Before reading the filesystem state we need to process rename events.
-            // This must be done in the same transaction to guarantee database consistency.
-            self.handle_rename_events(&mut txn);
-            let source_meta_pairs = self.handle_dirty_files(&mut txn);
+        // Before reading the filesystem state we need to process rename events.
+        // This must be done in the same transaction to guarantee database consistency.
+        self.handle_rename_events(&mut txn);
+        let source_meta_pairs = self.handle_dirty_files(&mut txn);
 
-            // This looks a little stupid, since there is no `into_values`
-            changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
+        // This looks a little stupid, since there is no `into_values`
+        changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
 
-            if txn.dirty {
-                txn.commit().expect("Failed to commit txn");
-            }
-        }
+        txn.commit().expect("Failed to commit txn");
 
         let hashed_files = hash_files(&changed_files);
         debug!("Hashed {}", hashed_files.len());
@@ -1236,12 +1232,9 @@ impl FileAssetSource {
         let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
         let asset_metadata_changed = self.process_asset_metadata(&mut txn, &hashed_files).await;
 
-        if txn.dirty {
-            txn.commit().expect("Failed to commit txn");
-
-            if asset_metadata_changed {
-                self.hub.notify_listeners();
-            }
+        txn.commit().expect("Failed to commit txn");
+        if asset_metadata_changed {
+            self.hub.notify_listeners();
         }
 
         let elapsed = Instant::now().duration_since(start_time);
@@ -1253,15 +1246,17 @@ impl FileAssetSource {
     }
 
     pub async fn run(&self) {
-        // let mut thread_pool = Pool::new(num_cpus::get() as u32);
         let mut started = false;
         let mut update = false;
 
-        while let Some(evt) = self.rx.lock().await.get_mut().next().await {
+        let (tx, mut rx) = unbounded();
+        self.tracker.register_listener(tx);
+
+        while let Some(evt) = rx.next().await {
             match evt {
                 FileTrackerEvent::Start => {
                     started = true;
-                    if self.check_for_importer_changes().await || update {
+                    if update || self.check_for_importer_changes().await {
                         self.handle_update().await;
                     }
                 }

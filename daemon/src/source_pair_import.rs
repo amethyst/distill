@@ -11,7 +11,7 @@ use atelier_importer::{
 use atelier_schema::data;
 use bincode;
 use futures::{future::BoxFuture, prelude::*};
-use log::{debug, error, info};
+use log::{debug, error};
 use ron;
 use std::{
     collections::HashSet,
@@ -461,7 +461,7 @@ impl<'a> SourcePairImport<'a> {
                 scratch_buf.len(),
             );
         }
-        info!(
+        debug!(
             "Imported pair in {}",
             Instant::now().duration_since(start_time).as_secs_f32()
         );
