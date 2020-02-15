@@ -4,12 +4,13 @@ use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, Rw
 use crate::daemon::ImporterMap;
 use crate::error::{Error, Result};
 use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
-use crate::serialized_asset::SerializedAsset;
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
 use atelier_core::{utils, AssetRef, AssetUuid, CompressionType};
-use atelier_importer::{ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext};
+use atelier_importer::{
+    ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
+};
 use atelier_schema::data::{self, path_refs, source_metadata};
 use bincode;
 use futures::{
@@ -1096,7 +1097,7 @@ impl FileAssetSource {
                         file_asset_source: &self,
                         _marker: std::marker::PhantomData,
                     };
-                    let result = source_pair_import::process_pair(
+                    let result = source_pair_import::import_pair(
                         &cache,
                         &self.importers,
                         &self.importer_contexts,
@@ -1273,6 +1274,77 @@ impl FileAssetSource {
                 }
             }
         }
+    }
+
+    pub async fn export_source(
+        &self,
+        path: PathBuf,
+        assets: Vec<SerializedAssetVec>,
+    ) -> Result<Vec<AssetMetadata>> {
+        let mut txn = self
+            .db
+            .rw_txn()
+            .await
+            .expect("failed to open RW transaction");
+        let cache = DBSourceMetadataCache {
+            txn: &txn,
+            file_asset_source: &self,
+            _marker: std::marker::PhantomData,
+        };
+        let meta_path = utils::to_meta_path(&path);
+        let result = source_pair_import::export_pair(
+            assets,
+            &cache,
+            &self.importers,
+            &self.importer_contexts,
+            path.clone(),
+            meta_path,
+            &mut Vec::new(),
+        )
+        .await?;
+        let new_asset_metadata: Vec<AssetImportResultMetadata> = result
+            .1
+            .assets
+            .into_iter()
+            .map(|a| AssetImportResultMetadata {
+                metadata: a.metadata,
+                unresolved_load_refs: a.unresolved_load_refs,
+                unresolved_build_refs: a.unresolved_build_refs,
+            })
+            .collect();
+        let asset_ids: Vec<AssetUuid> = new_asset_metadata.iter().map(|a| a.metadata.id).collect();
+        let mut changes = HashMap::new();
+        changes.insert(
+            path,
+            Some(PairImportResultMetadata {
+                import_state: result.0,
+                assets: new_asset_metadata,
+            }),
+        );
+        let mut change_batch = asset_hub::ChangeBatch::new();
+        self.process_metadata_changes(&mut txn, &changes, &mut change_batch);
+        let asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch)?;
+        let new_asset_metadata: Vec<AssetMetadata> = asset_ids
+            .into_iter()
+            .map(|a| {
+                asset_hub::parse_db_metadata(
+                    &self
+                        .hub
+                        .get_metadata(&txn, &a)
+                        .expect("Expected asset metadata in DB after metadata update")
+                        .get()
+                        .expect("capnp: metadata read failed"),
+                )
+            })
+            .collect();
+        if txn.dirty {
+            txn.commit().expect("Failed to commit txn");
+
+            if asset_metadata_changed {
+                self.hub.notify_listeners();
+            }
+        }
+        Ok(new_asset_metadata)
     }
 }
 

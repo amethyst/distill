@@ -9,6 +9,10 @@ struct PathAssets {
     path @0 :Data;
     assets @1 :List(D.AssetUuid);
 }
+struct AssetData {
+    data @0 :Data;
+    typeId @1 :Data;
+}
 interface AssetHub {
     registerListener @0 (listener :Listener) -> ();
     getSnapshot @1 () -> (snapshot :Snapshot);
@@ -19,9 +23,15 @@ interface AssetHub {
         getAllAssetMetadata @2 () -> (assets :List(D.AssetMetadata));
         getLatestAssetChange @3 () -> (num :UInt64);
         getAssetChanges @4 (start :UInt64, count :UInt64) -> (changes :List(D.AssetChangeLogEntry));
-        getPathForAssets @5 (assets :List(D.AssetUuid)) -> (paths :List(AssetPath));
-        getAssetsForPaths @6 (paths :List(Data)) -> (assets :List(PathAssets));
-        getImportArtifacts @7 (assets :List(D.AssetUuid)) -> (artifacts :List(D.Artifact));
+        getImportArtifacts @5 (assets :List(D.AssetUuid)) -> (artifacts :List(D.Artifact));
+        updateAsset @6 (asset :D.Artifact) -> (newImportHash :Data);
+        patchAsset @7 (assetId :D.AssetUuid, assetHash :Data, patch :AssetData) -> (newImportHash :Data);
+
+        # these are FileAssetSource specific and should probably be moved to another RPC interface
+        getPathForAssets @8 (assets :List(D.AssetUuid)) -> (paths :List(AssetPath));
+        getAssetsForPaths @9 (paths :List(Data)) -> (assets :List(PathAssets));
+        createFile @10 (path :Data, assets :List(AssetData)) -> (newImportHash :Data);
+        deleteFile @11 (path :Data) -> ();
     }
 
     interface Listener {

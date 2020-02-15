@@ -1,9 +1,9 @@
-use crate::{error::Result, Importer, ImporterValue, SerdeObj};
+use crate::{error::Result, ExportAsset, Importer, ImporterValue, SerdeObj};
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use futures::future::BoxFuture;
 use ron;
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncWrite};
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Serializable metadata for an asset.
@@ -75,6 +75,13 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync {
         options: Box<dyn SerdeObj>,
         state: Box<dyn SerdeObj>,
     ) -> BoxFuture<'a, Result<BoxedImporterValue>>;
+    fn export_boxed<'a>(
+        &'a self,
+        output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
+        options: Box<dyn SerdeObj>,
+        state: Box<dyn SerdeObj>,
+        assets: Vec<ExportAsset>,
+    ) -> BoxFuture<'a, Result<BoxedExportInputs>>;
     fn default_options(&self) -> Box<dyn SerdeObj>;
     fn default_state(&self) -> Box<dyn SerdeObj>;
     fn version(&self) -> u32;
@@ -98,6 +105,13 @@ pub struct BoxedImporterValue {
     pub value: ImporterValue,
     pub options: Box<dyn SerdeObj>,
     pub state: Box<dyn SerdeObj>,
+}
+
+/// Return value for BoxedImporter::export_boxed
+pub struct BoxedExportInputs {
+    pub options: Box<dyn SerdeObj>,
+    pub state: Box<dyn SerdeObj>,
+    pub value: ImporterValue,
 }
 
 impl<S, O, T> BoxedImporter for T
@@ -131,6 +145,35 @@ where
                 value: result,
                 options: Box::new(o),
                 state: s,
+            })
+        })
+    }
+    fn export_boxed<'a>(
+        &'a self,
+        output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
+        options: Box<dyn SerdeObj>,
+        state: Box<dyn SerdeObj>,
+        assets: Vec<ExportAsset>,
+    ) -> BoxFuture<'a, Result<BoxedExportInputs>> {
+        Box::pin(async move {
+            let s = state.downcast::<S>();
+            let mut s = if let Ok(s) = s {
+                s
+            } else {
+                panic!("Failed to downcast Importer::State");
+            };
+            let o = options.downcast::<O>();
+            let o = if let Ok(o) = o {
+                *o
+            } else {
+                panic!("Failed to downcast Importer::Options");
+            };
+
+            let result = self.export(output, o.clone(), &mut s, assets).await?;
+            Ok(BoxedExportInputs {
+                options: Box::new(o),
+                state: s,
+                value: result,
             })
         })
     }

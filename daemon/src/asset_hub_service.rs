@@ -5,9 +5,9 @@ use crate::{
     error::Error,
     file_asset_source::FileAssetSource,
     file_tracker::FileTracker,
-    serialized_asset::SerializedAsset,
 };
 use atelier_core::utils;
+use atelier_importer::SerializedAsset;
 use atelier_schema::{
     data::{
         artifact, asset_change_log_entry,
@@ -90,6 +90,16 @@ fn build_artifact_message<T: AsRef<[u8]>>(
         m.reborrow().set_data(slice);
     }
     value_builder
+}
+
+fn artifact_to_serialized_asset<'a>(
+    artifact: &artifact::Reader<'a>,
+) -> Result<SerializedAsset<&'a [u8]>> {
+    let metadata = crate::asset_hub::parse_artifact_metadata(&artifact.get_metadata()?);
+    Ok(SerializedAsset {
+        metadata,
+        data: artifact.get_data()?,
+    })
 }
 
 impl AssetHubSnapshotImpl {
@@ -212,7 +222,6 @@ impl AssetHubSnapshotImpl {
                 let metadata = metadata.get()?;
                 match metadata.get_source()? {
                     AssetSource::File => {
-                        // TODO run build pipeline
                         let (_, artifact) = ctx
                             .file_source
                             .regenerate_import_artifact(txn, &id, &mut scratch_buf)
@@ -356,6 +365,78 @@ impl AssetHubSnapshotImpl {
             results.reborrow().get(idx as u32).set_path(path);
         }
         Ok(())
+    }
+
+    async fn update_asset(
+        snapshot: Arc<SnapshotTxn>,
+        params: asset_hub::snapshot::UpdateAssetParams,
+        mut results: asset_hub::snapshot::UpdateAssetResults,
+    ) -> Result<()> {
+        let params = params.get()?;
+        let txn = &snapshot.txn;
+        let ctx = &snapshot.ctx;
+        // TODO move the below parts into FileAssetSource
+        let new_artifact = artifact_to_serialized_asset(&params.get_asset()?)?.to_vec();
+        let asset_uuid = new_artifact.metadata.id;
+        let asset_metadata = ctx.hub.get_metadata(txn, &asset_uuid);
+        let mut scratch_buf = Vec::new();
+        if let Some(asset_metadata) = asset_metadata {
+            match asset_metadata.get()?.get_source()? {
+                AssetSource::File => {
+                    let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
+                    if let Some(path) = path {
+                        let source_metadata = ctx
+                            .file_source
+                            .get_metadata(txn, &path)
+                            .expect("inconsistent source metadata");
+                        let source_metadata = source_metadata.get()?;
+                        let mut assets = vec![new_artifact];
+                        for asset in source_metadata.get_assets()? {
+                            let source_asset_id = utils::uuid_from_slice(asset.get_id()?.get_id()?)
+                                .ok_or(Error::UuidLength)?;
+                            if source_asset_id != asset_uuid {
+                                // TODO maybe extract into a function, and use the cache in the future
+                                let (_, artifact) = ctx
+                                    .file_source
+                                    .regenerate_import_artifact(
+                                        txn,
+                                        &source_asset_id,
+                                        &mut scratch_buf,
+                                    )
+                                    .await?;
+                                assets.push(artifact);
+                            }
+                        }
+                        let export_results = ctx.file_source.export_source(path, assets).await?;
+                        let updated_asset_metadata =
+                            export_results.iter().find(|a| a.id == asset_uuid);
+                        if let Some(metadata) = updated_asset_metadata {
+                            if let Some(artifact) = &metadata.artifact {
+                                let mut results_builder = results.get();
+                                results_builder.set_new_import_hash(&artifact.hash.to_le_bytes());
+                                Ok(())
+                            } else {
+                                return Err(Error::Custom(
+                                    "Metadata for the updated asset does not contain artifact metadata after exporting"
+                                        .into(),
+                                ));
+                            }
+                        } else {
+                            return Err(Error::Custom(
+                                "Metadata for the updated asset doesn't exist after exporting"
+                                    .into(),
+                            ));
+                        }
+                    } else {
+                        return Err(Error::Custom("Source file does not exist for asset".into()));
+                    }
+                }
+            }
+        } else {
+            return Err(Error::Custom(
+                "Unable to find asset metadata for asset".into(),
+            ));
+        }
     }
 }
 
@@ -558,5 +639,13 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         Promise::ok(pry!(AssetHubSnapshotImpl::get_assets_for_paths(
             self, params, results
         )))
+    }
+    fn update_asset(
+        &mut self,
+        params: asset_hub::snapshot::UpdateAssetParams,
+        results: asset_hub::snapshot::UpdateAssetResults,
+    ) -> Promise<()> {
+        let fut = AssetHubSnapshotImpl::update_asset(self.txn.clone(), params, results);
+        Promise::from_future(async { fut.await.map_err(|e| e.into()) })
     }
 }

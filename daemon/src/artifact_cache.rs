@@ -1,6 +1,6 @@
 use crate::capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::Result;
-use crate::serialized_asset::SerializedAsset;
+use atelier_importer::SerializedAsset;
 use atelier_schema::data::artifact;
 use std::sync::Arc;
 

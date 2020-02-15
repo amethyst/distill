@@ -11,7 +11,6 @@ mod error;
 mod file_asset_source;
 mod file_tracker;
 mod scope;
-mod serialized_asset;
 mod source_pair_import;
 mod watcher;
 

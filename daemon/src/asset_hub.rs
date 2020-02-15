@@ -101,6 +101,57 @@ pub(crate) fn parse_db_asset_ref(asset_ref: &asset_ref::Reader<'_>) -> AssetRef 
     }
 }
 
+pub fn parse_artifact_metadata(artifact: &artifact_metadata::Reader<'_>) -> ArtifactMetadata {
+    let asset_id = utils::make_array(
+        artifact
+            .get_asset_id()
+            .expect("capnp: failed to read asset_id")
+            .get_id()
+            .expect("capnp: failed to read asset_id"),
+    );
+    let compressed_size = artifact.get_compressed_size();
+    let compressed_size = if compressed_size == 0 {
+        None
+    } else {
+        Some(compressed_size)
+    };
+    let uncompressed_size = artifact.get_uncompressed_size();
+    let uncompressed_size = if uncompressed_size == 0 {
+        None
+    } else {
+        Some(uncompressed_size)
+    };
+    ArtifactMetadata {
+        id: asset_id,
+        hash: u64::from_le_bytes(utils::make_array(
+            artifact.get_hash().expect("capnp: failed to read hash"),
+        )),
+        load_deps: artifact
+            .get_load_deps()
+            .expect("capnp: failed to read load deps")
+            .iter()
+            .map(|dep| parse_db_asset_ref(&dep))
+            .collect(),
+        build_deps: artifact
+            .get_build_deps()
+            .expect("capnp: failed to read build deps")
+            .iter()
+            .map(|dep| parse_db_asset_ref(&dep))
+            .collect(),
+        type_id: utils::make_array(
+            artifact
+                .get_type_id()
+                .expect("capnp: failed to read asset type"),
+        ),
+        compression: artifact
+            .get_compression()
+            .expect("capnp: failed to read compression type")
+            .into(),
+        compressed_size: compressed_size,
+        uncompressed_size: uncompressed_size,
+    }
+}
+
 pub fn parse_db_metadata(metadata: &asset_metadata::Reader<'_>) -> AssetMetadata {
     let asset_id = utils::make_array(
         metadata
@@ -136,47 +187,7 @@ pub fn parse_db_metadata(metadata: &asset_metadata::Reader<'_>) -> AssetMetadata
         .which()
         .expect("capnp: failed to read latest_artifact")
     {
-        let compressed_size = artifact.get_compressed_size();
-        let compressed_size = if compressed_size == 0 {
-            None
-        } else {
-            Some(compressed_size)
-        };
-        let uncompressed_size = artifact.get_uncompressed_size();
-        let uncompressed_size = if uncompressed_size == 0 {
-            None
-        } else {
-            Some(uncompressed_size)
-        };
-        Some(ArtifactMetadata {
-            id: asset_id,
-            hash: u64::from_le_bytes(utils::make_array(
-                artifact.get_hash().expect("capnp: failed to read hash"),
-            )),
-            load_deps: artifact
-                .get_load_deps()
-                .expect("capnp: failed to read load deps")
-                .iter()
-                .map(|dep| parse_db_asset_ref(&dep))
-                .collect(),
-            build_deps: artifact
-                .get_build_deps()
-                .expect("capnp: failed to read build deps")
-                .iter()
-                .map(|dep| parse_db_asset_ref(&dep))
-                .collect(),
-            type_id: utils::make_array(
-                artifact
-                    .get_type_id()
-                    .expect("capnp: failed to read asset type"),
-            ),
-            compression: artifact
-                .get_compression()
-                .expect("capnp: failed to read compression type")
-                .into(),
-            compressed_size: compressed_size,
-            uncompressed_size: uncompressed_size,
-        })
+        Some(parse_artifact_metadata(&artifact))
     } else {
         None
     };
@@ -304,7 +315,7 @@ fn add_asset_changelog_entry(
                 let mut db_evt = value.init_content_update_event();
                 db_evt.reborrow().init_id().set_id(&evt.id.0);
                 if let Some(ref import_hash) = evt.import_hash {
-                    db_evt.reborrow().init_import_hash().set_hash(import_hash);
+                    db_evt.reborrow().set_import_hash(import_hash);
                 }
                 if let Some(ref build_dep_hash) = evt.build_dep_hash {
                     db_evt.reborrow().set_build_dep_hash(build_dep_hash);

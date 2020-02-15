@@ -8,6 +8,7 @@ pub enum Error {
     RonDeError(ron::de::Error),
     BincodeError(bincode::ErrorKind),
     Boxed(Box<dyn std::error::Error + Send>),
+    ExportUnsupported,
 }
 
 impl std::error::Error for Error {
@@ -17,6 +18,7 @@ impl std::error::Error for Error {
             Error::RonDeError(ref e) => e.description(),
             Error::BincodeError(ref e) => e.description(),
             Error::Boxed(ref e) => e.description(),
+            Error::ExportUnsupported => "Exporting not supported by this Importer",
         }
     }
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -25,6 +27,7 @@ impl std::error::Error for Error {
             Error::RonDeError(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
             Error::Boxed(ref e) => e.source(),
+            Error::ExportUnsupported => None,
         }
     }
 }
@@ -36,6 +39,9 @@ impl fmt::Display for Error {
             Error::RonDeError(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
             Error::Boxed(ref e) => e.fmt(f),
+            Error::ExportUnsupported => {
+                write!(f, "{}", <Self as std::error::Error>::description(self))
+            }
         }
     }
 }

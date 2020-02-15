@@ -1,6 +1,7 @@
 mod boxed_importer;
 mod error;
 mod serde_obj;
+mod serialized_asset;
 
 #[cfg(feature = "serde_importers")]
 mod ron_importer;
@@ -17,7 +18,7 @@ pub use type_uuid;
 use atelier_core::{AssetRef, AssetUuid};
 use futures::future::BoxFuture;
 use serde::Serialize;
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 pub use self::error::{Error, Result};
 #[cfg(feature = "serde_importers")]
@@ -28,6 +29,7 @@ pub use crate::{
         SourceMetadata, SOURCEMETADATA_VERSION,
     },
     serde_obj::{IntoSerdeObj, SerdeObj},
+    serialized_asset::SerializedAsset,
 };
 #[cfg(feature = "importer_context")]
 pub use atelier_core::importer_context::{
@@ -65,6 +67,17 @@ pub trait Importer: Send + 'static {
         options: Self::Options,
         state: &'a mut Self::State,
     ) -> BoxFuture<'a, Result<ImporterValue>>;
+
+    /// Writes a set of assets to a source file format that can be read by `import`.
+    fn export<'a>(
+        &'a self,
+        _output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
+        _options: Self::Options,
+        _state: &mut Self::State,
+        _assets: Vec<ExportAsset>,
+    ) -> BoxFuture<'a, Result<ImporterValue>> {
+        Box::pin(async move { Err(Error::ExportUnsupported) })
+    }
 }
 
 /// Contains metadata and asset data for an imported asset.
@@ -87,4 +100,10 @@ pub struct ImportedAsset {
 /// Return value for Importers containing all imported assets.
 pub struct ImporterValue {
     pub assets: Vec<ImportedAsset>,
+}
+
+/// Input to Importer::export
+pub struct ExportAsset {
+    /// Asset to be exported
+    pub asset: SerializedAsset<Vec<u8>>,
 }

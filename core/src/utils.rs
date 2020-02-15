@@ -1,4 +1,4 @@
-use crate::AssetUuid;
+use crate::{AssetTypeId, AssetUuid};
 use std::{
     ffi::OsStr,
     hash::{Hash, Hasher},
@@ -13,6 +13,10 @@ where
     let mut a = Default::default();
     <A as AsMut<[T]>>::as_mut(&mut a).copy_from_slice(slice);
     a
+}
+
+pub fn type_from_slice(slice: &[u8]) -> Option<AssetTypeId> {
+    uuid_from_slice(slice).map(|uuid| AssetTypeId(uuid.0))
 }
 
 pub fn uuid_from_slice(slice: &[u8]) -> Option<AssetUuid> {
