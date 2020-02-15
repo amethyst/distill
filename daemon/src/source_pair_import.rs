@@ -773,7 +773,7 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
     match pair {
         // Source file path is a directory
         HashedSourcePair {
-            source: Some(source),
+            source: Some(_),
             source_hash: None,
             ..
         } => {
