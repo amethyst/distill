@@ -14,11 +14,14 @@ pub use crate::serde_obj::typetag;
 pub use bincode;
 pub use serde;
 pub use type_uuid;
+pub use futures;
+pub use tokio;
 
 use atelier_core::{AssetRef, AssetUuid};
 use futures::future::BoxFuture;
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite};
+use std::io::{Read, Write};
 
 pub use self::error::{Error, Result};
 #[cfg(feature = "serde_importers")]
@@ -61,6 +64,49 @@ pub trait Importer: Send + 'static {
     type State: Serialize + Send + 'static;
 
     /// Reads the given bytes and produces assets.
+    fn import(
+        &self,
+        source: &mut dyn Read,
+        options: Self::Options,
+        state: &mut Self::State,
+    ) -> Result<ImporterValue>;
+
+    /// Writes a set of assets to a source file format that can be read by `import`.
+    fn export(
+        &self,
+        _output: &mut dyn Write,
+        _options: Self::Options,
+        _state: &mut Self::State,
+        _assets: Vec<ExportAsset>,
+    ) -> Result<ImporterValue> {
+        Err(Error::ExportUnsupported)
+    }
+}
+
+/// Importers parse file formats and produce assets.
+pub trait AsyncImporter: Send + 'static {
+    /// Returns the version of the importer.
+    /// This version should change any time the importer behaviour changes to
+    /// trigger reimport of assets.
+    fn version_static() -> u32
+    where
+        Self: Sized;
+    /// Returns the version of the importer.
+    /// This version should change any time the importer behaviour changes to
+    /// trigger reimport of assets.
+    fn version(&self) -> u32;
+
+    /// Options can store settings that change importer behaviour.
+    /// Will be automatically stored in .meta files and passed to [Importer::import].
+    type Options: Send + 'static;
+
+    /// State is maintained by the asset pipeline to enable Importers to
+    /// store state between calls to import().
+    /// This is primarily used to ensure IDs are stable between imports
+    /// by storing generated AssetUuids with mappings to format-internal identifiers.
+    type State: Serialize + Send + 'static;
+
+    /// Reads the given bytes and produces assets.
     fn import<'a>(
         &'a self,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
@@ -73,10 +119,65 @@ pub trait Importer: Send + 'static {
         &'a self,
         _output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
         _options: Self::Options,
-        _state: &mut Self::State,
+        _state: &'a mut Self::State,
         _assets: Vec<ExportAsset>,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
         Box::pin(async move { Err(Error::ExportUnsupported) })
+    }
+}
+
+impl<T: Importer + Sync> AsyncImporter for T {
+    fn version_static() -> u32
+    where
+        Self: Sized,
+    {
+        <T as Importer>::version_static()
+    }
+    fn version(&self) -> u32 {
+        <T as Importer>::version(self)
+    }
+
+    /// Options can store settings that change importer behaviour.
+    /// Will be automatically stored in .meta files and passed to [Importer::import].
+    type Options = <T as Importer>::Options;
+
+    /// State is maintained by the asset pipeline to enable Importers to
+    /// store state between calls to import().
+    /// This is primarily used to ensure IDs are stable between imports
+    /// by storing generated AssetUuids with mappings to format-internal identifiers.
+    type State = <T as Importer>::State;
+
+    /// Reads the given bytes and produces assets.
+    fn import<'a>(
+        &'a self,
+        source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
+        options: Self::Options,
+        state: &'a mut Self::State,
+    ) -> BoxFuture<'a, Result<ImporterValue>> {
+        Box::pin(async move {
+            use tokio::io::AsyncReadExt;
+            let mut bytes = Vec::new();
+            source.read_to_end(&mut bytes).await?;
+            let mut reader = bytes.as_slice();
+            <T as Importer>::import(self, &mut reader, options, state)
+        })
+    }
+
+    /// Writes a set of assets to a source file format that can be read by `import`.
+    fn export<'a>(
+        &'a self,
+        output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
+        options: Self::Options,
+        state: &'a mut Self::State,
+        assets: Vec<ExportAsset>,
+    ) -> BoxFuture<'a, Result<ImporterValue>> {
+        Box::pin(async move {
+            use tokio::io::AsyncWriteExt;
+            let mut write_buf = Vec::new();
+            let result = <T as Importer>::export(self, &mut write_buf, options, state, assets)?;
+            output.write(&write_buf).await?;
+            Ok(result)
+        })
     }
 }
 
