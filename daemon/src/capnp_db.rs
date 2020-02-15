@@ -1,25 +1,27 @@
 #![allow(dead_code)]
 use crate::error::{Error, Result};
 use capnp;
-use futures::lock::{Mutex, MutexGuard};
 use lmdb::{self, Cursor, Transaction};
 use std::path::Path;
 use std::result::Result as StdResult;
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
 pub struct Environment {
     env: lmdb::Environment,
-    write_mutex: Mutex<()>,
+    write_semaphore: Semaphore,
+    read_semaphore: Semaphore,
 }
 pub struct RoTransaction<'a> {
     txn: lmdb::RoTransaction<'a>,
+    permit: SemaphorePermit<'a>,
 }
 
 #[must_use]
 pub struct RwTransaction<'a> {
     txn: lmdb::RwTransaction<'a>,
-    guard: MutexGuard<'a, ()>,
+    permit: SemaphorePermit<'a>,
     pub dirty: bool,
 }
 
@@ -203,7 +205,7 @@ impl<'a> RwTransaction<'a> {
         match self.txn.del(db, key, Option::None) {
             Err(err) => match err {
                 lmdb::Error::NotFound => Ok(false),
-                _ => Err(Error::LMDB(err)),
+                _ => Err(Error::Lmdb(err)),
             },
             Ok(_) => Ok(true),
         }
@@ -225,11 +227,11 @@ impl<'a> RwTransaction<'a> {
         Ok(())
     }
 
-    pub fn commit(mut self) -> Result<()> {
-        unsafe {
-            std::mem::replace(&mut self.txn, std::mem::zeroed()).commit()?;
-            Ok(())
+    pub fn commit(self) -> Result<()> {
+        if self.dirty {
+            self.txn.commit()?;
         }
+        Ok(())
     }
 
     pub fn open_rw_cursor(&'a mut self, db: lmdb::Database) -> Result<lmdb::RwCursor<'a>> {
@@ -255,14 +257,18 @@ impl Environment {
         #[cfg(not(target_os = "macos"))]
         let flags = flags | lmdb::EnvironmentFlags::WRITE_MAP;
 
+        const MAX_READERS: u32 = 126;
+
         let env = lmdb::Environment::new()
             .set_max_dbs(64)
+            .set_max_readers(MAX_READERS)
             .set_map_size(map_size)
             .set_flags(flags)
             .open(path)?;
         Ok(Environment {
             env,
-            write_mutex: Mutex::new(()),
+            read_semaphore: Semaphore::new(MAX_READERS as _),
+            write_semaphore: Semaphore::new(1),
         })
     }
 
@@ -275,16 +281,16 @@ impl Environment {
     }
 
     pub async fn rw_txn(&self) -> Result<RwTransaction<'_>> {
-        let guard = self.write_mutex.lock().await;
-        let txn = self.env.begin_rw_txn()?;
         Ok(RwTransaction {
-            txn,
-            guard,
+            permit: self.write_semaphore.acquire().await,
+            txn: self.env.begin_rw_txn()?,
             dirty: false,
         })
     }
-    pub fn ro_txn(&self) -> Result<RoTransaction<'_>> {
+
+    pub async fn ro_txn(&self) -> Result<RoTransaction<'_>> {
         Ok(RoTransaction {
+            permit: self.read_semaphore.acquire().await,
             txn: self.env.begin_ro_txn()?,
         })
     }

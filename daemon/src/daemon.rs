@@ -198,7 +198,7 @@ impl AssetDaemon {
 async fn check_db_version(env: &Environment) -> Result<()> {
     use crate::capnp_db::DBTransaction;
     let tables = AssetDaemonTables::new(env).expect("failed to create AssetDaemon tables");
-    let txn = env.ro_txn()?;
+    let txn = env.ro_txn().await?;
     let info_key = "daemon_info".as_bytes();
     let daemon_info = txn.get::<data::daemon_info::Owned, &[u8]>(tables.daemon_info, &info_key)?;
     let mut clear_db = true;

@@ -8,7 +8,7 @@ use serde::{
 use std::str::FromStr;
 use uuid;
 
-use std::{cmp, fmt};
+use std::fmt;
 
 #[proc_macro_hack]
 pub use asset_uuid::asset_uuid;
@@ -22,7 +22,7 @@ pub mod utils;
 ///
 /// If using a human-readable format, serializes to a hyphenated UUID format and deserializes from
 /// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
-#[derive(PartialEq, Eq, Clone, Copy, Default, Hash)]
+#[derive(PartialEq, Eq, Clone, Copy, Default, Hash, Ord, PartialOrd)]
 pub struct AssetUuid(pub [u8; 16]);
 
 impl AsMut<[u8]> for AssetUuid {
@@ -34,12 +34,6 @@ impl AsMut<[u8]> for AssetUuid {
 impl AsRef<[u8]> for AssetUuid {
     fn as_ref(&self) -> &[u8] {
         &self.0
-    }
-}
-
-impl PartialOrd for AssetUuid {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -163,7 +157,7 @@ impl<'de> Deserialize<'de> for AssetTypeId {
 }
 
 /// A potentially unresolved reference to an asset
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssetRef {
     Uuid(AssetUuid),
