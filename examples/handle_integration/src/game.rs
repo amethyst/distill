@@ -33,7 +33,7 @@ pub fn run() {
     let mut loader = RpcLoader::default();
     let weak_handle = {
         // add_ref begins loading of the asset
-        let handle = loader.add_ref(asset_uuid!("6f91796a-6a14-4dd2-8b7b-cb5369417032"));
+        let handle = loader.add_ref(asset_uuid!("0977fd59-e52d-4910-85e0-d61ae8affa8c"));
         // From the returned LoadHandle, create a typed, internally refcounted Handle.
         // This requires a channel to send increase/decrease over to be able to implement
         // Clone and Drop. In a real implementation, you would probably create nicer wrappers for this.
