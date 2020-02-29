@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+atelier-core = { path = "../core" }
 capnp = "0.12"
 capnp-rpc = "0.12"
 tokio = "0.2"

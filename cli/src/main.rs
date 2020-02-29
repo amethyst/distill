@@ -7,10 +7,10 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use capnp::message::ReaderOptions;
 
 use async_trait::async_trait;
-use futures::AsyncReadExt;
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use tokio::runtime::Runtime;
 
+use atelier_core::utils;
 mod shell;
 use shell::{Autocomplete, Command, Shell};
 
@@ -65,7 +65,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:9999".to_socket_addrs()?.next().unwrap();
     let stream = tokio::net::TcpStream::connect(&addr).await?;
     stream.set_nodelay(true).unwrap();
-    let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+    // let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+    let (writer, reader) = utils::async_channel();
     let rpc_network = Box::new(twoparty::VatNetwork::new(
         reader,
         writer,
