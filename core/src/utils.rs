@@ -146,6 +146,12 @@ impl AsyncRead for AsyncReceiver {
     }
 }
 
+#[cfg(feature = "futures-tokio-compat-1")]
+pub fn async_channel() -> (AsyncSender, AsyncReceiver) {
+    futures_tokio_compat::Compat::new(stream).split()
+}
+
+#[cfg(not(feature = "futures-tokio-compat-1"))]
 pub fn async_channel() -> (AsyncSender, AsyncReceiver) {
     (AsyncSender::new(), AsyncReceiver::new())
 }

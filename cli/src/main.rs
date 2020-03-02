@@ -65,7 +65,6 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:9999".to_socket_addrs()?.next().unwrap();
     let stream = tokio::net::TcpStream::connect(&addr).await?;
     stream.set_nodelay(true).unwrap();
-    // let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
     let (writer, reader) = utils::async_channel();
     let rpc_network = Box::new(twoparty::VatNetwork::new(
         reader,
