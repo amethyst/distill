@@ -4,6 +4,7 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
+use atelier_core::utils;
 use futures::Future;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
@@ -33,7 +34,7 @@ pub fn main() {
             stream.set_send_buffer_size(1 << 24).unwrap();
             stream.set_recv_buffer_size(1 << 24).unwrap();
             use futures::AsyncReadExt;
-            let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+            let (writer, reader) = utils::async_channel();
             let rpc_network = Box::new(twoparty::VatNetwork::new(
                 reader,
                 writer,

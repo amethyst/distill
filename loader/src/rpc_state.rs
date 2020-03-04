@@ -198,8 +198,7 @@ impl RpcState {
                     .await
                     .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
                 stream.set_nodelay(true)?;
-                use futures::AsyncReadExt;
-                let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+                let (writer, reader) = utils::async_channel();
                 let rpc_network = Box::new(twoparty::VatNetwork::new(
                     reader,
                     writer,

@@ -18,8 +18,7 @@ use atelier_schema::{
 };
 use capnp;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
-
-use futures::{AsyncReadExt, TryFutureExt};
+use futures::TryFutureExt;
 use owning_ref::OwningHandle;
 use std::{
     collections::{HashMap, HashSet},
@@ -38,7 +37,7 @@ struct ServiceContext {
     hub: Arc<AssetHub>,
     file_source: Arc<FileAssetSource>,
     file_tracker: Arc<FileTracker>,
-    artifact_cache: Arc<ArtifactCache>,
+    _artifact_cache: Arc<ArtifactCache>,
     db: Arc<Environment>,
 }
 
@@ -406,13 +405,14 @@ impl AssetHubImpl {
     }
 }
 
-fn endpoint() -> String {
+fn _endpoint() -> String {
     if cfg!(windows) {
         r"\\.\pipe\atelier-assets".to_string()
     } else {
         r"/tmp/atelier-assets".to_string()
     }
 }
+
 fn spawn_rpc<
     R: std::marker::Unpin + futures::AsyncRead + Send + 'static,
     W: std::marker::Unpin + futures::AsyncWrite + Send + 'static,
@@ -454,7 +454,7 @@ impl AssetHubService {
                 db,
                 file_source,
                 file_tracker,
-                artifact_cache,
+                _artifact_cache: artifact_cache,
             }),
         }
     }
@@ -474,7 +474,7 @@ impl AssetHubService {
                     stream.set_nodelay(true).unwrap();
                     stream.set_send_buffer_size(1 << 22).unwrap();
                     stream.set_recv_buffer_size(1 << 22).unwrap();
-                    let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+                    let (writer, reader) = utils::async_channel();
                     spawn_rpc(reader, writer, self.ctx.clone());
                 }
             });
