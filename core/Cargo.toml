@@ -6,7 +6,7 @@ edition = "2018"
 [features]
 serde-1 = ["serde"]
 importer_context = ["inventory"]
-futures-tokio-compat-1 = ["futures-tokio-compat"]
+futures-tokio-compat-1 = ["futures-util", "futures-tokio-compat"]
 
 [dependencies]
 uuid = { version = "0.8", features = [ "v4" ] }
@@ -15,7 +15,9 @@ asset-uuid = { path = "./asset-uuid" }
 serde = { version = "1.0", optional = true, features = ["derive"] }
 inventory = { version = "0.1", optional = true }
 futures = "0.3"
+futures-util = { version = "0.3.4", optional = true }
 futures-tokio-compat = { git = "https://github.com/dwrensha/futures-tokio-compat", branch = "tokio-0.2", optional = true }
+tokio = { version = "0.2", features = ["tcp", "sync", "rt-core", "rt-util", "stream"] }
 
 [dev-dependencies]
 serde_json = "1.0"

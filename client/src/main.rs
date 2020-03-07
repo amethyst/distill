@@ -34,7 +34,7 @@ pub fn main() {
             stream.set_send_buffer_size(1 << 24).unwrap();
             stream.set_recv_buffer_size(1 << 24).unwrap();
             use futures::AsyncReadExt;
-            let (writer, reader) = utils::async_channel();
+            let (writer, reader) = utils::async_channel(stream);
             let rpc_network = Box::new(twoparty::VatNetwork::new(
                 reader,
                 writer,

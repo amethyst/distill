@@ -27,7 +27,6 @@ atelier-importer = { path = "../importer" }
 uuid = { version = "0.8", features = ["v4"] }
 serde = { version = "1.0", features = ["derive"] }
 
-
 [features]
 default = ["rpc_loader", "handle"]
 rpc_loader = ["atelier-schema", "tokio", "capnp", "capnp-rpc", "futures", "log", "dashmap"]

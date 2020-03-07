@@ -474,7 +474,7 @@ impl AssetHubService {
                     stream.set_nodelay(true).unwrap();
                     stream.set_send_buffer_size(1 << 22).unwrap();
                     stream.set_recv_buffer_size(1 << 22).unwrap();
-                    let (writer, reader) = utils::async_channel();
+                    let (writer, reader) = utils::async_channel(stream);
                     spawn_rpc(reader, writer, self.ctx.clone());
                 }
             });

@@ -198,7 +198,7 @@ impl RpcState {
                     .await
                     .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
                 stream.set_nodelay(true)?;
-                let (writer, reader) = utils::async_channel();
+                let (writer, reader) = utils::async_channel(stream);
                 let rpc_network = Box::new(twoparty::VatNetwork::new(
                     reader,
                     writer,

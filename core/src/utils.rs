@@ -5,14 +5,29 @@ use std::{
     path::PathBuf,
 };
 
-use core::pin::Pin;
-use core::task::Context;
-use core::task::Poll;
+use tokio::net::TcpStream;
 
+#[cfg(not(feature = "futures-tokio-compat-1"))]
+use core::{
+    pin::Pin,
+    task::{Context, Poll},
+};
+
+#[cfg(not(feature = "futures-tokio-compat-1"))]
 use futures::{AsyncRead, AsyncWrite};
 
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+#[cfg(not(feature = "futures-tokio-compat-1"))]
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
+
+#[cfg(feature = "futures-tokio-compat-1")]
+use futures_tokio_compat::Compat;
+#[cfg(feature = "futures-tokio-compat-1")]
+use futures_util::io::AsyncReadExt;
+#[cfg(feature = "futures-tokio-compat-1")]
+use futures_util::io::{ReadHalf, WriteHalf};
 
 pub fn make_array<A, T>(slice: &[T]) -> A
 where
@@ -58,10 +73,12 @@ where
     hasher.finish()
 }
 
+#[cfg(not(feature = "futures-tokio-compat-1"))]
 pub struct AsyncSender {
     pub buf: Arc<Mutex<VecDeque<u8>>>,
 }
 
+#[cfg(not(feature = "futures-tokio-compat-1"))]
 impl AsyncSender {
     fn new() -> Self {
         Self {
@@ -70,6 +87,7 @@ impl AsyncSender {
     }
 }
 
+#[cfg(not(feature = "futures-tokio-compat-1"))]
 impl AsyncWrite for AsyncSender {
     fn poll_write(
         self: std::pin::Pin<&mut Self>,
@@ -105,10 +123,12 @@ impl AsyncWrite for AsyncSender {
     }
 }
 
+#[cfg(not(feature = "futures-tokio-compat-1"))]
 pub struct AsyncReceiver {
     buf: Arc<Mutex<VecDeque<u8>>>,
 }
 
+#[cfg(not(feature = "futures-tokio-compat-1"))]
 impl AsyncReceiver {
     fn new() -> Self {
         Self {
@@ -117,6 +137,7 @@ impl AsyncReceiver {
     }
 }
 
+#[cfg(not(feature = "futures-tokio-compat-1"))]
 impl AsyncRead for AsyncReceiver {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -146,12 +167,14 @@ impl AsyncRead for AsyncReceiver {
     }
 }
 
-#[cfg(feature = "futures-tokio-compat-1")]
-pub fn async_channel() -> (AsyncSender, AsyncReceiver) {
-    futures_tokio_compat::Compat::new(stream).split()
+#[cfg(not(feature = "futures-tokio-compat-1"))]
+pub fn async_channel(_stream: TcpStream) -> (AsyncSender, AsyncReceiver) {
+    (AsyncSender::new(), AsyncReceiver::new())
 }
 
-#[cfg(not(feature = "futures-tokio-compat-1"))]
-pub fn async_channel() -> (AsyncSender, AsyncReceiver) {
-    (AsyncSender::new(), AsyncReceiver::new())
+#[cfg(feature = "futures-tokio-compat-1")]
+pub fn async_channel(
+    stream: TcpStream,
+) -> (ReadHalf<Compat<TcpStream>>, WriteHalf<Compat<TcpStream>>) {
+    futures_tokio_compat::Compat::new(stream).split()
 }

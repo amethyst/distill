@@ -32,4 +32,3 @@ atelier-core = { version = "0.1", path = "core" }
 atelier-daemon = { version = "0.1", path = "daemon" }
 atelier-importer = { version = "0.1", path = "importer" }
 atelier-loader = { version = "0.1", path = "loader" }
-
