@@ -67,9 +67,6 @@ The Loader module provides a `Loader` trait for loading assets and an `AssetStor
 <details><summary><b>Packing for distribution</b></summary><p>To distribute your game, you will want to pack assets into files with enough metadata to load them quickly. With the asset dependency graph known, it is possible implement custom asset packing schemes by applying knowledge about your game's usage pattern to optimize for sequential access.</p></details>
 
 # Examples
-Compilation dependencies:
-- [capnpc in PATH](https://capnproto.org/install.html)
-
 To run:
 - `cd examples/handle_integration`
 - `cargo run`

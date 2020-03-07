@@ -1,3 +1,4 @@
+#![recursion_limit = "1024"] // required for select!
 #![allow(unknown_lints)]
 #![warn(clippy::all, rust_2018_idioms, rust_2018_compatibility)]
 
@@ -9,7 +10,7 @@ mod daemon;
 mod error;
 mod file_asset_source;
 mod file_tracker;
-mod serialized_asset;
+mod scope;
 mod source_pair_import;
 mod watcher;
 
@@ -18,9 +19,9 @@ pub use crate::{
     error::{Error, Result},
 };
 
-#[cfg(debug)]
+#[cfg(debug_assertions)]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
-#[cfg(not(debug))]
+#[cfg(not(debug_assertions))]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Info;
 
 pub fn init_logging() -> Result<()> {

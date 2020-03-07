@@ -1,6 +1,5 @@
-use crate::error::Result;
+use crate::{error::Result, ArtifactMetadata, SerdeObj};
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
-use atelier_importer::{ArtifactMetadata, SerdeObj};
 use bincode;
 
 pub struct SerializedAsset<T: AsRef<[u8]>> {
@@ -51,5 +50,14 @@ impl SerializedAsset<Vec<u8>> {
             },
             data: asset_buf,
         })
+    }
+}
+
+impl<'a> SerializedAsset<&'a [u8]> {
+    pub fn to_vec(&self) -> SerializedAsset<Vec<u8>> {
+        SerializedAsset {
+            metadata: self.metadata.clone(),
+            data: self.data.to_vec(),
+        }
     }
 }

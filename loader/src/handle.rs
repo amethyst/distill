@@ -1,16 +1,19 @@
 use crate::{AssetRef, AssetUuid, LoadHandle, LoadStatus, Loader, LoaderInfoProvider};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use derivative::Derivative;
+use futures::{future::BoxFuture, prelude::*};
 use serde::{
     de::{self, Deserialize, Visitor},
     ser::{self, Serialize, Serializer},
 };
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     marker::PhantomData,
-    rc::Rc,
     sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, RwLock,
+    },
 };
 
 /// Operations on an asset reference.
@@ -225,68 +228,44 @@ impl AssetHandle for WeakHandle {
     }
 }
 
-thread_local! {
-    static LOADER: RefCell<Option<&'static dyn LoaderInfoProvider>> = RefCell::new(None);
-    static REFOP_SENDER: RefCell<Option<Arc<Sender<RefOp>>>> = RefCell::new(None);
+tokio::task_local! {
+    static LOADER: &'static dyn LoaderInfoProvider;
+    static REFOP_SENDER: Arc<Sender<RefOp>>;
 }
 
 /// Used to make some limited Loader interactions available to `serde` Serialize/Deserialize
 /// implementations by using thread-local storage. Required to support Serialize/Deserialize of Handle.
-pub struct SerdeContext<'a> {
-    loader: Option<&'static dyn LoaderInfoProvider>,
-    sender: Option<Arc<Sender<RefOp>>>,
-    _marker: PhantomData<&'a Self>,
-}
+pub struct SerdeContext;
+impl SerdeContext {
+    fn with_active<R>(f: impl FnOnce(&dyn LoaderInfoProvider, &Arc<Sender<RefOp>>) -> R) -> R {
+        LOADER.with(|l| REFOP_SENDER.with(|r| f(*l, &r)))
+    }
 
-impl<'a> SerdeContext<'a> {
-    fn with_active<R>(
-        f: impl FnOnce(Option<&&'static dyn LoaderInfoProvider>, Option<&Arc<Sender<RefOp>>>) -> R,
+    pub fn with_sync<R>(
+        loader: &dyn LoaderInfoProvider,
+        sender: Arc<Sender<RefOp>>,
+        f: impl FnOnce() -> R,
     ) -> R {
-        LOADER.with(|l| REFOP_SENDER.with(|r| f(l.borrow().as_ref(), r.borrow().as_ref())))
+        futures::executor::block_on(Self::with(loader, sender, async { f() }))
     }
-    pub fn with<F, R>(loader: &'a dyn LoaderInfoProvider, sender: Arc<Sender<RefOp>>, f: F) -> R
-    where
-        F: FnOnce() -> R,
-    {
-        let mut ctx = Self::enter(loader, sender);
-        let result = f();
-        ctx.exit();
-        result
-    }
-    fn enter(loader: &'a dyn LoaderInfoProvider, sender: Arc<Sender<RefOp>>) -> Self {
-        // The loader lifetime needs to be transmuted to 'static to be able to be stored in the static.
-        // This is safe since SerdeContext's lifetime cannot be longer than 'a due to its marker,
-        // and the reference in the static is removed in `Drop`.
-        let loader = unsafe {
-            LOADER.with(|l| {
-                l.replace(Some(std::mem::transmute::<
-                    &dyn LoaderInfoProvider,
-                    &'static dyn LoaderInfoProvider,
-                >(loader)))
-            })
-        };
-        let sender = REFOP_SENDER.with(|r| r.replace(Some(sender)));
-        Self {
-            loader,
-            sender,
-            _marker: PhantomData,
-        }
-    }
-    fn exit(&mut self) {
-        // restore the previous loader & sender
-        LOADER.with(|l| l.replace(self.loader.take()));
-        REFOP_SENDER.with(|r| r.replace(self.sender.take()));
-    }
-}
 
-impl<'a> Drop for SerdeContext<'a> {
-    fn drop(&mut self) {
-        if self.loader.is_some() {
-            LOADER.with(|l| l.replace(self.loader.take()));
-        }
-        if self.sender.is_some() {
-            REFOP_SENDER.with(|r| r.replace(self.sender.take()));
-        }
+    pub async fn with<F>(
+        loader: &dyn LoaderInfoProvider,
+        sender: Arc<Sender<RefOp>>,
+        f: F,
+    ) -> F::Output
+    where
+        F: Future,
+    {
+        // The loader lifetime needs to be transmuted to 'static to be able to be stored in task_local.
+        // This is safe since SerdeContext's lifetime cannot be shorter than the opened scope, and the loader
+        // must live at least as long.
+        let loader = unsafe {
+            std::mem::transmute::<&dyn LoaderInfoProvider, &'static dyn LoaderInfoProvider>(loader)
+        };
+
+        let out = LOADER.scope(loader, REFOP_SENDER.scope(sender, f)).await;
+        out
     }
 }
 
@@ -294,50 +273,67 @@ impl<'a> Drop for SerdeContext<'a> {
 /// even if the LoadHandles produced are invalid. This is useful when a loader is not
 /// present, such as when processing in the atelier-assets AssetDaemon.
 struct DummySerdeContext {
-    uuid_to_load: RefCell<HashMap<AssetRef, LoadHandle>>,
-    load_to_uuid: RefCell<HashMap<LoadHandle, AssetRef>>,
-    current_serde_dependencies: RefCell<HashSet<AssetRef>>,
-    current_serde_asset: RefCell<Option<AssetUuid>>,
+    maps: RwLock<DummySerdeContextMaps>,
+    current: Mutex<DummySerdeContextCurrent>,
     ref_sender: Arc<Sender<RefOp>>,
-    handle_gen: RefCell<u64>,
+    handle_gen: AtomicU64,
+}
+
+struct DummySerdeContextMaps {
+    uuid_to_load: HashMap<AssetRef, LoadHandle>,
+    load_to_uuid: HashMap<LoadHandle, AssetRef>,
+}
+
+struct DummySerdeContextCurrent {
+    current_serde_dependencies: HashSet<AssetRef>,
+    current_serde_asset: Option<AssetUuid>,
 }
 
 impl DummySerdeContext {
     pub fn new() -> Self {
         let (tx, _) = unbounded();
         Self {
-            uuid_to_load: RefCell::new(HashMap::default()),
-            load_to_uuid: RefCell::new(HashMap::default()),
-            current_serde_dependencies: RefCell::new(HashSet::new()),
-            current_serde_asset: RefCell::new(None),
+            maps: RwLock::new(DummySerdeContextMaps {
+                uuid_to_load: HashMap::default(),
+                load_to_uuid: HashMap::default(),
+            }),
+            current: Mutex::new(DummySerdeContextCurrent {
+                current_serde_dependencies: HashSet::new(),
+                current_serde_asset: None,
+            }),
             ref_sender: Arc::new(tx),
-            handle_gen: RefCell::new(1),
+            handle_gen: AtomicU64::new(1),
         }
     }
 }
 
 impl LoaderInfoProvider for DummySerdeContext {
     fn get_load_handle(&self, asset_ref: &AssetRef) -> Option<LoadHandle> {
-        let mut uuid_to_load = self.uuid_to_load.borrow_mut();
-        let mut load_to_uuid = self.load_to_uuid.borrow_mut();
-        Some(*uuid_to_load.entry(asset_ref.clone()).or_insert_with(|| {
-            let mut handle_gen = self.handle_gen.borrow_mut();
-            let new_id = *handle_gen + 1;
-            *handle_gen += 1;
+        let mut maps = self.maps.write().unwrap();
+        let maps = &mut *maps;
+        let uuid_to_load = &mut maps.uuid_to_load;
+        let load_to_uuid = &mut maps.load_to_uuid;
+
+        let entry = uuid_to_load.entry(asset_ref.clone());
+        let handle = entry.or_insert_with(|| {
+            let new_id = self.handle_gen.fetch_add(1, Ordering::Relaxed);
             let handle = LoadHandle(new_id);
             load_to_uuid.insert(handle, asset_ref.clone());
             handle
-        }))
+        });
+
+        Some(*handle)
     }
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
-        let maybe_asset = self.load_to_uuid.borrow().get(&load).map(|r| r.clone());
+        let maps = self.maps.read().unwrap();
+        let maybe_asset = maps.load_to_uuid.get(&load).map(|r| r.clone());
         if let Some(asset_ref) = maybe_asset.as_ref() {
-            if let Some(current_serde_id) = &*self.current_serde_asset.borrow() {
+            let mut current = self.current.lock().unwrap();
+            if let Some(ref current_serde_id) = current.current_serde_asset {
                 if AssetRef::Uuid(*current_serde_id) != *asset_ref
                     && *asset_ref != AssetRef::Uuid(AssetUuid::default())
                 {
-                    let mut dependencies = self.current_serde_dependencies.borrow_mut();
-                    dependencies.insert(asset_ref.clone());
+                    current.current_serde_dependencies.insert(asset_ref.clone());
                 }
             }
         }
@@ -348,67 +344,49 @@ impl LoaderInfoProvider for DummySerdeContext {
         }
     }
 }
-struct DummySerdeContextHandle<'a> {
-    dummy: Rc<DummySerdeContext>,
-    ctx: SerdeContext<'a>,
+struct DummySerdeContextHandle {
+    dummy: Arc<DummySerdeContext>,
 }
-impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeContextHandle<'a> {
-    fn exit(&mut self) {
-        SerdeContext::exit(&mut self.ctx)
+impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeContextHandle {
+    fn scope<'s>(&'s self, fut: BoxFuture<'s, ()>) -> BoxFuture<'s, ()> {
+        let sender = self.dummy.ref_sender.clone();
+        let loader = &*self.dummy;
+        Box::pin(SerdeContext::with(loader, sender, fut))
     }
-    fn enter(&mut self) {
-        self.ctx = unsafe {
-            let dummy_ref: &dyn LoaderInfoProvider = &*self.dummy;
-            SerdeContext::enter(
-                std::mem::transmute::<&dyn LoaderInfoProvider, &'static dyn LoaderInfoProvider>(
-                    dummy_ref,
-                ),
-                self.dummy.ref_sender.clone(),
-            )
-        };
-    }
+
     fn resolve_ref(&mut self, asset_ref: &AssetRef, asset: AssetUuid) {
         let new_ref = AssetRef::Uuid(asset);
-        let mut uuid_to_load = self.dummy.uuid_to_load.borrow_mut();
-        if let Some(handle) = uuid_to_load.get(asset_ref) {
+        let mut maps = self.dummy.maps.write().unwrap();
+        if let Some(handle) = maps.uuid_to_load.get(asset_ref) {
             let handle = *handle;
-            self.dummy
-                .load_to_uuid
-                .borrow_mut()
-                .insert(handle, new_ref.clone());
-            uuid_to_load.insert(new_ref, handle);
+            maps.load_to_uuid.insert(handle, new_ref.clone());
+            maps.uuid_to_load.insert(new_ref, handle);
         }
     }
     /// Begin gathering dependencies for an asset
     fn begin_serialize_asset(&mut self, asset: AssetUuid) {
-        let mut current = self.dummy.current_serde_asset.borrow_mut();
-        if let Some(_) = &*current {
+        let mut current = self.dummy.current.lock().unwrap();
+        if current.current_serde_asset.is_some() {
             panic!("begin_serialize_asset when current_serde_asset is already set");
         }
-        *current = Some(asset);
+        current.current_serde_asset = Some(asset);
     }
     /// Finish gathering dependencies for an asset
     fn end_serialize_asset(&mut self, _asset: AssetUuid) -> HashSet<AssetRef> {
-        let mut current = self.dummy.current_serde_asset.borrow_mut();
-        if let None = &*current {
+        let mut current = self.dummy.current.lock().unwrap();
+        if current.current_serde_asset.is_none() {
             panic!("end_serialize_asset when current_serde_asset is not set");
         }
-        *current = None;
-        let mut deps = self.dummy.current_serde_dependencies.borrow_mut();
-        std::mem::replace(&mut *deps, HashSet::new())
+        current.current_serde_asset = None;
+        std::mem::replace(&mut current.current_serde_dependencies, HashSet::new())
     }
 }
 
 struct DummySerdeContextProvider;
 impl atelier_core::importer_context::ImporterContext for DummySerdeContextProvider {
-    fn enter(&self) -> Box<dyn atelier_core::importer_context::ImporterContextHandle> {
-        let dummy = Rc::new(DummySerdeContext::new());
-        let dummy_ref: &dyn LoaderInfoProvider = &*dummy;
-        // This should be an OwningRef
-        let ctx = unsafe {
-            SerdeContext::enter(std::mem::transmute(dummy_ref), dummy.ref_sender.clone())
-        };
-        Box::new(DummySerdeContextHandle { ctx, dummy })
+    fn handle(&self) -> Box<dyn atelier_core::importer_context::ImporterContextHandle> {
+        let dummy = Arc::new(DummySerdeContext::new());
+        Box::new(DummySerdeContextHandle { dummy })
     }
 }
 // Register the DummySerdeContextProvider as an ImporterContext to be used in atelier-assets.
@@ -423,7 +401,6 @@ where
     S: Serializer,
 {
     SerdeContext::with_active(|loader, _| {
-        let loader = loader.expect("expected loader when serializing handle");
         use ser::SerializeSeq;
         let uuid: AssetUuid = loader.get_asset_id(load).unwrap_or(Default::default());
         let mut seq = serializer.serialize_seq(Some(uuid.0.len()))?;
@@ -452,18 +429,14 @@ impl Serialize for GenericHandle {
 
 fn get_handle_ref(asset_ref: AssetRef) -> (LoadHandle, Arc<Sender<RefOp>>) {
     SerdeContext::with_active(|loader, sender| {
-        let sender = sender
-            .expect("no Sender<RefOp> set when deserializing handle")
-            .clone();
         let handle = if asset_ref == AssetRef::Uuid(AssetUuid::default()) {
             LoadHandle(0)
         } else {
             loader
-                .expect("no loader set in TLS when deserializing handle")
                 .get_load_handle(&asset_ref)
                 .unwrap_or_else(|| panic!("Handle for AssetUuid {:?} was not present when deserializing a Handle. This indicates missing dependency metadata, and can be caused by dependency cycles.", asset_ref))
         };
-        (handle, sender)
+        (handle, sender.clone())
     })
 }
 

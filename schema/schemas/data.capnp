@@ -82,14 +82,6 @@ struct Error {
   text @0 :Text;
 }
 
-# The identifier for an import artifact is the hash of 
-# - Source asset contents
-# - Source metadata contents
-# - Importer version/id
-struct ImportArtifactKey {
-  hash @0 :Data;
-}
-
 struct ArtifactMetadata {
   assetId @0 :AssetUuid;
   hash @1 :Data;
@@ -154,7 +146,7 @@ struct AssetChangeEvent {
 
 struct AssetContentUpdateEvent {
     id @0 :AssetUuid;
-    importHash @1 :ImportArtifactKey;
+    importHash @1 :Data;
     # `buildDepHash` is the hash of all build dependencies' import hashes sorted by their AssetUUID.
     # It can be used to determine if a build artifact needs to be invalidated
     # by hashing (import_hash, build_dep_hash, build_pipeline_hash, build_parameters)

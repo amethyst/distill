@@ -4,25 +4,33 @@ use capnp;
 use lmdb::{self, Cursor, Transaction};
 use std::path::Path;
 use std::result::Result as StdResult;
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
 pub struct Environment {
     env: lmdb::Environment,
+    write_semaphore: Semaphore,
+    read_semaphore: Semaphore,
 }
 pub struct RoTransaction<'a> {
     txn: lmdb::RoTransaction<'a>,
+    permit: SemaphorePermit<'a>,
 }
 
 #[must_use]
 pub struct RwTransaction<'a> {
     txn: lmdb::RwTransaction<'a>,
+    permit: SemaphorePermit<'a>,
     pub dirty: bool,
 }
 
 // Safety: We are always using NO_TLS environment flag, which guarantees that
-// lmdb RwTransactions are not using thread-local storage.
+// lmdb transactions are not using thread-local storage.
+unsafe impl Send for RoTransaction<'_> {}
 unsafe impl Send for RwTransaction<'_> {}
+unsafe impl Sync for RoTransaction<'_> {}
+unsafe impl Sync for RwTransaction<'_> {}
 
 // pub type RoTransaction<'a> = lmdb::RoTransaction<'a>;
 
@@ -197,7 +205,7 @@ impl<'a> RwTransaction<'a> {
         match self.txn.del(db, key, Option::None) {
             Err(err) => match err {
                 lmdb::Error::NotFound => Ok(false),
-                _ => Err(Error::LMDB(err)),
+                _ => Err(Error::Lmdb(err)),
             },
             Ok(_) => Ok(true),
         }
@@ -219,11 +227,11 @@ impl<'a> RwTransaction<'a> {
         Ok(())
     }
 
-    pub fn commit(mut self) -> Result<()> {
-        unsafe {
-            std::mem::replace(&mut self.txn, std::mem::zeroed()).commit()?;
-            Ok(())
+    pub fn commit(self) -> Result<()> {
+        if self.dirty {
+            self.txn.commit()?;
         }
+        Ok(())
     }
 
     pub fn open_rw_cursor(&'a mut self, db: lmdb::Database) -> Result<lmdb::RwCursor<'a>> {
@@ -238,32 +246,30 @@ impl Environment {
         #[cfg(target_pointer_width = "64")]
         let map_size = 1 << 42;
 
-        // safety notice: NO_TLS flag is required for RwTransaction Send derive to be safe.
-        #[cfg(not(target_os = "macos"))]
-        let flags = lmdb::EnvironmentFlags::NO_TLS | lmdb::EnvironmentFlags::WRITE_MAP;
-        #[cfg(target_os = "macos")]
-        let flags = lmdb::EnvironmentFlags::NO_TLS;
-
-        let env = lmdb::Environment::new()
-            .set_max_dbs(64)
-            .set_map_size(map_size)
-            .set_flags(flags)
-            .open(path)?;
-        Ok(Environment { env })
+        Self::with_map_size(path, map_size)
     }
 
     pub fn with_map_size(path: &Path, map_size: usize) -> Result<Environment> {
-        #[cfg(not(target_os = "macos"))]
-        let flags = lmdb::EnvironmentFlags::NO_TLS | lmdb::EnvironmentFlags::WRITE_MAP;
-        #[cfg(target_os = "macos")]
+        // safety notice:
+        // - NO_TLS flag is required for RwTransaction Send derive to be safe.
         let flags = lmdb::EnvironmentFlags::NO_TLS;
+
+        #[cfg(not(target_os = "macos"))]
+        let flags = flags | lmdb::EnvironmentFlags::WRITE_MAP;
+
+        const MAX_READERS: u32 = 126;
 
         let env = lmdb::Environment::new()
             .set_max_dbs(64)
+            .set_max_readers(MAX_READERS)
             .set_map_size(map_size)
             .set_flags(flags)
             .open(path)?;
-        Ok(Environment { env })
+        Ok(Environment {
+            env,
+            read_semaphore: Semaphore::new(MAX_READERS as _),
+            write_semaphore: Semaphore::new(1),
+        })
     }
 
     pub fn create_db(
@@ -274,12 +280,17 @@ impl Environment {
         Ok(self.env.create_db(name, flags)?)
     }
 
-    pub fn rw_txn(&self) -> Result<RwTransaction<'_>> {
-        let txn = self.env.begin_rw_txn()?;
-        Ok(RwTransaction { txn, dirty: false })
+    pub async fn rw_txn(&self) -> Result<RwTransaction<'_>> {
+        Ok(RwTransaction {
+            permit: self.write_semaphore.acquire().await,
+            txn: self.env.begin_rw_txn()?,
+            dirty: false,
+        })
     }
-    pub fn ro_txn(&self) -> Result<RoTransaction<'_>> {
+
+    pub async fn ro_txn(&self) -> Result<RoTransaction<'_>> {
         Ok(RoTransaction {
+            permit: self.read_semaphore.acquire().await,
             txn: self.env.begin_ro_txn()?,
         })
     }

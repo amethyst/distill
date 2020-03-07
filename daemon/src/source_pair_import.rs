@@ -1,25 +1,27 @@
 use crate::daemon::ImporterMap;
 use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
-use crate::serialized_asset::SerializedAsset;
 use crate::watcher::file_metadata;
 use atelier_core::{utils, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{
-    ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, ImporterContextHandle,
-    SerdeObj, SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
+    ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportedAsset, ImporterContext,
+    ImporterContextHandle, SerdeObj, SerializedAsset, SourceMetadata as ImporterSourceMetadata,
+    SOURCEMETADATA_VERSION,
 };
 use atelier_schema::data;
 use bincode;
-use log::{debug, error, info};
+use futures::{future::BoxFuture, prelude::*};
+use log::{debug, error};
 use ron;
 use std::{
     collections::HashSet,
     fs,
     hash::{Hash, Hasher},
-    io::{BufRead, Read, Write},
+    io::{BufRead, Write},
     path::PathBuf,
     time::Instant,
 };
+use tokio::{fs::File, prelude::*};
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -84,16 +86,34 @@ pub(crate) trait SourceMetadataCache {
 
 pub struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);
 impl ImporterContextHandleSet {
-    pub fn enter(&mut self) {
-        for handle in self.0.iter_mut() {
-            handle.enter();
+    pub async fn scope<F>(&mut self, fut: F) -> F::Output
+    where
+        F: Future + Send,
+        F::Output: Send,
+    {
+        let mut out: Option<F::Output> = None;
+
+        let mut fut: BoxFuture<'_, ()> = Box::pin(async {
+            out = Some(fut.await);
+        });
+        for handle in &self.0 {
+            fut = Box::pin(handle.scope(fut));
         }
+
+        fut.await;
+        out.expect("Future was executed in the context")
     }
-    pub fn exit(&mut self) {
-        for handle in self.0.iter_mut().rev() {
-            handle.exit();
-        }
-    }
+
+    // pub fn enter(&mut self) {
+    //     for handle in self.0.iter_mut() {
+    //         handle.enter();
+    //     }
+    // }
+    // pub fn exit(&mut self) {
+    //     for handle in self.0.iter_mut().rev() {
+    //         handle.exit();
+    //     }
+    // }
     pub fn resolve_ref(&mut self, asset_ref: &AssetRef, id: AssetUuid) {
         for handle in self.0.iter_mut() {
             handle.resolve_ref(asset_ref, id);
@@ -213,14 +233,14 @@ impl<'a> SourcePairImport<'a> {
         self.import_hash
     }
 
-    pub fn read_metadata_from_file(&mut self, scratch_buf: &mut Vec<u8>) -> Result<()> {
+    pub async fn read_metadata_from_file(&mut self, scratch_buf: &mut Vec<u8>) -> Result<()> {
         let importer = self
             .importer
             .expect("cannot read metadata without an importer");
         let meta = utils::to_meta_path(&self.source);
-        let mut f = fs::File::open(&meta)?;
+        let mut f = File::open(&meta).await?;
         scratch_buf.clear();
-        f.read_to_end(scratch_buf)?;
+        f.read_to_end(scratch_buf).await?;
         self.source_metadata = Some(importer.deserialize_metadata(scratch_buf).map_err(
             |e| match e {
                 atelier_importer::Error::RonDeError(e) => Error::MetaDeError(meta, e),
@@ -253,26 +273,16 @@ impl<'a> SourcePairImport<'a> {
         }
     }
 
-    fn enter_importer_contexts<F, R>(
+    fn get_importer_context_set(
         import_contexts: Option<&Vec<Box<dyn ImporterContext>>>,
-        f: F,
-    ) -> (R, ImporterContextHandleSet)
-    where
-        F: FnOnce(&mut ImporterContextHandleSet) -> R,
-    {
+    ) -> ImporterContextHandleSet {
         let mut ctx_handles = Vec::new();
         if let Some(contexts) = import_contexts {
             for ctx in contexts.iter() {
-                ctx_handles.push(ctx.enter());
+                ctx_handles.push(ctx.handle());
             }
         }
-        let mut handle_set = ImporterContextHandleSet(ctx_handles);
-        let retval = f(&mut handle_set);
-        // make sure to exit in reverse order of enter
-        for ctx_handle in handle_set.0.iter_mut().rev() {
-            ctx_handle.exit();
-        }
-        (retval, handle_set)
+        ImporterContextHandleSet(ctx_handles)
     }
     pub fn import_result_from_metadata(&mut self) -> Result<PairImportResult> {
         let mut assets = Vec::new();
@@ -325,7 +335,177 @@ impl<'a> SourcePairImport<'a> {
         })
     }
 
-    pub fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<PairImportResult> {
+    async fn build_import_result(
+        &mut self,
+        importer: &dyn BoxedImporter,
+        options: Box<dyn SerdeObj>,
+        state: Box<dyn SerdeObj>,
+        scratch_buf: &mut Vec<u8>,
+        assets: Vec<ImportedAsset>,
+        mut ctx: ImporterContextHandleSet,
+    ) -> Result<PairImportResult> {
+        let mut imported_assets = Vec::new();
+        let import_hash = self.calc_import_hash(
+            options.as_ref(),
+            state.as_ref(),
+            importer.version(),
+            importer.uuid(),
+            scratch_buf,
+        )?;
+        self.import_hash = Some(import_hash);
+        for mut asset in assets {
+            asset.search_tags.push((
+                "file_name".to_string(),
+                Some(
+                    self.source
+                        .file_name()
+                        .expect("failed to get file stem")
+                        .to_string_lossy()
+                        .to_string(),
+                ),
+            ));
+            ctx.begin_serialize_asset(asset.id);
+            let scope_result: Result<_> = ctx
+                .scope(async {
+                    // We need to serialize each asset to gather references.
+                    // TODO write a dummy serializer that doesn't output anything to optimize this
+                    let serialized_asset = SerializedAsset::create(
+                        0,
+                        asset.id,
+                        Vec::new(),
+                        Vec::new(),
+                        asset.asset_data.as_ref(),
+                        CompressionType::None,
+                        scratch_buf,
+                    )?;
+                    Ok((asset, serialized_asset))
+                })
+                .await;
+
+            let (mut asset, serialized_asset) = scope_result?;
+            let serde_refs = ctx.end_serialize_asset(asset.id);
+            // TODO implement build pipeline execution
+            // let build_pipeline = metadata
+            //     .assets
+            //     .iter()
+            //     .find(|a| a.id == asset.id)
+            //     .and_then(|m| m.build_pipeline);
+            // Add the collected serialization dependencies to the build and load dependencies
+            let mut unresolved_load_refs = Vec::new();
+            let mut load_deps = HashSet::new();
+            for load_dep in serde_refs.iter().chain(asset.load_deps.iter()) {
+                // check insert return value to prevent duplicates in unresolved_load_refs
+                if load_deps.insert(load_dep.clone()) {
+                    if let AssetRef::Path(path) = load_dep {
+                        unresolved_load_refs.push(AssetRef::Path(path.clone()));
+                    }
+                }
+            }
+            let mut unresolved_build_refs = Vec::new();
+            let mut build_deps = HashSet::new();
+            for build_dep in serde_refs
+                .into_iter()
+                .chain(asset.build_deps.iter().cloned())
+            {
+                // check insert return value to prevent duplicates in unresolved_build_refs
+                if build_deps.insert(build_dep.clone()) {
+                    if let AssetRef::Path(path) = build_dep {
+                        unresolved_build_refs.push(AssetRef::Path(path));
+                    }
+                }
+            }
+            asset.load_deps = load_deps.into_iter().collect();
+            asset.build_deps = build_deps.into_iter().collect();
+            imported_assets.push(AssetImportResult {
+                metadata: AssetMetadata {
+                    id: asset.id,
+                    search_tags: asset.search_tags,
+                    artifact: Some(ArtifactMetadata {
+                        id: asset.id,
+                        hash: utils::calc_import_artifact_hash(
+                            &asset.id,
+                            import_hash,
+                            asset.load_deps.iter().chain(asset.build_deps.iter()),
+                        ),
+                        load_deps: asset.load_deps.clone(),
+                        build_deps: asset.build_deps.clone(),
+                        compression: serialized_asset.metadata.compression,
+                        compressed_size: serialized_asset.metadata.compressed_size,
+                        uncompressed_size: serialized_asset.metadata.uncompressed_size,
+                        type_id: AssetTypeId(asset.asset_data.uuid()),
+                    }),
+                    build_pipeline: asset.build_pipeline,
+                },
+                unresolved_load_refs,
+                unresolved_build_refs,
+                asset: Some(asset.asset_data),
+                serialized_asset: Some(serialized_asset),
+            });
+        }
+        self.source_metadata = Some(SourceMetadata {
+            version: SOURCEMETADATA_VERSION,
+            import_hash: Some(import_hash),
+            importer_version: importer.version(),
+            importer_type: AssetTypeId(importer.uuid()),
+            importer_options: options,
+            importer_state: state,
+            assets: imported_assets.iter().map(|m| m.metadata.clone()).collect(),
+        });
+
+        Ok(PairImportResult {
+            importer_context_set: Some(ctx),
+            assets: imported_assets,
+        })
+    }
+
+    pub async fn export_source(
+        &mut self,
+        scratch_buf: &mut Vec<u8>,
+        assets: Vec<SerializedAsset<Vec<u8>>>,
+    ) -> Result<PairImportResult> {
+        let start_time = Instant::now();
+        let importer = self
+            .importer
+            .expect("cannot export source without importer");
+
+        let metadata = std::mem::replace(&mut self.source_metadata, None)
+            .expect("cannot export source file without source_metadata");
+
+        let mut ctx = Self::get_importer_context_set(self.importer_contexts);
+
+        let source = &self.source;
+        let exported = ctx
+            .scope(async move {
+                let mut f = File::open(source).await?;
+                importer
+                    .export_boxed(
+                        &mut f,
+                        metadata.importer_options,
+                        metadata.importer_state,
+                        assets
+                            .into_iter()
+                            .map(|asset| ExportAsset { asset })
+                            .collect(),
+                    )
+                    .await
+            })
+            .await?;
+        self.hash_source(); // hash source to get a hash of the exported data
+        let options = exported.options;
+        let state = exported.state;
+        let imported = exported.value;
+
+        let result = self
+            .build_import_result(importer, options, state, scratch_buf, imported.assets, ctx)
+            .await?;
+        log::info!(
+            "Exported pair in {}",
+            Instant::now().duration_since(start_time).as_secs_f32()
+        );
+        Ok(result)
+    }
+
+    pub async fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<PairImportResult> {
         let start_time = Instant::now();
         let importer = self
             .importer
@@ -333,134 +513,29 @@ impl<'a> SourcePairImport<'a> {
 
         let metadata = std::mem::replace(&mut self.source_metadata, None)
             .expect("cannot import source file without source_metadata");
-        let (asset_result, context_set): (
-            Result<Vec<AssetImportResult>>,
-            ImporterContextHandleSet,
-        ) = Self::enter_importer_contexts(self.importer_contexts, |ctx| {
-            let imported = {
-                let mut f = fs::File::open(&self.source)?;
-                importer.import_boxed(&mut f, metadata.importer_options, metadata.importer_state)?
-            };
-            let options = imported.options;
-            let state = imported.state;
-            let imported = imported.value;
-            let mut imported_assets = Vec::new();
-            let import_hash = self.calc_import_hash(
-                options.as_ref(),
-                state.as_ref(),
-                importer.version(),
-                importer.uuid(),
-                scratch_buf,
-            )?;
-            self.import_hash = Some(import_hash);
-            for mut asset in imported.assets {
-                asset.search_tags.push((
-                    "file_name".to_string(),
-                    Some(
-                        self.source
-                            .file_name()
-                            .expect("failed to get file stem")
-                            .to_string_lossy()
-                            .to_string(),
-                    ),
-                ));
-                let asset_data = &asset.asset_data;
-                ctx.begin_serialize_asset(asset.id);
-                // We need to serialize each asset to gather references.
-                // TODO write a dummy serializer that doesn't output anything to optimize this
-                let serialized_asset = SerializedAsset::create(
-                    0,
-                    asset.id,
-                    Vec::new(),
-                    Vec::new(),
-                    asset_data.as_ref(),
-                    CompressionType::None,
-                    scratch_buf,
-                )?;
-                let serde_refs = ctx.end_serialize_asset(asset.id);
-                // TODO implement build pipeline execution
-                // let build_pipeline = metadata
-                //     .assets
-                //     .iter()
-                //     .find(|a| a.id == asset.id)
-                //     .and_then(|m| m.build_pipeline);
-                // Add the collected serialization dependencies to the build and load dependencies
-                let mut unresolved_load_refs = Vec::new();
-                let mut load_deps = HashSet::new();
-                for load_dep in serde_refs.iter().chain(asset.load_deps.iter()) {
-                    // check insert return value to prevent duplicates in unresolved_load_refs
-                    if load_deps.insert(load_dep.clone()) {
-                        if let AssetRef::Path(path) = load_dep {
-                            unresolved_load_refs.push(AssetRef::Path(path.clone()));
-                        }
-                    }
-                }
-                let mut unresolved_build_refs = Vec::new();
-                let mut build_deps = HashSet::new();
-                for build_dep in serde_refs
-                    .into_iter()
-                    .chain(asset.build_deps.iter().cloned())
-                {
-                    // check insert return value to prevent duplicates in unresolved_build_refs
-                    if build_deps.insert(build_dep.clone()) {
-                        if let AssetRef::Path(path) = build_dep {
-                            unresolved_build_refs.push(AssetRef::Path(path));
-                        }
-                    }
-                }
-                asset.load_deps = load_deps.into_iter().collect();
-                asset.build_deps = build_deps.into_iter().collect();
-                imported_assets.push(AssetImportResult {
-                    metadata: AssetMetadata {
-                        id: asset.id,
-                        search_tags: asset.search_tags,
-                        artifact: Some(ArtifactMetadata {
-                            id: asset.id,
-                            hash: utils::calc_import_artifact_hash(
-                                &asset.id,
-                                import_hash,
-                                asset.load_deps.iter().chain(asset.build_deps.iter()),
-                            ),
-                            load_deps: asset.load_deps.clone(),
-                            build_deps: asset.build_deps.clone(),
-                            compression: serialized_asset.metadata.compression,
-                            compressed_size: serialized_asset.metadata.compressed_size,
-                            uncompressed_size: serialized_asset.metadata.uncompressed_size,
-                            type_id: AssetTypeId(asset.asset_data.uuid()),
-                        }),
-                        build_pipeline: asset.build_pipeline,
-                    },
-                    unresolved_load_refs,
-                    unresolved_build_refs,
-                    asset: Some(asset.asset_data),
-                    serialized_asset: Some(serialized_asset),
-                });
-                debug!(
-                    "Import success {} read {} bytes",
-                    self.source.to_string_lossy(),
-                    scratch_buf.len(),
-                );
-            }
-            info!(
-                "Imported pair in {}",
-                Instant::now().duration_since(start_time).as_secs_f32()
-            );
-            self.source_metadata = Some(SourceMetadata {
-                version: SOURCEMETADATA_VERSION,
-                import_hash: Some(import_hash),
-                importer_version: importer.version(),
-                importer_type: AssetTypeId(importer.uuid()),
-                importer_options: options,
-                importer_state: state,
-                assets: imported_assets.iter().map(|m| m.metadata.clone()).collect(),
-            });
-            Ok(imported_assets)
-        });
-        let assets = asset_result?;
-        Ok(PairImportResult {
-            importer_context_set: Some(context_set),
-            assets,
-        })
+
+        let mut ctx = Self::get_importer_context_set(self.importer_contexts);
+
+        let source = &self.source;
+        let imported = ctx
+            .scope(async move {
+                let mut f = File::open(source).await?;
+                importer
+                    .import_boxed(&mut f, metadata.importer_options, metadata.importer_state)
+                    .await
+            })
+            .await?;
+        let options = imported.options;
+        let state = imported.state;
+        let imported = imported.value;
+        let result = self
+            .build_import_result(importer, options, state, scratch_buf, imported.assets, ctx)
+            .await?;
+        log::info!(
+            "Imported pair in {}",
+            Instant::now().duration_since(start_time).as_secs_f32()
+        );
+        Ok(result)
     }
 
     pub fn write_metadata(&self) -> Result<()> {
@@ -478,7 +553,7 @@ impl<'a> SourcePairImport<'a> {
     }
 }
 
-pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
+pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
     metadata_cache: &C,
     importer_map: &'a ImporterMap,
     importer_contexts: &'a Vec<Box<dyn ImporterContext>>,
@@ -548,10 +623,10 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
             if !import.set_importer_from_map(&importer_map) {
                 Ok(None)
             } else {
-                import.read_metadata_from_file(scratch_buf)?;
+                import.read_metadata_from_file(scratch_buf).await?;
                 if import.needs_source_import(scratch_buf)? {
                     debug!("needs source import {:?}", import.source);
-                    let imported_assets = import.import_source(scratch_buf)?;
+                    let imported_assets = import.import_source(scratch_buf).await?;
                     import.write_metadata()?;
                     Ok(Some((import, Some(imported_assets))))
                 } else {
@@ -579,7 +654,7 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
                 import.generate_source_metadata(metadata_cache);
                 if import.needs_source_import(scratch_buf)? {
                     debug!("running importer for source file..");
-                    let imported_assets = import.import_source(scratch_buf)?;
+                    let imported_assets = import.import_source(scratch_buf).await?;
                     import.write_metadata()?;
                     Ok(Some((import, Some(imported_assets))))
                 } else {
@@ -648,6 +723,102 @@ pub(crate) fn process_pair<'a, C: SourceMetadataCache>(
         _ => {
             debug!("Unknown case for {:?}", pair);
             Ok(None)
+        }
+    }
+}
+
+fn get_path_file_state(path: PathBuf) -> Result<Option<FileState>> {
+    let state = match fs::metadata(&path) {
+        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(Error::IO(e)),
+        Ok(metadata) => Some(crate::watcher::file_metadata(&metadata)),
+    };
+    Ok(state.map(|metadata| FileState {
+        path: path,
+        state: data::FileState::Exists,
+        last_modified: metadata.last_modified,
+        length: metadata.length,
+    }))
+}
+
+pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
+    assets: Vec<SerializedAsset<Vec<u8>>>,
+    metadata_cache: &C,
+    importer_map: &'a ImporterMap,
+    importer_contexts: &'a Vec<Box<dyn ImporterContext>>,
+    source_path: PathBuf,
+    meta_path: PathBuf,
+    scratch_buf: &mut Vec<u8>,
+) -> Result<(SourcePairImport<'a>, PairImportResult)> {
+    let source_state = get_path_file_state(source_path.clone())?;
+    let (source_state, source_hash) = if let Some(s) = source_state {
+        let (state, hash) = hash_file(&s)?;
+        (Some(state), hash)
+    } else {
+        (None, None)
+    };
+    let meta_state = get_path_file_state(meta_path)?;
+    let (meta_state, meta_hash) = if let Some(s) = meta_state {
+        let (state, hash) = hash_file(&s)?;
+        (Some(state), hash)
+    } else {
+        (None, None)
+    };
+    let pair = HashedSourcePair {
+        source_hash,
+        source: source_state,
+        meta_hash,
+        meta: meta_state,
+    };
+    match pair {
+        // Source file path is a directory
+        HashedSourcePair {
+            source: Some(_),
+            source_hash: None,
+            ..
+        } => {
+            return Err(Error::Custom("Export target path is a directory".into()));
+        }
+        // Meta path is a directory
+        HashedSourcePair {
+            meta: Some(_meta),
+            meta_hash: None,
+            ..
+        } => {
+            return Err(Error::Custom(
+                "Export target .meta path is a directory".into(),
+            ));
+        }
+        HashedSourcePair {
+            source_hash,
+            meta_hash,
+            ..
+        } => {
+            let mut op = SourcePairImport::new(source_path.clone());
+            if let Some(meta_hash) = meta_hash {
+                op.set_meta_hash(meta_hash);
+            }
+            if let Some(source_hash) = source_hash {
+                op.set_source_hash(source_hash);
+            }
+            op.set_importer_contexts(importer_contexts);
+            if !op.set_importer_from_map(&importer_map) {
+                return Err(Error::Custom(format!(
+                    "no importer registered for extension {:?}",
+                    source_path.extension()
+                )));
+            } else {
+                if op.needs_source_import(scratch_buf)? {
+                    // if we can't use cached metadata, read from file
+                    op.read_metadata_from_file(scratch_buf).await?;
+                } else {
+                    // read metadata from db cache
+                    op.generate_source_metadata(metadata_cache);
+                }
+                let exported_assets = op.export_source(scratch_buf, assets).await?;
+                op.write_metadata()?;
+                Ok((op, exported_assets))
+            }
         }
     }
 }

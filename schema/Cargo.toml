@@ -1,12 +1,8 @@
 [package]
 name = "atelier-schema"
 version = "0.1.0"
-build = "build.rs"
 edition = "2018"
 
 [dependencies]
 capnp = "0.12"
 atelier-core = { path = "../core" }
-
-[build-dependencies]
-capnpc = "0.12"

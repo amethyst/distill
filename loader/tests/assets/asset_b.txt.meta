@@ -1,25 +1,31 @@
 (
     version: 1,
-    import_hash: Some(1001672464652596999),
+    import_hash: Some(11857256235859969024),
     importer_version: 1,
-    importer_type: (250, 80, 224, 140, 175, 108, 74, 218, 174, 209, 68, 124, 17, 109, 99, 188),
+    importer_type: "fa50e08c-af6c-4ada-aed1-447c116d63bc",
     importer_options: (),
     importer_state: (
-        id: Some((3, 157, 197, 248, 238, 28, 73, 73, 167, 223, 114, 56, 63, 18, 199, 162)),
+        id: Some("039dc5f8-ee1c-4949-a7df-72383f12c7a2"),
     ),
     assets: [
         (
-            id: (3, 157, 197, 248, 238, 28, 73, 73, 167, 223, 114, 56, 63, 18, 199, 162),
+            id: "039dc5f8-ee1c-4949-a7df-72383f12c7a2",
             search_tags: [
                 ("file_name", Some("asset_b.txt")),
             ],
-            build_deps: [
-            ],
-            load_deps: [
-                Uuid((192, 113, 243, 255, 201, 234, 75, 245, 179, 185, 191, 95, 194, 159, 155, 89)),
-            ],
             build_pipeline: None,
-            asset_type: (126, 219, 193, 10, 33, 71, 73, 156, 175, 154, 73, 135, 35, 199, 179, 95),
+            artifact: Some((
+                hash: 10402684315089908256,
+                id: "039dc5f8-ee1c-4949-a7df-72383f12c7a2",
+                build_deps: [],
+                load_deps: [
+                    Uuid("c071f3ff-c9ea-4bf5-b3b9-bf5fc29f9b59"),
+                ],
+                compression: None,
+                compressed_size: Some(45),
+                uncompressed_size: Some(45),
+                type_id: "7edbc10a-2147-499c-af9a-498723c7b35f",
+            )),
         ),
     ],
 )

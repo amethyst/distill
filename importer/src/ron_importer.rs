@@ -1,4 +1,4 @@
-use crate::{ImportedAsset, Importer, ImporterValue, SerdeImportable, SourceFileImporter};
+use crate::{ImportedAsset, Importer, ImporterValue, Result, SerdeImportable, SourceFileImporter};
 use atelier_core::AssetUuid;
 use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
@@ -38,11 +38,10 @@ impl Importer for RonImporter {
         source: &mut dyn Read,
         _: Self::Options,
         state: &mut Self::State,
-    ) -> crate::Result<ImporterValue> {
+    ) -> Result<ImporterValue> {
         if state.id.is_none() {
             state.id = Some(AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
         }
-
         let de: Box<dyn SerdeImportable> = from_reader(source)?;
 
         Ok(ImporterValue {

@@ -15,7 +15,7 @@ pub enum Error {
     Notify(notify::Error),
     IO(io::Error),
     RescanRequired,
-    LMDB(lmdb::Error),
+    Lmdb(lmdb::Error),
     Capnp(capnp::Error),
     NotInSchema(capnp::NotInSchema),
     BincodeError(bincode::ErrorKind),
@@ -25,6 +25,7 @@ pub enum Error {
     SetLoggerError(log::SetLoggerError),
     UuidLength,
     RecvError,
+    SendError,
     Exit,
     ImporterError(atelier_importer::Error),
     StrUtf8Error(str::Utf8Error),
@@ -39,7 +40,7 @@ impl std::error::Error for Error {
             Error::Notify(ref e) => e.description(),
             Error::IO(ref e) => e.description(),
             Error::RescanRequired => "Rescan required",
-            Error::LMDB(ref e) => e.description(),
+            Error::Lmdb(ref e) => e.description(),
             Error::Capnp(ref e) => e.description(),
             Error::NotInSchema(ref e) => e.description(),
             Error::BincodeError(ref e) => e.description(),
@@ -49,6 +50,7 @@ impl std::error::Error for Error {
             Error::SetLoggerError(ref e) => e.description(),
             Error::UuidLength => "Uuid not 16 bytes",
             Error::RecvError => "Receive error",
+            Error::SendError => "Send error",
             Error::Exit => "Exit",
             Error::ImporterError(ref e) => e.description(),
             Error::StrUtf8Error(ref e) => e.description(),
@@ -61,7 +63,7 @@ impl std::error::Error for Error {
             Error::Notify(ref e) => Some(e),
             Error::IO(ref e) => Some(e),
             Error::RescanRequired => None,
-            Error::LMDB(ref e) => Some(e),
+            Error::Lmdb(ref e) => Some(e),
             Error::Capnp(ref e) => Some(e),
             Error::NotInSchema(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
@@ -71,6 +73,7 @@ impl std::error::Error for Error {
             Error::SetLoggerError(ref e) => Some(e),
             Error::UuidLength => None,
             Error::RecvError => None,
+            Error::SendError => None,
             Error::Exit => None,
             Error::ImporterError(ref e) => Some(e),
             Error::StrUtf8Error(ref e) => Some(e),
@@ -84,7 +87,7 @@ impl fmt::Display for Error {
             Error::Notify(ref e) => e.fmt(f),
             Error::IO(ref e) => e.fmt(f),
             Error::RescanRequired => f.write_str(self.description()),
-            Error::LMDB(ref e) => e.fmt(f),
+            Error::Lmdb(ref e) => e.fmt(f),
             Error::Capnp(ref e) => e.fmt(f),
             Error::NotInSchema(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
@@ -103,6 +106,7 @@ impl fmt::Display for Error {
             Error::SetLoggerError(ref e) => e.fmt(f),
             Error::UuidLength => f.write_str(self.description()),
             Error::RecvError => f.write_str(self.description()),
+            Error::SendError => f.write_str(self.description()),
             Error::Exit => f.write_str(self.description()),
             Error::ImporterError(ref e) => e.fmt(f),
             Error::StrUtf8Error(ref e) => e.fmt(f),
@@ -122,7 +126,7 @@ impl From<io::Error> for Error {
 }
 impl From<lmdb::Error> for Error {
     fn from(err: lmdb::Error) -> Error {
-        Error::LMDB(err)
+        Error::Lmdb(err)
     }
 }
 impl From<capnp::Error> for Error {

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 mod daemon;
 mod game;
 mod image;
