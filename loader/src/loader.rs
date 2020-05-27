@@ -27,6 +27,11 @@ impl AssetLoadOp {
         }
     }
 
+    /// Returns the `LoadHandle` associated with the load operation
+    pub fn load_handle(&self) -> LoadHandle {
+        self.handle
+    }
+
     /// Signals that this load operation has completed succesfully.
     pub fn complete(mut self) {
         let _ = self
