@@ -452,6 +452,10 @@ fn process_data_requests(
                 .expect("load did not exist when data request completed");
             match result {
                 Ok(reader) => {
+                    log::trace!(
+                        "asset data request succeeded for asset {:?}",
+                        load.asset_id
+                    );
                     let reader = reader.get()?;
                     let artifacts = reader.get_artifacts()?;
                     if artifacts.len() == 0 {
@@ -526,6 +530,7 @@ fn process_data_requests(
         }
         if assets_to_request.len() > 0 {
             for (asset, handle) in assets_to_request {
+                log::trace!("Requesting asset {:?} {:?}", asset, handle);
                 let response = rpc.request(move |_conn, snapshot| {
                     let mut request = snapshot.get_import_artifacts_request();
                     let mut assets = request.get().init_assets(1);
@@ -814,14 +819,59 @@ fn process_load_states(
                     LoadState::None
                 }
             };
+
+            if value.state != new_state {
+                log::trace!("process_load_states asset load state changed, Key: {:?} Old state: {:?} New state: {:?}", key, value.state, new_state);
+            }
+
             value.state = new_state;
         }
     }
+
+    if log::log_enabled!(log::Level::Trace) {
+        for mut chunk in load_states.chunks() {
+            for (key, mut value) in chunk.iter() {
+                if value.state == LoadState::WaitingForDependencies {
+                    dump_dependencies(&value.asset_id, load_states, uuid_to_load, metadata, 0);
+                }
+            }
+        }
+    }
+
     for i in to_remove {
         let load_state = load_states.remove(&i);
         if let Some((_, load_state)) = load_state {
             uuid_to_load.remove(&load_state.asset_id);
         }
+    }
+}
+
+fn dump_dependencies(
+    asset_id: &AssetUuid,
+    load_states: &DashMap<LoadHandle, AssetLoad>,
+    uuid_to_load: &DashMap<AssetUuid, LoadHandle>,
+    metadata: &HashMap<AssetUuid, AssetMetadata>,
+    indent: usize,
+) {
+    if let Some(load_handle) = uuid_to_load.get(asset_id) {
+        if let Some(load_state) = load_states.get(&load_handle) {
+            log::trace!("{} Load Handle: {:?}  Load State: {:?}", String::from_utf8(vec![b' '; indent]).unwrap(), *load_handle, *load_state);
+
+            if let Some(asset_metadata) = metadata.get(&asset_id) {
+                asset_metadata
+                    .load_deps
+                    .iter()
+                    .for_each(|dependency_asset_id| {
+                        dump_dependencies(dependency_asset_id, load_states, uuid_to_load, metadata, indent + 2);
+                    });
+            } else {
+                log::trace!("{} Metadata not found for asset `{:?}`", String::from_utf8(vec![b' '; indent]).unwrap(), asset_id);
+            }
+        } else {
+            log::trace!("{} Load state not found for asset `{:?}`", String::from_utf8(vec![b' '; indent]).unwrap(), asset_id);
+        }
+    } else {
+        log::trace!("{} Load handle not found for asset `{:?}`", String::from_utf8(vec![b' '; indent]).unwrap(), asset_id);
     }
 }
 

@@ -215,12 +215,18 @@ impl AssetHubSnapshotImpl {
         let mut cached_artifacts = Vec::new();
         let mut scratch_buf = Vec::new();
         let cache_txn = ctx.artifact_cache.ro_txn().await?;
+
+        let request_uuid = uuid::Uuid::new_v4();
+        log::trace!("get_import_artifacts Gathering artifacts {:?}", request_uuid);
+
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
+            log::trace!("{:?} get_import_artifacts for id {:?}", request_uuid, id);
             let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
-                // retreive artifact data from cache if available
+                log::trace!("metadata available for id {:?}", id);
 
+                // retreive artifact data from cache if available
                 let mut need_regen = true;
                 if let latest_artifact::Artifact(Ok(artifact)) =
                     metadata.get()?.get_latest_artifact().which()?
@@ -236,17 +242,26 @@ impl AssetHubSnapshotImpl {
                     let metadata = metadata.get()?;
                     match metadata.get_source()? {
                         AssetSource::File => {
+                            log::trace!("regenerating import artifact from file for {:?}", id);
                             let (_, artifact) = ctx
                                 .file_source
                                 .regenerate_import_artifact(txn, &id, &mut scratch_buf)
                                 .await?;
+                            log::trace!("finished regenerating import artifact for {:?}", id);
                             let capnp_artifact = build_artifact_message(&artifact);
+                            log::trace!("built artifact message for {:?}", id);
                             regen_artifacts.push(capnp_artifact);
                         }
                     }
+                } else {
+                    log::trace!("using cached import artifact for {:?}", id);
                 }
+            } else {
+                log::trace!("metadata not available for id {:?}", id);
             }
         }
+
+        log::trace!("get_import_artifacts Building Response {:?}", request_uuid);
         let mut results_builder = results.get();
         let mut artifact_results = results_builder
             .reborrow()

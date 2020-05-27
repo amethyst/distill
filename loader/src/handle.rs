@@ -15,6 +15,8 @@ use std::{
         Mutex, RwLock,
     },
 };
+use std::fmt::Debug;
+use serde::export::Formatter;
 
 /// Operations on an asset reference.
 #[derive(Debug)]
@@ -106,7 +108,7 @@ impl AssetHandle for HandleRef {
 }
 
 /// Handle to an asset.
-#[derive(Debug, Eq, Hash)]
+#[derive(Eq, Hash)]
 pub struct Handle<T: ?Sized> {
     handle_ref: HandleRef,
     marker: PhantomData<T>,
@@ -124,6 +126,14 @@ impl<T: ?Sized> Clone for Handle<T> {
             handle_ref: self.handle_ref.clone(),
             marker: PhantomData,
         }
+    }
+}
+
+impl<T> Debug for Handle<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Handle")
+            .field("handle_ref", &self.handle_ref)
+            .finish()
     }
 }
 
@@ -237,7 +247,7 @@ tokio::task_local! {
 /// implementations by using thread-local storage. Required to support Serialize/Deserialize of Handle.
 pub struct SerdeContext;
 impl SerdeContext {
-    fn with_active<R>(f: impl FnOnce(&dyn LoaderInfoProvider, &Arc<Sender<RefOp>>) -> R) -> R {
+    pub fn with_active<R>(f: impl FnOnce(&dyn LoaderInfoProvider, &Arc<Sender<RefOp>>) -> R) -> R {
         LOADER.with(|l| REFOP_SENDER.with(|r| f(*l, &r)))
     }
 

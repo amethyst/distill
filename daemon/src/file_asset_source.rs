@@ -568,9 +568,12 @@ impl FileAssetSource {
         id: &AssetUuid,
         scratch_buf: &mut Vec<u8>,
     ) -> Result<(u64, SerializedAssetVec)> {
+        log::trace!("regenerate_import_artifact id {:?}", id);
         let path = self
             .get_asset_path(txn, id)
             .ok_or_else(|| Error::Custom("Could not find asset".to_string()))?;
+
+        log::trace!("path of id {:?} is {:?}", id, path);
         let cache = DBSourceMetadataCache {
             txn,
             file_asset_source: self,
@@ -582,6 +585,8 @@ impl FileAssetSource {
         import.set_importer_contexts(&self.importer_contexts);
         import.generate_source_metadata(&cache);
         import.hash_source();
+
+        log::trace!("Importing source for {:?}", id);
         let imported_assets = import.import_source(scratch_buf).await?;
         let mut context_set = imported_assets
             .importer_context_set

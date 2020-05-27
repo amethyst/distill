@@ -17,6 +17,7 @@ typetag = { version = "0.1", optional = true }
 serde-importable-derive = { path = "./serde-importable-derive", optional = true }
 futures = "0.3"
 tokio = { version = "0.2", features = ["io-util"] }
+log = { version = "0.4", features = ["serde"] }
 
 [features]
 default = ["serde_importers", "importer_context"]

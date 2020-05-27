@@ -32,6 +32,7 @@ num_cpus = "1.10"
 smush = { version = "0.1", default-features = false, features = [ "lz4_support" ], optional = true }
 chrono = "0.4.10"
 pin-project = "0.4.8"
+uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"

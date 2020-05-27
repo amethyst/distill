@@ -1,5 +1,5 @@
 use crate::{error::Result, ExportAsset, AsyncImporter, ImporterValue, SerdeObj};
-use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType, importer_context::ImporterContext};
 use futures::future::BoxFuture;
 use ron;
 use serde::{Deserialize, Serialize};
@@ -135,6 +135,7 @@ where
         options: Box<dyn SerdeObj>,
         state: Box<dyn SerdeObj>,
     ) -> BoxFuture<'a, Result<BoxedImporterValue>> {
+        log::trace!("import_boxed");
         Box::pin(async move {
             let s = state.downcast::<S>();
             let mut s = if let Ok(s) = s {
@@ -149,7 +150,9 @@ where
                 panic!("Failed to downcast Importer::Options");
             };
 
+            log::trace!("import_boxed about to import");
             let result = self.import(source, o.clone(), &mut s).await?;
+            log::trace!("import_boxed imported");
             Ok(BoxedImporterValue {
                 value: result,
                 options: Box::new(o),

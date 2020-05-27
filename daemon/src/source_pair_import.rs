@@ -22,6 +22,7 @@ use std::{
     time::Instant,
 };
 use tokio::{fs::File, prelude::*};
+use std::io::Read;
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -506,6 +507,7 @@ impl<'a> SourcePairImport<'a> {
     }
 
     pub async fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<PairImportResult> {
+        log::trace!("import_source importing {:?}", &self.source);
         let start_time = Instant::now();
         let importer = self
             .importer
@@ -517,14 +519,30 @@ impl<'a> SourcePairImport<'a> {
         let mut ctx = Self::get_importer_context_set(self.importer_contexts);
 
         let source = &self.source;
+
         let imported = ctx
             .scope(async move {
-                let mut f = File::open(source).await?;
-                importer
-                    .import_boxed(&mut f, metadata.importer_options, metadata.importer_state)
-                    .await
+                //This is broken on tokio 0.2.14 and later (concurrent file loads endlessly yield to
+                // each other.
+                // let mut f = File::open(source).await?;
+                // let result = importer
+                //     .import_boxed(&mut f, metadata.importer_options, metadata.importer_state)
+                //     .await;
+
+                // Non-async work-around
+                let mut f = std::fs::File::open(source)?;
+                let mut contents = vec![];
+                let result = f.read_to_end(&mut contents)?;
+                let mut cursor = std::io::Cursor::new(contents);
+
+                let result = importer
+                    .import_boxed(&mut cursor, metadata.importer_options, metadata.importer_state)
+                    .await;
+
+                result
             })
             .await?;
+        log::trace!("import_source building result {:?}", self.source);
         let options = imported.options;
         let state = imported.state;
         let imported = imported.value;
