@@ -481,6 +481,7 @@ impl asset_hub::Server for AssetHubImpl {
         params: asset_hub::RegisterListenerParams,
         results: asset_hub::RegisterListenerResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::Server::register_listener");
         Promise::ok(pry!(AssetHubImpl::register_listener(self, params, results)))
     }
     fn get_snapshot(
@@ -488,6 +489,7 @@ impl asset_hub::Server for AssetHubImpl {
         params: asset_hub::GetSnapshotParams,
         results: asset_hub::GetSnapshotResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::Server::get_snapshot");
         let fut = AssetHubImpl::get_snapshot(self.ctx.clone(), params, results);
         Promise::from_future(async { fut.await.map_err(|e| e.into()) })
     }
@@ -588,6 +590,7 @@ impl AssetHubService {
 
             loop {
                 let (stream, _) = listener.accept().await?;
+                log::info!("tokio::net::TcpListener accepted");
                 stream.set_nodelay(true).unwrap();
                 stream.set_send_buffer_size(1 << 22).unwrap();
                 stream.set_recv_buffer_size(1 << 22).unwrap();
@@ -610,6 +613,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::GetAssetMetadataParams,
         results: asset_hub::snapshot::GetAssetMetadataResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::get_asset_metadata");
         Promise::ok(pry!(AssetHubSnapshotImpl::get_asset_metadata(
             self, params, results
         )))
@@ -619,6 +623,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::GetAssetMetadataWithDependenciesParams,
         results: asset_hub::snapshot::GetAssetMetadataWithDependenciesResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::get_asset_metadata_with_dependencies");
         Promise::ok(pry!(
             AssetHubSnapshotImpl::get_asset_metadata_with_dependencies(self, params, results)
         ))
@@ -628,6 +633,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::GetAllAssetMetadataParams,
         results: asset_hub::snapshot::GetAllAssetMetadataResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::get_all_asset_metadata");
         Promise::ok(pry!(AssetHubSnapshotImpl::get_all_asset_metadata(
             self, params, results
         )))
@@ -637,6 +643,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::GetImportArtifactsParams,
         results: asset_hub::snapshot::GetImportArtifactsResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::get_import_artifacts");
         let fut = AssetHubSnapshotImpl::get_import_artifacts(self.txn.clone(), params, results);
         Promise::from_future(async { fut.await.map_err(|e| e.into()) })
     }
@@ -645,6 +652,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::GetLatestAssetChangeParams,
         results: asset_hub::snapshot::GetLatestAssetChangeResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::get_latest_asset_change");
         Promise::ok(pry!(AssetHubSnapshotImpl::get_latest_asset_change(
             self, params, results
         )))
@@ -654,6 +662,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::GetAssetChangesParams,
         results: asset_hub::snapshot::GetAssetChangesResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::get_asset_changes");
         Promise::ok(pry!(AssetHubSnapshotImpl::get_asset_changes(
             self, params, results
         )))
@@ -663,6 +672,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::GetPathForAssetsParams,
         results: asset_hub::snapshot::GetPathForAssetsResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::get_path_for_assets");
         Promise::ok(pry!(AssetHubSnapshotImpl::get_path_for_assets(
             self, params, results
         )))
@@ -672,6 +682,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::GetAssetsForPathsParams,
         results: asset_hub::snapshot::GetAssetsForPathsResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::get_assets_for_paths");
         Promise::ok(pry!(AssetHubSnapshotImpl::get_assets_for_paths(
             self, params, results
         )))
@@ -681,6 +692,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         params: asset_hub::snapshot::UpdateAssetParams,
         results: asset_hub::snapshot::UpdateAssetResults,
     ) -> Promise<()> {
+        log::trace!("asset_hub::snapshot::Server::update_asset");
         let fut = AssetHubSnapshotImpl::update_asset(self.txn.clone(), params, results);
         Promise::from_future(async { fut.await.map_err(|e| e.into()) })
     }
