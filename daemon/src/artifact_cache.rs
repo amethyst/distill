@@ -1,4 +1,4 @@
-use crate::capnp_db::{DBTransaction, Environment, MessageReader, RwTransaction};
+use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
 use crate::error::Result;
 use atelier_importer::SerializedAsset;
 use atelier_schema::data::artifact;
@@ -30,9 +30,11 @@ impl ArtifactCache {
 
     // TODO: invalidate cache
     #[allow(dead_code)]
-    pub fn delete(&self, txn: &mut RwTransaction<'_>, hash: u64) -> bool {
-        txn.delete(self.tables.hash_to_artifact, &hash.to_le_bytes())
-            .expect("db: Failed to delete entry from hash_to_artifact table")
+    pub async fn delete(&self, hash: u64) -> Result<bool> {
+        let mut txn = self.db.rw_txn().await?;
+        Ok(txn
+            .delete(self.tables.hash_to_artifact, &hash.to_le_bytes())
+            .expect("db: Failed to delete entry from hash_to_artifact table"))
     }
 
     pub fn insert<T: AsRef<[u8]>>(
@@ -40,6 +42,7 @@ impl ArtifactCache {
         txn: &mut RwTransaction<'_>,
         artifact: &SerializedAsset<T>,
     ) {
+        println!("inserting with hash {}", artifact.metadata.hash);
         txn.put(
             self.tables.hash_to_artifact,
             &artifact.metadata.hash.to_le_bytes(),
@@ -47,14 +50,19 @@ impl ArtifactCache {
         )
         .expect("lmdb: failed to put path ref");
     }
+    pub async fn ro_txn<'a>(&'a self) -> Result<RoTransaction<'a>> {
+        self.db.ro_txn().await
+    }
+    pub async fn rw_txn<'a>(&'a self) -> Result<RwTransaction<'a>> {
+        self.db.rw_txn().await
+    }
 
-    // TODO: actually use cache
-    #[allow(dead_code)]
-    pub fn get<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+    pub async fn get<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
         hash: u64,
     ) -> Option<MessageReader<'a, artifact::Owned>> {
+        println!("getting with hash {}", hash);
         txn.get::<artifact::Owned, _>(self.tables.hash_to_artifact, &hash.to_le_bytes())
             .expect("db: Failed to get entry from hash_to_artifact table")
     }

@@ -123,7 +123,9 @@ impl AssetDaemon {
         use asset_hub_service::AssetHubService;
         use file_asset_source::FileAssetSource;
 
+        let cache_dir = self.db_dir.join("cache");
         let _ = fs::create_dir(&self.db_dir);
+        let _ = fs::create_dir(&cache_dir);
         for dir in self.asset_dirs.iter() {
             let _ = fs::create_dir_all(dir);
         }
@@ -144,8 +146,10 @@ impl AssetDaemon {
 
         let importers = Arc::new(self.importers);
         let ctxs = Arc::new(self.importer_contexts);
+        let cache_db = Environment::new(&cache_dir).expect("failed to create asset db");
+        let cache_db = Arc::new(cache_db);
         let artifact_cache =
-            ArtifactCache::new(&asset_db).expect("failed to create artifact cache");
+            ArtifactCache::new(&cache_db).expect("failed to create artifact cache");
         let artifact_cache = Arc::new(artifact_cache);
 
         let work_runtime = tokio::runtime::Builder::new()

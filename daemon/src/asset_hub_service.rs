@@ -211,23 +211,40 @@ impl AssetHubSnapshotImpl {
         let params = params.get()?;
         let ctx = snapshot.ctx();
         let txn = snapshot.txn();
-        let mut artifacts = Vec::new();
+        let mut regen_artifacts = Vec::new();
+        let mut cached_artifacts = Vec::new();
         let mut scratch_buf = Vec::new();
+        let cache_txn = ctx.artifact_cache.ro_txn().await?;
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             let value = ctx.hub.get_metadata(txn, &id);
             if let Some(metadata) = value {
                 // retreive artifact data from cache if available
 
-                let metadata = metadata.get()?;
-                match metadata.get_source()? {
-                    AssetSource::File => {
-                        let (_, artifact) = ctx
-                            .file_source
-                            .regenerate_import_artifact(txn, &id, &mut scratch_buf)
-                            .await?;
-                        let capnp_artifact = build_artifact_message(&artifact);
-                        artifacts.push(capnp_artifact);
+                let mut need_regen = true;
+                if let latest_artifact::Artifact(Ok(artifact)) =
+                    metadata.get()?.get_latest_artifact().which()?
+                {
+                    let hash = u64::from_le_bytes(utils::make_array(artifact.get_hash()?));
+                    println!("got latest artifact hash {} for asset {:?}", hash, id);
+                    if let Some(artifact) = ctx.artifact_cache.get(&cache_txn, hash).await {
+                        println!("got cached artifact");
+                        cached_artifacts.push(artifact);
+                        need_regen = false;
+                    }
+                }
+
+                if need_regen {
+                    let metadata = metadata.get()?;
+                    match metadata.get_source()? {
+                        AssetSource::File => {
+                            let (_, artifact) = ctx
+                                .file_source
+                                .regenerate_import_artifact(txn, &id, &mut scratch_buf)
+                                .await?;
+                            let capnp_artifact = build_artifact_message(&artifact);
+                            regen_artifacts.push(capnp_artifact);
+                        }
                     }
                 }
             }
@@ -235,8 +252,13 @@ impl AssetHubSnapshotImpl {
         let mut results_builder = results.get();
         let mut artifact_results = results_builder
             .reborrow()
-            .init_artifacts(artifacts.len() as u32);
-        for (idx, artifact) in artifacts.iter().enumerate() {
+            .init_artifacts(cached_artifacts.len() as u32 + regen_artifacts.len() as u32);
+        for (idx, artifact) in cached_artifacts.iter().enumerate() {
+            artifact_results
+                .reborrow()
+                .set_with_caveats(idx as u32, artifact.get()?)?;
+        }
+        for (idx, artifact) in regen_artifacts.iter().enumerate() {
             artifact_results.reborrow().set_with_caveats(
                 idx as u32,
                 artifact.get_root_as_reader::<artifact::Reader<'_>>()?,

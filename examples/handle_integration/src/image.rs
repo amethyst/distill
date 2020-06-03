@@ -1,9 +1,7 @@
 use atelier_core::AssetUuid;
 use atelier_importer::{Error, ImportedAsset, Importer, ImporterValue, Result};
-use futures::future::BoxFuture;
 use image2::{color, ImageBuf};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncRead, AsyncReadExt};
 use type_uuid::*;
 
 #[derive(TypeUuid, Serialize, Deserialize, Debug)]
@@ -35,31 +33,28 @@ impl Importer for ImageImporter {
     type State = SimpleState;
 
     /// Reads the given bytes and produces assets.
-    fn import<'a>(
-        &'a self,
-        source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
-        options: Self::Options,
-        state: &'a mut Self::State,
-    ) -> BoxFuture<'a, Result<ImporterValue>> {
-        Box::pin(async move {
-            let id = state
-                .0
-                .unwrap_or_else(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
-            *state = SimpleState(Some(id));
-            let mut bytes = Vec::new();
-            source.read_to_end(&mut bytes).await?;
-            let asset =
-                Image::Rgb8(image2::io::decode(&bytes).map_err(|e| Error::Boxed(Box::new(e)))?);
-            Ok(ImporterValue {
-                assets: vec![ImportedAsset {
-                    id,
-                    search_tags: vec![],
-                    build_deps: vec![],
-                    load_deps: vec![],
-                    build_pipeline: None,
-                    asset_data: Box::new(asset),
-                }],
-            })
+    fn import(
+        &self,
+        source: &mut dyn std::io::Read,
+        _options: Self::Options,
+        state: &mut Self::State,
+    ) -> Result<ImporterValue> {
+        let id = state
+            .0
+            .unwrap_or_else(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+        *state = SimpleState(Some(id));
+        let mut bytes = Vec::new();
+        source.read_to_end(&mut bytes)?;
+        let asset = Image::Rgb8(image2::io::decode(&bytes).map_err(|e| Error::Boxed(Box::new(e)))?);
+        Ok(ImporterValue {
+            assets: vec![ImportedAsset {
+                id,
+                search_tags: vec![],
+                build_deps: vec![],
+                load_deps: vec![],
+                build_pipeline: None,
+                asset_data: Box::new(asset),
+            }],
         })
     }
 }

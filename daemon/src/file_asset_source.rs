@@ -643,6 +643,10 @@ impl FileAssetSource {
                     CompressionType::None,
                     scratch_buf,
                 )?;
+                let mut rw_txn = self.artifact_cache.rw_txn().await?;
+                self.artifact_cache.insert(&mut rw_txn, &serialized_asset);
+                rw_txn.commit()?;
+                println!("inserted artifact {} for asset {:?}", hash, id);
                 Ok((hash, serialized_asset))
             })
             .await;
@@ -1118,13 +1122,27 @@ impl FileAssetSource {
                             // put import artifact in cache if it doesn't have unresolved refs
                             if import_output.is_fully_resolved() {
                                 if import_output.assets.len() > 0 {
-                                    let mut txn = txn_ref.lock().await;
+                                    let mut txn = self
+                                        .artifact_cache
+                                        .rw_txn()
+                                        .await
+                                        .expect("failed to get cache txn");
                                     for asset in &import_output.assets {
-                                        if let Some(ref serialized_asset) = asset.serialized_asset {
+                                        if let Some(serialized_asset) =
+                                            asset.serialized_asset.as_ref()
+                                        {
+                                            println!(
+                                                "inserting {} for asset {:?}",
+                                                serialized_asset.metadata.hash,
+                                                serialized_asset.metadata.id
+                                            );
                                             self.artifact_cache.insert(&mut txn, serialized_asset);
                                         }
                                     }
+                                    txn.commit().expect("failed to commit cache txn");
                                 }
+                            } else {
+                                println!("not resolved");
                             }
 
                             Some(PairImportResultMetadata {
