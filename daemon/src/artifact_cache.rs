@@ -42,7 +42,6 @@ impl ArtifactCache {
         txn: &mut RwTransaction<'_>,
         artifact: &SerializedAsset<T>,
     ) {
-        println!("inserting with hash {}", artifact.metadata.hash);
         txn.put(
             self.tables.hash_to_artifact,
             &artifact.metadata.hash.to_le_bytes(),
@@ -62,7 +61,6 @@ impl ArtifactCache {
         txn: &'a V,
         hash: u64,
     ) -> Option<MessageReader<'a, artifact::Owned>> {
-        println!("getting with hash {}", hash);
         txn.get::<artifact::Owned, _>(self.tables.hash_to_artifact, &hash.to_le_bytes())
             .expect("db: Failed to get entry from hash_to_artifact table")
     }

@@ -646,7 +646,6 @@ impl FileAssetSource {
                 let mut rw_txn = self.artifact_cache.rw_txn().await?;
                 self.artifact_cache.insert(&mut rw_txn, &serialized_asset);
                 rw_txn.commit()?;
-                println!("inserted artifact {} for asset {:?}", hash, id);
                 Ok((hash, serialized_asset))
             })
             .await;
@@ -1131,18 +1130,11 @@ impl FileAssetSource {
                                         if let Some(serialized_asset) =
                                             asset.serialized_asset.as_ref()
                                         {
-                                            println!(
-                                                "inserting {} for asset {:?}",
-                                                serialized_asset.metadata.hash,
-                                                serialized_asset.metadata.id
-                                            );
                                             self.artifact_cache.insert(&mut txn, serialized_asset);
                                         }
                                     }
                                     txn.commit().expect("failed to commit cache txn");
                                 }
-                            } else {
-                                println!("not resolved");
                             }
 
                             Some(PairImportResultMetadata {

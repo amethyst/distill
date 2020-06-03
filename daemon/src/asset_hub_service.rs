@@ -226,9 +226,7 @@ impl AssetHubSnapshotImpl {
                     metadata.get()?.get_latest_artifact().which()?
                 {
                     let hash = u64::from_le_bytes(utils::make_array(artifact.get_hash()?));
-                    println!("got latest artifact hash {} for asset {:?}", hash, id);
                     if let Some(artifact) = ctx.artifact_cache.get(&cache_txn, hash).await {
-                        println!("got cached artifact");
                         cached_artifacts.push(artifact);
                         need_regen = false;
                     }
