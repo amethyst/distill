@@ -88,7 +88,10 @@ where
     }))
 }
 
-fn resolve_source_path(abs_source_path: &PathBuf, path: &PathBuf) -> PathBuf {
+fn resolve_source_path(
+    abs_source_path: &PathBuf,
+    path: &PathBuf,
+) -> PathBuf {
     let absolute_path = if path.is_relative() {
         // TODO check from root of asset folder as well?
         let mut parent_path = abs_source_path.clone();
@@ -323,7 +326,11 @@ impl FileAssetSource {
             })
     }
 
-    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Vec<AssetUuid> {
+    fn delete_metadata(
+        &self,
+        txn: &mut RwTransaction<'_>,
+        path: &PathBuf,
+    ) -> Vec<AssetUuid> {
         let to_remove: Vec<AssetUuid> = self
             .get_metadata(txn, path)
             .map(|existing| {
@@ -419,7 +426,11 @@ impl FileAssetSource {
             .map(|p| PathBuf::from(str::from_utf8(p).expect("utf8: Failed to parse path")))
     }
 
-    fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUuid) -> bool {
+    fn delete_asset_path(
+        &self,
+        txn: &mut RwTransaction<'_>,
+        asset_id: &AssetUuid,
+    ) -> bool {
         txn.delete(self.tables.asset_id_to_path, asset_id)
             .expect("db: Failed to delete asset_id from asset_id_to_path table")
     }
@@ -591,72 +602,100 @@ impl FileAssetSource {
         let mut context_set = imported_assets
             .importer_context_set
             .expect("importer context set required");
-        let unresolved_load_refs = imported_assets
-            .assets
-            .iter()
-            .flat_map(|a| &a.unresolved_load_refs);
-        let unresolved_build_refs = imported_assets
-            .assets
-            .iter()
-            .flat_map(|a| &a.unresolved_build_refs);
-        let mut resolved_refs = Vec::new();
-        for unresolved_ref in unresolved_build_refs.chain(unresolved_load_refs) {
-            if let Some(uuid) = self.resolve_asset_ref(txn, &path, &unresolved_ref) {
-                context_set.resolve_ref(&unresolved_ref, uuid);
-                resolved_refs.push(uuid);
+        let mut this_asset = None;
+        let mut rw_txn = self.artifact_cache.rw_txn().await?;
+        for asset in imported_assets.assets {
+            let mut build_deps = asset
+                .metadata
+                .artifact
+                .as_ref()
+                .map(|artifact| {
+                    artifact
+                        .build_deps
+                        .iter()
+                        .filter(|dep| !dep.is_path())
+                        .map(|dep| dep.expect_uuid())
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or(Vec::new());
+            let mut load_deps = asset
+                .metadata
+                .artifact
+                .as_ref()
+                .map(|artifact| {
+                    artifact
+                        .load_deps
+                        .iter()
+                        .filter(|dep| !dep.is_path())
+                        .map(|dep| dep.expect_uuid())
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or(Vec::new());
+            for unresolved_ref in asset.unresolved_build_refs.iter() {
+                if let Some(uuid) = self.resolve_asset_ref(txn, &path, &unresolved_ref) {
+                    context_set.resolve_ref(&unresolved_ref, uuid);
+                    build_deps.push(uuid);
+                }
             }
+            for unresolved_ref in asset.unresolved_load_refs.iter() {
+                if let Some(uuid) = self.resolve_asset_ref(txn, &path, &unresolved_ref) {
+                    context_set.resolve_ref(&unresolved_ref, uuid);
+                    load_deps.push(uuid);
+                }
+            }
+
+            let import_hash = import
+                .import_hash()
+                .expect("Invalid: Import path should exist");
+
+            context_set.begin_serialize_asset(asset.metadata.id);
+            let asset_id = asset.metadata.id;
+
+            let pair: Result<(u64, SerializedAssetVec)> = context_set
+                .scope(async {
+                    let hash = utils::calc_import_artifact_hash(
+                        &asset.metadata.id,
+                        import_hash,
+                        load_deps.iter().chain(build_deps.iter()),
+                    );
+                    let serialized_asset = SerializedAsset::create(
+                        hash,
+                        asset.metadata.id,
+                        build_deps
+                            .into_iter()
+                            .map(|dep| AssetRef::Uuid(dep))
+                            .collect(),
+                        load_deps
+                            .into_iter()
+                            .map(|dep| AssetRef::Uuid(dep))
+                            .collect(),
+                        &*asset
+                            .asset
+                            .expect("expected asset obj when regenerating artifact"),
+                        CompressionType::None,
+                        scratch_buf,
+                    )?;
+                    self.artifact_cache.insert(&mut rw_txn, &serialized_asset);
+                    Ok((hash, serialized_asset))
+                })
+                .await;
+            let pair = pair?;
+            if asset_id == *id {
+                this_asset = Some(pair);
+            }
+
+            context_set.end_serialize_asset(asset_id);
         }
-
-        let assets = imported_assets.assets;
-        let this_asset = match assets.into_iter().find(|a| a.metadata.id == *id) {
-            Some(asset) => asset,
-            None => {
-                return Err(Error::Custom(
-                    "Asset does not exist in source file".to_string(),
-                ));
-            }
-        };
-
-        let import_hash = import
-            .import_hash()
-            .expect("Invalid: Import path should exist");
-
-        let asset_id = this_asset.metadata.id;
-        context_set.begin_serialize_asset(asset_id);
-
-        let pair = context_set
-            .scope(async move {
-                let hash = utils::calc_import_artifact_hash(id, import_hash, resolved_refs);
-                let serialized_asset = SerializedAsset::create(
-                    hash,
-                    *id,
-                    this_asset
-                        .metadata
-                        .artifact
-                        .as_ref()
-                        .map(|artifact| artifact.build_deps.clone())
-                        .unwrap_or(Vec::new()),
-                    this_asset
-                        .metadata
-                        .artifact
-                        .as_ref()
-                        .map(|artifact| artifact.load_deps.clone())
-                        .unwrap_or(Vec::new()),
-                    &*this_asset
-                        .asset
-                        .expect("expected asset obj when regenerating artifact"),
-                    CompressionType::None,
-                    scratch_buf,
-                )?;
-                let mut rw_txn = self.artifact_cache.rw_txn().await?;
-                self.artifact_cache.insert(&mut rw_txn, &serialized_asset);
-                rw_txn.commit()?;
-                Ok((hash, serialized_asset))
-            })
-            .await;
-
-        context_set.end_serialize_asset(asset_id);
-        pair
+        rw_txn.commit()?;
+        if let Some(asset) = this_asset {
+            Ok(asset)
+        } else {
+            Err(Error::Custom(
+                "Asset does not exist in source file".to_string(),
+            ))
+        }
     }
 
     fn resolve_metadata_asset_refs<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
@@ -789,7 +828,10 @@ impl FileAssetSource {
                         a.hash = utils::calc_import_artifact_hash(
                             &asset,
                             import_hash,
-                            a.load_deps.iter().chain(a.build_deps.iter()),
+                            a.load_deps
+                                .iter()
+                                .chain(a.build_deps.iter())
+                                .map(|dep| dep.expect_uuid()),
                         )
                     });
 
@@ -858,12 +900,14 @@ impl FileAssetSource {
                                         .filter(|x| x.is_uuid())
                                         .cloned()
                                         .collect();
-                                    artifact.load_deps.sort_unstable();
-                                    artifact.build_deps.sort_unstable();
                                     artifact.hash = utils::calc_import_artifact_hash(
                                         &asset.metadata.id,
                                         import_hash,
-                                        artifact.load_deps.iter().chain(artifact.build_deps.iter()),
+                                        artifact
+                                            .load_deps
+                                            .iter()
+                                            .chain(artifact.build_deps.iter())
+                                            .map(|dep| dep.expect_uuid()),
                                     );
                                     self.hub
                                         .update_asset(
@@ -885,7 +929,11 @@ impl FileAssetSource {
         }
     }
 
-    fn ack_dirty_file_states(&self, txn: &mut RwTransaction<'_>, pair: &HashedSourcePair) {
+    fn ack_dirty_file_states(
+        &self,
+        txn: &mut RwTransaction<'_>,
+        pair: &HashedSourcePair,
+    ) {
         let mut skip_ack_dirty = false;
 
         {
@@ -915,7 +963,10 @@ impl FileAssetSource {
         }
     }
 
-    fn handle_rename_events(&self, txn: &mut RwTransaction<'_>) {
+    fn handle_rename_events(
+        &self,
+        txn: &mut RwTransaction<'_>,
+    ) {
         let rename_events = self.tracker.read_rename_events(txn);
         debug!("rename events");
 
@@ -1032,7 +1083,10 @@ impl FileAssetSource {
         has_changed_paths
     }
 
-    fn handle_dirty_files(&self, txn: &mut RwTransaction<'_>) -> HashMap<PathBuf, SourcePair> {
+    fn handle_dirty_files(
+        &self,
+        txn: &mut RwTransaction<'_>,
+    ) -> HashMap<PathBuf, SourcePair> {
         let dirty_files = self.tracker.read_dirty_files(txn);
         let mut source_meta_pairs: HashMap<PathBuf, SourcePair> = HashMap::new();
 
@@ -1122,24 +1176,30 @@ impl FileAssetSource {
                     };
 
                     if let Some((import, import_output)) = result {
-                        let metadata = if let Some(import_output) = import_output {
+                        let metadata = if let Some(mut import_output) = import_output {
                             // put import artifact in cache if it doesn't have unresolved refs
-                            if import_output.is_fully_resolved() {
-                                if import_output.assets.len() > 0 {
-                                    let mut txn = self
-                                        .artifact_cache
-                                        .rw_txn()
-                                        .await
-                                        .expect("failed to get cache txn");
-                                    for asset in &import_output.assets {
+                            if import_output.assets.len() > 0 {
+                                let mut txn = self
+                                    .artifact_cache
+                                    .rw_txn()
+                                    .await
+                                    .expect("failed to get cache txn");
+                                for asset in import_output.assets.iter_mut() {
+                                    if asset.is_fully_resolved() {
                                         if let Some(serialized_asset) =
-                                            asset.serialized_asset.as_ref()
+                                            asset.serialized_asset.as_mut()
                                         {
+                                            serialized_asset.metadata.hash = utils::calc_import_artifact_hash(&asset.metadata.id, import.import_hash().unwrap(), serialized_asset.metadata.load_deps.iter().chain(serialized_asset.metadata.build_deps.iter()).map(|dep| dep.expect_uuid()));
+                                            log::trace!("caching asset {:?} from file {:?} with hash {}", asset.metadata.id, p.source, serialized_asset.metadata.hash );
                                             self.artifact_cache.insert(&mut txn, serialized_asset);
+                                        } else {
+                                            log::trace!("asset {:?} from file {:?} did not return serialized asset: cannot cache", asset.metadata.id, p.source );
                                         }
+                                    } else {
+                                        log::trace!("asset {:?} from file {:?} not fully resolved: cannot cache", asset.metadata.id, p.source );
                                     }
-                                    txn.commit().expect("failed to commit cache txn");
                                 }
+                                txn.commit().expect("failed to commit cache txn");
                             }
 
                             Some(PairImportResultMetadata {

@@ -33,7 +33,10 @@ impl std::error::Error for Error {
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         match *self {
             Error::IoError(ref e) => e.fmt(f),
             Error::RonDeError(ref e) => e.fmt(f),

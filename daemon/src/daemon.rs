@@ -18,11 +18,18 @@ use std::{
 pub(crate) struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
-    pub fn insert(&mut self, ext: &str, importer: Box<dyn BoxedImporter>) {
+    pub fn insert(
+        &mut self,
+        ext: &str,
+        importer: Box<dyn BoxedImporter>,
+    ) {
         self.0.insert(ext.to_lowercase(), importer);
     }
 
-    pub fn get_by_path<'a>(&'a self, path: &PathBuf) -> Option<&'a dyn BoxedImporter> {
+    pub fn get_by_path<'a>(
+        &'a self,
+        path: &PathBuf,
+    ) -> Option<&'a dyn BoxedImporter> {
         let lower_extension = path
             .extension()
             .map(|s| s.to_str().unwrap().to_lowercase())
@@ -66,22 +73,35 @@ impl Default for AssetDaemon {
 }
 
 impl AssetDaemon {
-    pub fn with_db_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    pub fn with_db_path<P: AsRef<Path>>(
+        mut self,
+        path: P,
+    ) -> Self {
         self.db_dir = path.as_ref().to_owned();
         self
     }
 
-    pub fn with_address(mut self, address: SocketAddr) -> Self {
+    pub fn with_address(
+        mut self,
+        address: SocketAddr,
+    ) -> Self {
         self.address = address;
         self
     }
 
-    pub fn with_importer(mut self, ext: &'static str, importer: Box<dyn BoxedImporter>) -> Self {
+    pub fn with_importer(
+        mut self,
+        ext: &'static str,
+        importer: Box<dyn BoxedImporter>,
+    ) -> Self {
         self.importers.insert(ext, importer);
         self
     }
 
-    pub fn with_importers<I>(self, importers: I) -> Self
+    pub fn with_importers<I>(
+        self,
+        importers: I,
+    ) -> Self
     where
         I: IntoIterator<Item = (&'static str, Box<dyn BoxedImporter>)>,
     {
@@ -90,12 +110,18 @@ impl AssetDaemon {
         })
     }
 
-    pub fn with_importer_context(mut self, context: Box<dyn ImporterContext>) -> Self {
+    pub fn with_importer_context(
+        mut self,
+        context: Box<dyn ImporterContext>,
+    ) -> Self {
         self.importer_contexts.push(context);
         self
     }
 
-    pub fn with_importer_contexts<I>(mut self, contexts: I) -> Self
+    pub fn with_importer_contexts<I>(
+        mut self,
+        contexts: I,
+    ) -> Self
     where
         I: IntoIterator<Item = Box<dyn ImporterContext>>,
     {
@@ -103,7 +129,10 @@ impl AssetDaemon {
         self
     }
 
-    pub fn with_asset_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
+    pub fn with_asset_dirs(
+        mut self,
+        dirs: Vec<PathBuf>,
+    ) -> Self {
         self.asset_dirs = dirs;
         self
     }

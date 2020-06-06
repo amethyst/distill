@@ -637,13 +637,19 @@ impl AssetHub {
         }
     }
 
-    pub fn register_listener(&self, listener: Sender<AssetBatchEvent>) -> ListenerID {
+    pub fn register_listener(
+        &self,
+        listener: Sender<AssetBatchEvent>,
+    ) -> ListenerID {
         let id = self.id_gen.fetch_add(1, Ordering::Relaxed);
         self.listeners.lock().unwrap().insert(id, listener);
         id
     }
 
-    pub fn drop_listener(&self, listener: ListenerID) -> Option<Sender<AssetBatchEvent>> {
+    pub fn drop_listener(
+        &self,
+        listener: ListenerID,
+    ) -> Option<Sender<AssetBatchEvent>> {
         self.listeners.lock().unwrap().remove(&listener)
     }
 }

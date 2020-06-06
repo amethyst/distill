@@ -79,7 +79,7 @@ struct AssetHubImpl {
 }
 
 fn build_artifact_message<T: AsRef<[u8]>>(
-    artifact: &SerializedAsset<T>,
+    artifact: &SerializedAsset<T>
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
@@ -93,7 +93,7 @@ fn build_artifact_message<T: AsRef<[u8]>>(
 }
 
 fn artifact_to_serialized_asset<'a>(
-    artifact: &artifact::Reader<'a>,
+    artifact: &artifact::Reader<'a>
 ) -> Result<SerializedAsset<&'a [u8]>> {
     let metadata = crate::asset_hub::parse_artifact_metadata(&artifact.get_metadata()?);
     Ok(SerializedAsset {
@@ -217,7 +217,10 @@ impl AssetHubSnapshotImpl {
         let cache_txn = ctx.artifact_cache.ro_txn().await?;
 
         let request_uuid = uuid::Uuid::new_v4();
-        log::trace!("get_import_artifacts Gathering artifacts {:?}", request_uuid);
+        log::trace!(
+            "get_import_artifacts Gathering artifacts {:?}",
+            request_uuid
+        );
 
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
@@ -235,6 +238,8 @@ impl AssetHubSnapshotImpl {
                     if let Some(artifact) = ctx.artifact_cache.get(&cache_txn, hash).await {
                         cached_artifacts.push(artifact);
                         need_regen = false;
+                    } else {
+                        log::trace!("cache miss for asset {:?} with hash {:?}", id, hash);
                     }
                 }
 
@@ -583,7 +588,10 @@ impl AssetHubService {
         }
     }
 
-    pub async fn run(&self, addr: std::net::SocketAddr) {
+    pub async fn run(
+        &self,
+        addr: std::net::SocketAddr,
+    ) {
         let result: std::result::Result<(), Box<dyn std::error::Error>> = async {
             let mut listener: tokio::net::TcpListener =
                 tokio::net::TcpListener::bind(&addr).await?;

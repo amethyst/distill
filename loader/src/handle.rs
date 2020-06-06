@@ -26,7 +26,10 @@ pub enum RefOp {
     IncreaseUuid(AssetUuid),
 }
 
-pub fn process_ref_ops<T: Loader>(loader: &T, rx: &Receiver<RefOp>) {
+pub fn process_ref_ops<T: Loader>(
+    loader: &T,
+    rx: &Receiver<RefOp>,
+) {
     loop {
         match rx.try_recv() {
             Err(_) => break,
@@ -115,7 +118,10 @@ pub struct Handle<T: ?Sized> {
 }
 
 impl<T: ?Sized> PartialEq for Handle<T> {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool {
         self.handle_ref == other.handle_ref
     }
 }
@@ -130,7 +136,10 @@ impl<T: ?Sized> Clone for Handle<T> {
 }
 
 impl<T> Debug for Handle<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut Formatter<'_>,
+    ) -> std::fmt::Result {
         f.debug_struct("Handle")
             .field("handle_ref", &self.handle_ref)
             .finish()
@@ -139,7 +148,10 @@ impl<T> Debug for Handle<T> {
 
 impl<T> Handle<T> {
     /// Creates a new handle with `HandleRefType::Strong`
-    pub fn new(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub fn new(
+        chan: Arc<Sender<RefOp>>,
+        handle: LoadHandle,
+    ) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -150,7 +162,10 @@ impl<T> Handle<T> {
     }
 
     /// Creates a new handle with `HandleRefType::Internal`
-    pub(crate) fn new_internal(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub(crate) fn new_internal(
+        chan: Arc<Sender<RefOp>>,
+        handle: LoadHandle,
+    ) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -160,7 +175,10 @@ impl<T> Handle<T> {
         }
     }
 
-    pub fn asset<'a>(&self, storage: &'a impl TypedAssetStorage<T>) -> Option<&'a T> {
+    pub fn asset<'a>(
+        &self,
+        storage: &'a impl TypedAssetStorage<T>,
+    ) -> Option<&'a T> {
         AssetHandle::asset(self, storage)
     }
 }
@@ -181,7 +199,10 @@ pub struct GenericHandle {
 
 impl GenericHandle {
     /// Creates a new handle with `HandleRefType::Strong`
-    pub fn new(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub fn new(
+        chan: Arc<Sender<RefOp>>,
+        handle: LoadHandle,
+    ) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -191,7 +212,10 @@ impl GenericHandle {
     }
 
     /// Creates a new handle with `HandleRefType::Internal`
-    pub(crate) fn new_internal(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub(crate) fn new_internal(
+        chan: Arc<Sender<RefOp>>,
+        handle: LoadHandle,
+    ) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -318,7 +342,10 @@ impl DummySerdeContext {
 }
 
 impl LoaderInfoProvider for DummySerdeContext {
-    fn get_load_handle(&self, asset_ref: &AssetRef) -> Option<LoadHandle> {
+    fn get_load_handle(
+        &self,
+        asset_ref: &AssetRef,
+    ) -> Option<LoadHandle> {
         let mut maps = self.maps.write().unwrap();
         let maps = &mut *maps;
         let uuid_to_load = &mut maps.uuid_to_load;
@@ -334,7 +361,10 @@ impl LoaderInfoProvider for DummySerdeContext {
 
         Some(*handle)
     }
-    fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
+    fn get_asset_id(
+        &self,
+        load: LoadHandle,
+    ) -> Option<AssetUuid> {
         let maps = self.maps.read().unwrap();
         let maybe_asset = maps.load_to_uuid.get(&load).map(|r| r.clone());
         if let Some(asset_ref) = maybe_asset.as_ref() {
@@ -358,13 +388,20 @@ struct DummySerdeContextHandle {
     dummy: Arc<DummySerdeContext>,
 }
 impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeContextHandle {
-    fn scope<'s>(&'s self, fut: BoxFuture<'s, ()>) -> BoxFuture<'s, ()> {
+    fn scope<'s>(
+        &'s self,
+        fut: BoxFuture<'s, ()>,
+    ) -> BoxFuture<'s, ()> {
         let sender = self.dummy.ref_sender.clone();
         let loader = &*self.dummy;
         Box::pin(SerdeContext::with(loader, sender, fut))
     }
 
-    fn resolve_ref(&mut self, asset_ref: &AssetRef, asset: AssetUuid) {
+    fn resolve_ref(
+        &mut self,
+        asset_ref: &AssetRef,
+        asset: AssetUuid,
+    ) {
         let new_ref = AssetRef::Uuid(asset);
         let mut maps = self.dummy.maps.write().unwrap();
         if let Some(handle) = maps.uuid_to_load.get(asset_ref) {
@@ -374,7 +411,10 @@ impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeCon
         }
     }
     /// Begin gathering dependencies for an asset
-    fn begin_serialize_asset(&mut self, asset: AssetUuid) {
+    fn begin_serialize_asset(
+        &mut self,
+        asset: AssetUuid,
+    ) {
         let mut current = self.dummy.current.lock().unwrap();
         if current.current_serde_asset.is_some() {
             panic!("begin_serialize_asset when current_serde_asset is already set");
@@ -382,7 +422,10 @@ impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeCon
         current.current_serde_asset = Some(asset);
     }
     /// Finish gathering dependencies for an asset
-    fn end_serialize_asset(&mut self, _asset: AssetUuid) -> HashSet<AssetRef> {
+    fn end_serialize_asset(
+        &mut self,
+        _asset: AssetUuid,
+    ) -> HashSet<AssetRef> {
         let mut current = self.dummy.current.lock().unwrap();
         if current.current_serde_asset.is_none() {
             panic!("end_serialize_asset when current_serde_asset is not set");
@@ -406,7 +449,10 @@ inventory::submit!(
     }
 );
 
-fn serialize_handle<S>(load: LoadHandle, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_handle<S>(
+    load: LoadHandle,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -421,7 +467,10 @@ where
     })
 }
 impl<T> Serialize for Handle<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -429,7 +478,10 @@ impl<T> Serialize for Handle<T> {
     }
 }
 impl Serialize for GenericHandle {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -485,17 +537,26 @@ struct AssetRefVisitor;
 impl<'de> Visitor<'de> for AssetRefVisitor {
     type Value = AssetRef;
 
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         formatter.write_str("an array of 16 u8")
     }
-    fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    fn visit_newtype_struct<D>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error>
     where
         D: de::Deserializer<'de>,
     {
         deserializer.deserialize_seq(self)
     }
 
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    fn visit_seq<A>(
+        self,
+        mut seq: A,
+    ) -> Result<Self::Value, A::Error>
     where
         A: de::SeqAccess<'de>,
     {
@@ -518,7 +579,10 @@ impl<'de> Visitor<'de> for AssetRefVisitor {
         }
         Ok(AssetRef::Uuid(AssetUuid(uuid)))
     }
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    fn visit_str<E>(
+        self,
+        v: &str,
+    ) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -538,7 +602,10 @@ impl<'de> Visitor<'de> for AssetRefVisitor {
         }
     }
 
-    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    fn visit_bytes<E>(
+        self,
+        v: &[u8],
+    ) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -566,7 +633,10 @@ pub trait TypedAssetStorage<A> {
     /// # Type Parameters
     ///
     /// * `T`: Asset handle type.
-    fn get<T: AssetHandle>(&self, handle: &T) -> Option<&A>;
+    fn get<T: AssetHandle>(
+        &self,
+        handle: &T,
+    ) -> Option<&A>;
 
     /// Returns the version of a loaded asset, or `None` if has not completed loading.
     ///
@@ -577,7 +647,10 @@ pub trait TypedAssetStorage<A> {
     /// # Type Parameters
     ///
     /// * `T`: Asset handle type.
-    fn get_version<T: AssetHandle>(&self, handle: &T) -> Option<u32>;
+    fn get_version<T: AssetHandle>(
+        &self,
+        handle: &T,
+    ) -> Option<u32>;
 
     /// Returns the loaded asset and its version, or `None` if has not completed loading.
     ///
@@ -588,7 +661,10 @@ pub trait TypedAssetStorage<A> {
     /// # Type Parameters
     ///
     /// * `T`: Asset handle type.
-    fn get_asset_with_version<T: AssetHandle>(&self, handle: &T) -> Option<(&A, u32)>;
+    fn get_asset_with_version<T: AssetHandle>(
+        &self,
+        handle: &T,
+    ) -> Option<(&A, u32)>;
 }
 
 /// The contract of an asset handle.
@@ -607,7 +683,10 @@ pub trait AssetHandle {
     /// # Type Parameters
     ///
     /// * `L`: Asset loader type.
-    fn load_status<L: Loader>(&self, loader: &L) -> LoadStatus {
+    fn load_status<L: Loader>(
+        &self,
+        loader: &L,
+    ) -> LoadStatus {
         loader.get_load_status(self.load_handle())
     }
 
@@ -616,7 +695,10 @@ pub trait AssetHandle {
     /// # Parameters
     ///
     /// * `storage`: Asset storage.
-    fn asset<'a, T, S: TypedAssetStorage<T>>(&self, storage: &'a S) -> Option<&'a T>
+    fn asset<'a, T, S: TypedAssetStorage<T>>(
+        &self,
+        storage: &'a S,
+    ) -> Option<&'a T>
     where
         Self: Sized,
     {
@@ -628,7 +710,10 @@ pub trait AssetHandle {
     /// # Parameters
     ///
     /// * `storage`: Asset storage.
-    fn asset_version<'a, T, S: TypedAssetStorage<T>>(&self, storage: &'a S) -> Option<u32>
+    fn asset_version<'a, T, S: TypedAssetStorage<T>>(
+        &self,
+        storage: &'a S,
+    ) -> Option<u32>
     where
         Self: Sized,
     {

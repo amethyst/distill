@@ -38,7 +38,10 @@ impl AsRef<[u8]> for AssetUuid {
 }
 
 impl fmt::Debug for AssetUuid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter,
+    ) -> fmt::Result {
         f.debug_tuple("AssetUuid")
             .field(&uuid::Uuid::from_bytes(self.0))
             .finish()
@@ -46,14 +49,20 @@ impl fmt::Debug for AssetUuid {
 }
 
 impl fmt::Display for AssetUuid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter,
+    ) -> fmt::Result {
         uuid::Uuid::from_bytes(self.0).fmt(f)
     }
 }
 
 #[cfg(feature = "serde-1")]
 impl Serialize for AssetUuid {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             serializer.serialize_str(&self.to_string())
         } else {
@@ -69,11 +78,17 @@ struct AssetUuidVisitor;
 impl<'a> Visitor<'a> for AssetUuidVisitor {
     type Value = AssetUuid;
 
-    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(
+        &self,
+        fmt: &mut fmt::Formatter,
+    ) -> fmt::Result {
         write!(fmt, "a UUID-formatted string")
     }
 
-    fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
+    fn visit_str<E: de::Error>(
+        self,
+        s: &str,
+    ) -> Result<Self::Value, E> {
         uuid::Uuid::from_str(s)
             .map(|id| AssetUuid(*id.as_bytes()))
             .map_err(|_| de::Error::invalid_value(de::Unexpected::Str(s), &self))
@@ -111,14 +126,20 @@ impl AsRef<[u8]> for AssetTypeId {
 }
 
 impl fmt::Display for AssetTypeId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter,
+    ) -> fmt::Result {
         uuid::Uuid::from_bytes(self.0).fmt(f)
     }
 }
 
 #[cfg(feature = "serde-1")]
 impl Serialize for AssetTypeId {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             serializer.serialize_str(&self.to_string())
         } else {
@@ -134,11 +155,17 @@ struct AssetTypeIdVisitor;
 impl<'a> Visitor<'a> for AssetTypeIdVisitor {
     type Value = AssetTypeId;
 
-    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(
+        &self,
+        fmt: &mut fmt::Formatter,
+    ) -> fmt::Result {
         write!(fmt, "a UUID-formatted string")
     }
 
-    fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
+    fn visit_str<E: de::Error>(
+        self,
+        s: &str,
+    ) -> Result<Self::Value, E> {
         uuid::Uuid::parse_str(s)
             .map(|id| AssetTypeId(*id.as_bytes()))
             .map_err(|_| de::Error::invalid_value(de::Unexpected::Str(s), &self))

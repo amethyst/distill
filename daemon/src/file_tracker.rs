@@ -63,7 +63,10 @@ pub struct FileState {
 }
 
 impl PartialEq for FileState {
-    fn eq(&self, other: &FileState) -> bool {
+    fn eq(
+        &self,
+        other: &FileState,
+    ) -> bool {
         self.path == other.path
             && self.state == other.state
             && self.last_modified == other.last_modified
@@ -101,12 +104,18 @@ impl ListenersList {
             listeners: Vec::new(),
         }
     }
-    fn register(&mut self, new_listener: Option<UnboundedSender<FileTrackerEvent>>) {
+    fn register(
+        &mut self,
+        new_listener: Option<UnboundedSender<FileTrackerEvent>>,
+    ) {
         if let Some(new_listener) = new_listener {
             self.listeners.push(new_listener);
         }
     }
-    fn send_event(&mut self, event: FileTrackerEvent) {
+    fn send_event(
+        &mut self,
+        event: FileTrackerEvent,
+    ) {
         self.listeners.retain(|listener| {
             match listener.unbounded_send(event) {
                 Ok(()) => {
@@ -168,7 +177,7 @@ fn build_dirty_file_info(
     value_builder
 }
 fn build_source_info(
-    metadata: &watcher::FileMetadata,
+    metadata: &watcher::FileMetadata
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
@@ -375,7 +384,10 @@ mod events {
 }
 
 impl FileTracker {
-    pub fn new<'a, I, T>(db: Arc<Environment>, to_watch: I) -> FileTracker
+    pub fn new<'a, I, T>(
+        db: Arc<Environment>,
+        to_watch: I,
+    ) -> FileTracker
     where
         I: IntoIterator<Item = &'a str, IntoIter = T>,
         T: Iterator<Item = &'a str>,
@@ -462,12 +474,19 @@ impl FileTracker {
             .collect()
     }
 
-    pub fn clear_rename_events(&self, txn: &mut RwTransaction<'_>) {
+    pub fn clear_rename_events(
+        &self,
+        txn: &mut RwTransaction<'_>,
+    ) {
         txn.clear_db(self.tables.rename_file_events)
             .expect("db: Failed to clear rename_file_events table");
     }
 
-    pub async fn add_dirty_file(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Result<()> {
+    pub async fn add_dirty_file(
+        &self,
+        txn: &mut RwTransaction<'_>,
+        path: &PathBuf,
+    ) -> Result<()> {
         let metadata = match tokio::fs::metadata(path).await {
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(Error::IO(e)),
@@ -521,7 +540,10 @@ impl FileTracker {
             .collect()
     }
 
-    pub fn read_all_files(&self, iter_txn: &RoTransaction<'_>) -> Vec<FileState> {
+    pub fn read_all_files(
+        &self,
+        iter_txn: &RoTransaction<'_>,
+    ) -> Vec<FileState> {
         iter_txn
             .open_ro_cursor(self.tables.source_files)
             .expect("db: Failed to open ro cursor for source_files table")
@@ -602,7 +624,10 @@ impl FileTracker {
             })
     }
 
-    pub fn register_listener(&self, sender: UnboundedSender<FileTrackerEvent>) {
+    pub fn register_listener(
+        &self,
+        sender: UnboundedSender<FileTrackerEvent>,
+    ) {
         self.listener_tx
             .unbounded_send(sender)
             .expect("Failed registering listener")
@@ -784,7 +809,11 @@ pub mod tests {
         unreachable!();
     }
 
-    async fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
+    async fn expect_no_file_state(
+        t: &FileTracker,
+        asset_dir: &Path,
+        name: &str,
+    ) {
         let txn = t.get_ro_txn().await;
         let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
         let canonical_path = watcher::canonicalize_path(&path.join(name));
@@ -797,20 +826,30 @@ pub mod tests {
         );
     }
 
-    async fn expect_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
+    async fn expect_file_state(
+        t: &FileTracker,
+        asset_dir: &Path,
+        name: &str,
+    ) {
         let txn = t.get_ro_txn().await;
         let canonical_path = watcher::canonicalize_path(&asset_dir.join(name));
         t.get_file_state(&txn, &canonical_path)
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
 
-    pub async fn add_test_dir(asset_dir: &Path, name: &str) -> PathBuf {
+    pub async fn add_test_dir(
+        asset_dir: &Path,
+        name: &str,
+    ) -> PathBuf {
         let path = PathBuf::from(asset_dir).join(name);
         tokio::fs::create_dir(&path).await.expect("create dir");
         path
     }
 
-    pub async fn add_test_file(asset_dir: &Path, name: &str) {
+    pub async fn add_test_file(
+        asset_dir: &Path,
+        name: &str,
+    ) {
         tokio::fs::copy(
             PathBuf::from("tests/file_tracker/").join(name),
             asset_dir.join(name),
@@ -819,18 +858,28 @@ pub mod tests {
         .expect("copy test file");
     }
 
-    pub async fn delete_test_file(asset_dir: &Path, name: &str) {
+    pub async fn delete_test_file(
+        asset_dir: &Path,
+        name: &str,
+    ) {
         tokio::fs::remove_file(asset_dir.join(name))
             .await
             .expect("delete test file");
     }
-    pub async fn truncate_test_file(asset_dir: &Path, name: &str) {
+    pub async fn truncate_test_file(
+        asset_dir: &Path,
+        name: &str,
+    ) {
         tokio::fs::File::create(asset_dir.join(name))
             .await
             .expect("truncate test file");
     }
 
-    fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
+    fn expect_dirty_file_state(
+        t: &FileTracker,
+        asset_dir: &Path,
+        name: &str,
+    ) {
         let txn = t.get_ro_txn();
         let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
         let canonical_path = path.join(name);

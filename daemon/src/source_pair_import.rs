@@ -55,7 +55,17 @@ pub(crate) struct AssetImportResult {
 
 impl AssetImportResult {
     pub(crate) fn is_fully_resolved(&self) -> bool {
-        self.unresolved_load_refs.is_empty() && self.unresolved_build_refs.is_empty()
+        self.unresolved_load_refs
+            .iter()
+            .filter(|r| r.is_uuid())
+            .next()
+            .is_none()
+            && self
+                .unresolved_build_refs
+                .iter()
+                .filter(|r| r.is_uuid())
+                .next()
+                .is_none()
     }
 }
 
@@ -87,7 +97,10 @@ pub(crate) trait SourceMetadataCache {
 
 pub struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);
 impl ImporterContextHandleSet {
-    pub async fn scope<F>(&mut self, fut: F) -> F::Output
+    pub async fn scope<F>(
+        &mut self,
+        fut: F,
+    ) -> F::Output
     where
         F: Future + Send,
         F::Output: Send,
@@ -115,17 +128,27 @@ impl ImporterContextHandleSet {
     //         handle.exit();
     //     }
     // }
-    pub fn resolve_ref(&mut self, asset_ref: &AssetRef, id: AssetUuid) {
+    pub fn resolve_ref(
+        &mut self,
+        asset_ref: &AssetRef,
+        id: AssetUuid,
+    ) {
         for handle in self.0.iter_mut() {
             handle.resolve_ref(asset_ref, id);
         }
     }
-    pub fn begin_serialize_asset(&mut self, id: AssetUuid) {
+    pub fn begin_serialize_asset(
+        &mut self,
+        id: AssetUuid,
+    ) {
         for handle in self.0.iter_mut() {
             handle.begin_serialize_asset(id);
         }
     }
-    pub fn end_serialize_asset(&mut self, id: AssetUuid) -> HashSet<AssetRef> {
+    pub fn end_serialize_asset(
+        &mut self,
+        id: AssetUuid,
+    ) -> HashSet<AssetRef> {
         let mut deps = HashSet::new();
         for handle in self.0.iter_mut() {
             for dep in handle.end_serialize_asset(id) {
@@ -146,10 +169,16 @@ impl<'a> SourcePairImport<'a> {
     pub fn source_metadata(&self) -> Option<&SourceMetadata> {
         self.source_metadata.as_ref()
     }
-    pub fn set_source_hash(&mut self, source_hash: u64) {
+    pub fn set_source_hash(
+        &mut self,
+        source_hash: u64,
+    ) {
         self.source_hash = Some(source_hash);
     }
-    pub fn set_meta_hash(&mut self, meta_hash: u64) {
+    pub fn set_meta_hash(
+        &mut self,
+        meta_hash: u64,
+    ) {
         self.meta_hash = Some(meta_hash);
     }
 
@@ -167,16 +196,25 @@ impl<'a> SourcePairImport<'a> {
     }
 
     /// Returns true if an appropriate importer was found, otherwise false.
-    pub fn set_importer_from_map(&mut self, importers: &'a ImporterMap) -> bool {
+    pub fn set_importer_from_map(
+        &mut self,
+        importers: &'a ImporterMap,
+    ) -> bool {
         self.importer = importers.get_by_path(&self.source);
         self.importer.is_some()
     }
 
-    pub fn set_importer_contexts(&mut self, importer_contexts: &'a Vec<Box<dyn ImporterContext>>) {
+    pub fn set_importer_contexts(
+        &mut self,
+        importer_contexts: &'a Vec<Box<dyn ImporterContext>>,
+    ) {
         self.importer_contexts = Some(importer_contexts);
     }
 
-    pub fn needs_source_import(&mut self, scratch_buf: &mut Vec<u8>) -> Result<bool> {
+    pub fn needs_source_import(
+        &mut self,
+        scratch_buf: &mut Vec<u8>,
+    ) -> Result<bool> {
         if let Some(ref metadata) = self.source_metadata {
             if metadata.version != SOURCEMETADATA_VERSION {
                 return Ok(true);
@@ -234,7 +272,10 @@ impl<'a> SourcePairImport<'a> {
         self.import_hash
     }
 
-    pub async fn read_metadata_from_file(&mut self, scratch_buf: &mut Vec<u8>) -> Result<()> {
+    pub async fn read_metadata_from_file(
+        &mut self,
+        scratch_buf: &mut Vec<u8>,
+    ) -> Result<()> {
         let importer = self
             .importer
             .expect("cannot read metadata without an importer");
@@ -251,7 +292,10 @@ impl<'a> SourcePairImport<'a> {
         Ok(())
     }
 
-    pub fn generate_source_metadata<C: SourceMetadataCache>(&mut self, metadata_cache: &C) {
+    pub fn generate_source_metadata<C: SourceMetadataCache>(
+        &mut self,
+        metadata_cache: &C,
+    ) {
         let importer = self
             .importer
             // TODO(happens): Do we need to handle this?
@@ -275,7 +319,7 @@ impl<'a> SourcePairImport<'a> {
     }
 
     fn get_importer_context_set(
-        import_contexts: Option<&Vec<Box<dyn ImporterContext>>>,
+        import_contexts: Option<&Vec<Box<dyn ImporterContext>>>
     ) -> ImporterContextHandleSet {
         let mut ctx_handles = Vec::new();
         if let Some(contexts) = import_contexts {
@@ -426,7 +470,17 @@ impl<'a> SourcePairImport<'a> {
                         hash: utils::calc_import_artifact_hash(
                             &asset.id,
                             import_hash,
-                            asset.load_deps.iter().chain(asset.build_deps.iter()),
+                            asset
+                                .load_deps
+                                .iter()
+                                .chain(asset.build_deps.iter())
+                                .filter_map(|dep| {
+                                    if dep.is_uuid() {
+                                        Some(dep.expect_uuid())
+                                    } else {
+                                        None
+                                    }
+                                }),
                         ),
                         load_deps: asset.load_deps.clone(),
                         build_deps: asset.build_deps.clone(),
@@ -506,7 +560,10 @@ impl<'a> SourcePairImport<'a> {
         Ok(result)
     }
 
-    pub async fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<PairImportResult> {
+    pub async fn import_source(
+        &mut self,
+        scratch_buf: &mut Vec<u8>,
+    ) -> Result<PairImportResult> {
         log::trace!("import_source importing {:?}", &self.source);
         let start_time = Instant::now();
         let importer = self
@@ -536,7 +593,11 @@ impl<'a> SourcePairImport<'a> {
                 let mut cursor = std::io::Cursor::new(contents);
 
                 let result = importer
-                    .import_boxed(&mut cursor, metadata.importer_options, metadata.importer_state)
+                    .import_boxed(
+                        &mut cursor,
+                        metadata.importer_options,
+                        metadata.importer_state,
+                    )
                     .await;
 
                 result
@@ -550,7 +611,8 @@ impl<'a> SourcePairImport<'a> {
             .build_import_result(importer, options, state, scratch_buf, imported.assets, ctx)
             .await?;
         log::info!(
-            "Imported pair in {}",
+            "Imported pair {:?} in {}",
+            self.source,
             Instant::now().duration_since(start_time).as_secs_f32()
         );
         Ok(result)

@@ -49,8 +49,15 @@ impl<T: ProcessorType + ShallowClone + Send + Sync + Debug + 'static> ProcessorO
 }
 
 pub trait ProcessorAccess {
-    fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(&mut self, index: u32) -> T;
-    fn put_val<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>);
+    fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(
+        &mut self,
+        index: u32,
+    ) -> T;
+    fn put_val<T: TypeUuid + Debug + Send + Sync + 'static>(
+        &mut self,
+        index: u32,
+        value: Val<T>,
+    );
     fn put_vec<T: TypeUuid + Debug + Send + Sync + 'static>(
         &mut self,
         index: u32,
@@ -59,12 +66,19 @@ pub trait ProcessorAccess {
 }
 
 pub trait InputData: ShallowClone {
-    fn get_read<T: ProcessorAccess>(access: &mut T, index: u32) -> Self;
+    fn get_read<T: ProcessorAccess>(
+        access: &mut T,
+        index: u32,
+    ) -> Self;
     fn reads() -> Vec<TypeId>;
 }
 
 pub trait OutputData {
-    fn put_write<T: ProcessorAccess>(access: &mut T, index: u32, value: Self);
+    fn put_write<T: ProcessorAccess>(
+        access: &mut T,
+        index: u32,
+        value: Self,
+    );
     fn writes() -> Vec<TypeId>;
 }
 
@@ -88,7 +102,10 @@ pub trait AnyProcessor: Send + Sync + TypeUuidDynamic {
     fn output_names(&self) -> Vec<String>;
     fn inputs(&self) -> Vec<TypeId>;
     fn outputs(&self) -> Vec<TypeId>;
-    fn run(&mut self, access: &mut ProcessorValues);
+    fn run(
+        &mut self,
+        access: &mut ProcessorValues,
+    );
 }
 impl<T> TypeUuidDynamic for AnyProcessorImpl<T>
 where
@@ -117,7 +134,10 @@ where
     fn outputs(&self) -> Vec<TypeId> {
         T::Outputs::writes()
     }
-    fn run(&mut self, access: &mut ProcessorValues) {
+    fn run(
+        &mut self,
+        access: &mut ProcessorValues,
+    ) {
         <T as RunNow>::run_now(access)
     }
 }
@@ -146,7 +166,10 @@ impl ShallowClone for () {
     }
 }
 impl InputData for () {
-    fn get_read<T: ProcessorAccess>(_: &mut T, _: u32) -> Self {
+    fn get_read<T: ProcessorAccess>(
+        _: &mut T,
+        _: u32,
+    ) -> Self {
         ()
     }
 
@@ -163,7 +186,10 @@ impl<T: TypeUuid + Send + Sync + 'static> ShallowClone for Arg<T> {
     }
 }
 impl<T: TypeUuid + Send + Sync + 'static> InputData for Arg<T> {
-    fn get_read<P: ProcessorAccess>(access: &mut P, idx: u32) -> Self {
+    fn get_read<P: ProcessorAccess>(
+        access: &mut P,
+        idx: u32,
+    ) -> Self {
         <P as ProcessorAccess>::get_input(access, idx)
     }
 
@@ -178,7 +204,10 @@ impl<T: ShallowClone + ProcessorType + 'static + Send + Sync> ShallowClone for V
     }
 }
 impl<T: InputData + ProcessorType + 'static + Send + Sync> InputData for Vec<T> {
-    fn get_read<P: ProcessorAccess>(access: &mut P, idx: u32) -> Self {
+    fn get_read<P: ProcessorAccess>(
+        access: &mut P,
+        idx: u32,
+    ) -> Self {
         <P as ProcessorAccess>::get_input(access, idx)
     }
 
@@ -188,7 +217,11 @@ impl<T: InputData + ProcessorType + 'static + Send + Sync> InputData for Vec<T> 
 }
 
 impl<T: TypeUuid + Debug + Send + Sync + 'static> OutputData for Val<T> {
-    fn put_write<P: ProcessorAccess>(access: &mut P, index: u32, value: Self) {
+    fn put_write<P: ProcessorAccess>(
+        access: &mut P,
+        index: u32,
+        value: Self,
+    ) {
         access.put_val(index, value);
     }
 
@@ -198,7 +231,11 @@ impl<T: TypeUuid + Debug + Send + Sync + 'static> OutputData for Val<T> {
 }
 
 impl<T: TypeUuid + Send + Debug + Sync + 'static> OutputData for Vec<Val<T>> {
-    fn put_write<P: ProcessorAccess>(access: &mut P, index: u32, value: Self) {
+    fn put_write<P: ProcessorAccess>(
+        access: &mut P,
+        index: u32,
+        value: Self,
+    ) {
         access.put_vec(index, value);
     }
 
@@ -208,7 +245,12 @@ impl<T: TypeUuid + Send + Debug + Sync + 'static> OutputData for Vec<Val<T>> {
 }
 
 impl OutputData for () {
-    fn put_write<T: ProcessorAccess>(_: &mut T, _: u32, _: Self) {}
+    fn put_write<T: ProcessorAccess>(
+        _: &mut T,
+        _: u32,
+        _: Self,
+    ) {
+    }
 
     fn writes() -> Vec<TypeId> {
         Vec::new()
@@ -377,13 +419,19 @@ impl ProcessorValues {
     pub fn drain_outputs(self) -> Vec<Option<Box<dyn ProcessorObj>>> {
         self.outputs
     }
-    fn set_outputs(&mut self, outputs: Vec<Option<Box<dyn ProcessorObj>>>) {
+    fn set_outputs(
+        &mut self,
+        outputs: Vec<Option<Box<dyn ProcessorObj>>>,
+    ) {
         self.outputs = outputs;
     }
 }
 
 impl ProcessorAccess for ProcessorValues {
-    fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(&mut self, index: u32) -> T {
+    fn get_input<T: InputData + ProcessorType + Send + Sync + 'static>(
+        &mut self,
+        index: u32,
+    ) -> T {
         let val = &self.inputs[index as usize];
         <T as ShallowClone>::shallow_clone(
             val.as_ref()
@@ -392,7 +440,11 @@ impl ProcessorAccess for ProcessorValues {
                 .expect(&format!("failed to downcast type for argument {}", index)),
         )
     }
-    fn put_val<T: TypeUuid + Debug + Send + Sync + 'static>(&mut self, index: u32, value: Val<T>) {
+    fn put_val<T: TypeUuid + Debug + Send + Sync + 'static>(
+        &mut self,
+        index: u32,
+        value: Val<T>,
+    ) {
         self.outputs
             .insert(index as usize, Some(Box::new(Arg::from(value.inner))));
     }
@@ -411,7 +463,10 @@ pub struct IOData {
     pub name: String,
 }
 impl IOData {
-    pub fn new(name: String, value: Option<Box<dyn ProcessorObj>>) -> IOData {
+    pub fn new(
+        name: String,
+        value: Option<Box<dyn ProcessorObj>>,
+    ) -> IOData {
         IOData { value, name }
     }
 }
@@ -446,7 +501,10 @@ impl AnyProcessor for ConstantProcessor {
             .map(|d| ProcessorObj::get_processor_type(d.value.as_ref().unwrap().as_ref()))
             .collect()
     }
-    fn run(&mut self, access: &mut ProcessorValues) {
+    fn run(
+        &mut self,
+        access: &mut ProcessorValues,
+    ) {
         access.set_outputs(
             self.outputs
                 .drain(0..self.outputs.len())

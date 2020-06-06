@@ -111,7 +111,11 @@ impl Command<Context> for CmdShowAll {
     fn desc(&self) -> &str {
         "- Get all asset metadata"
     }
-    async fn run(&self, ctx: &Context, _args: Vec<&str>) -> DynResult {
+    async fn run(
+        &self,
+        ctx: &Context,
+        _args: Vec<&str>,
+    ) -> DynResult {
         let start = Instant::now();
         let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
         let response = request.send().promise.await?;
@@ -140,7 +144,11 @@ impl Command<Context> for CmdGet {
     fn nargs(&self) -> usize {
         1
     }
-    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
+    async fn run(
+        &self,
+        ctx: &Context,
+        args: Vec<&str>,
+    ) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -207,7 +215,11 @@ impl Command<Context> for CmdBuild {
     fn nargs(&self) -> usize {
         1
     }
-    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
+    async fn run(
+        &self,
+        ctx: &Context,
+        args: Vec<&str>,
+    ) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_import_artifacts_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -256,7 +268,11 @@ impl Command<Context> for CmdPathForAsset {
     fn nargs(&self) -> usize {
         1
     }
-    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
+    async fn run(
+        &self,
+        ctx: &Context,
+        args: Vec<&str>,
+    ) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -303,7 +319,11 @@ impl Command<Context> for CmdAssetsForPath {
     fn nargs(&self) -> usize {
         1
     }
-    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
+    async fn run(
+        &self,
+        ctx: &Context,
+        args: Vec<&str>,
+    ) -> DynResult {
         let mut request = ctx.snapshot.borrow().get_assets_for_paths_request();
         request.get().init_paths(1).set(0, args[0].as_bytes());
         let start = Instant::now();

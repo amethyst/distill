@@ -46,7 +46,10 @@ impl<'a, T: Send + 'static> Scope<'a, T> {
     /// Spawn a future with `async_std::task::spawn`. The
     /// future is expected to be driven to completion before
     /// 'a expires.
-    pub fn spawn<F: Future<Output = T> + Send + 'a>(&mut self, f: F) {
+    pub fn spawn<F: Future<Output = T> + Send + 'a>(
+        &mut self,
+        f: F,
+    ) {
         let handle =
             tokio::spawn(unsafe { std::mem::transmute::<_, BoxFuture<'static, T>>(f.boxed()) });
         self.futs.push(handle);
@@ -87,7 +90,10 @@ impl<'a, T> Scope<'a, T> {
 impl<'a, T> Stream for Scope<'a, T> {
     type Item = T;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
         let this = self.project();
         let poll = this.futs.poll_next(cx);
         if let Poll::Ready(None) = poll {
@@ -136,7 +142,7 @@ impl<'a, T> PinnedDrop for Scope<'a, T> {
 /// before being forgotten. Dropping it is okay, but blocks
 /// the current thread until all spawned futures complete.
 pub unsafe fn scope<'a, T: Send + 'static, R, F: FnOnce(&mut Scope<'a, T>) -> R>(
-    f: F,
+    f: F
 ) -> (Scope<'a, T>, R) {
     let mut scope = Scope::create();
     let op = f(&mut scope);
@@ -165,7 +171,7 @@ pub unsafe fn scope<'a, T: Send + 'static, R, F: FnOnce(&mut Scope<'a, T>) -> R>
 /// future cancellations within the top level scope.
 #[allow(dead_code)]
 pub fn scope_and_block<'a, T: Send + 'static, R, F: FnOnce(&mut Scope<'a, T>) -> R>(
-    f: F,
+    f: F
 ) -> (R, Vec<T>) {
     let (mut stream, block_output) = unsafe { scope(f) };
     let proc_outputs = futures::executor::block_on(stream.collect());
@@ -197,7 +203,7 @@ pub async unsafe fn scope_and_collect<
     R,
     F: FnOnce(&mut Scope<'a, T>) -> R,
 >(
-    f: F,
+    f: F
 ) -> (R, Vec<T>) {
     let (mut stream, block_output) = scope(f);
     let proc_outputs = stream.collect().await;

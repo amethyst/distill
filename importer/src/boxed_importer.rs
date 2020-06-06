@@ -1,5 +1,7 @@
 use crate::{error::Result, ExportAsset, AsyncImporter, ImporterValue, SerdeObj};
-use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType, importer_context::ImporterContext};
+use atelier_core::{
+    AssetRef, AssetTypeId, AssetUuid, CompressionType, importer_context::ImporterContext,
+};
 use futures::future::BoxFuture;
 use ron;
 use serde::{Deserialize, Serialize};

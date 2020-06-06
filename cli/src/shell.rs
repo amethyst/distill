@@ -22,7 +22,11 @@ pub trait Command<C> {
         0
     }
     fn desc(&self) -> &str;
-    async fn run(&self, ctx: &C, args: Vec<&str>) -> DynResult;
+    async fn run(
+        &self,
+        ctx: &C,
+        args: Vec<&str>,
+    ) -> DynResult;
     async fn autocomplete(
         &self,
         ctx: &C,
@@ -50,11 +54,18 @@ impl<C> Shell<C> {
         }
     }
 
-    pub fn register_command(&mut self, keyword: &'static str, cmd: impl Command<C> + 'static) {
+    pub fn register_command(
+        &mut self,
+        keyword: &'static str,
+        cmd: impl Command<C> + 'static,
+    ) {
         self.commands.insert(keyword, Box::new(cmd));
     }
 
-    async fn autocomplete(&self, cmdline: String) -> DynResult<Autocomplete> {
+    async fn autocomplete(
+        &self,
+        cmdline: String,
+    ) -> DynResult<Autocomplete> {
         let mut splt = cmdline.split_whitespace();
         let cmd_text = splt.next().unwrap_or("");
 
@@ -89,7 +100,10 @@ impl<C> Shell<C> {
         }
     }
 
-    async fn execute_command(&self, cmdline: &str) -> DynResult {
+    async fn execute_command(
+        &self,
+        cmdline: &str,
+    ) -> DynResult {
         let mut splt = cmdline.trim().split_whitespace();
         let cmd_text = splt.next();
         let args = splt.collect::<Vec<&str>>();

@@ -39,16 +39,24 @@ pub fn to_meta_path(p: &PathBuf) -> PathBuf {
     ))
 }
 
-pub fn calc_import_artifact_hash<T>(id: &AssetUuid, import_hash: u64, dep_list: T) -> u64
+pub fn calc_import_artifact_hash<T, V>(
+    id: &AssetUuid,
+    import_hash: u64,
+    dep_list: T,
+) -> u64
 where
-    T: IntoIterator,
-    T::Item: Hash,
+    V: std::borrow::Borrow<AssetUuid>,
+    T: IntoIterator<Item = V>,
 {
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
     import_hash.hash(&mut hasher);
-    id.hash(&mut hasher);
-    for dep in dep_list {
-        dep.hash(&mut hasher);
+    (*id).hash(&mut hasher);
+    use std::iter::FromIterator;
+    let mut deps = Vec::from_iter(dep_list.into_iter());
+    deps.sort_by_key(|dep| *dep.borrow());
+    deps.dedup_by_key(|dep| *dep.borrow());
+    for dep in &deps {
+        dep.borrow().hash(&mut hasher);
     }
     hasher.finish()
 }

@@ -30,7 +30,10 @@ impl ArtifactCache {
 
     // TODO: invalidate cache
     #[allow(dead_code)]
-    pub async fn delete(&self, hash: u64) -> Result<bool> {
+    pub async fn delete(
+        &self,
+        hash: u64,
+    ) -> Result<bool> {
         let mut txn = self.db.rw_txn().await?;
         Ok(txn
             .delete(self.tables.hash_to_artifact, &hash.to_le_bytes())
@@ -82,7 +85,7 @@ impl ArtifactCache {
 
 // deduplicate with asset_hub_service, move artifact building to cache only
 fn build_artifact_message<T: AsRef<[u8]>>(
-    artifact: &SerializedAsset<T>,
+    artifact: &SerializedAsset<T>
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {

@@ -66,7 +66,11 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         );
         log::info!("Commit {:?}", load_handle);
     }
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
+    fn free(
+        &self,
+        asset_type_id: &AssetTypeId,
+        load_handle: LoadHandle,
+    ) {
         let mut committed = self.assets.borrow_mut();
         committed.remove(&load_handle);
         log::info!("Free {:?}", load_handle);
@@ -110,7 +114,11 @@ impl AssetStorage for Game {
             .expect("unknown asset type")
             .commit_asset_version(asset_type, load_handle, version)
     }
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
+    fn free(
+        &self,
+        asset_type_id: &AssetTypeId,
+        load_handle: LoadHandle,
+    ) {
         self.storage
             .get(asset_type_id)
             .expect("unknown asset type")

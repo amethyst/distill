@@ -182,7 +182,10 @@ impl RpcState {
         changes
     }
 
-    pub fn connect(&mut self, connect_string: &String) {
+    pub fn connect(
+        &mut self,
+        connect_string: &String,
+    ) {
         match self.connection {
             InternalConnectionState::Connected(_) | InternalConnectionState::Connecting(_) => {
                 panic!("Trying to connect while already connected or connecting")

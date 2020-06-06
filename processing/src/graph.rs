@@ -37,10 +37,16 @@ pub struct Node {
     processor: Box<dyn AnyProcessor>,
 }
 impl Node {
-    pub fn new(id: NodeId, processor: Box<dyn AnyProcessor>) -> Node {
+    pub fn new(
+        id: NodeId,
+        processor: Box<dyn AnyProcessor>,
+    ) -> Node {
         Node { id, processor }
     }
-    pub fn from_constants(id: NodeId, values: Vec<processor::IOData>) -> Node {
+    pub fn from_constants(
+        id: NodeId,
+        values: Vec<processor::IOData>,
+    ) -> Node {
         Node {
             id,
             processor: Box::new(processor::ConstantProcessor::new(values)),
@@ -89,7 +95,10 @@ pub struct Graph {
     nodes: HashMap<NodeId, NodeRef>,
 }
 impl Graph {
-    pub fn execute(&mut self, _root: NodeId) {
+    pub fn execute(
+        &mut self,
+        _root: NodeId,
+    ) {
         let mut outputs: HashMap<NodeId, Vec<Option<Box<dyn ProcessorObj>>>> = HashMap::new();
         for node_id in self.execution_order.iter() {
             let mut inputs: Vec<Option<Box<dyn ProcessorObj>>> = Vec::new();
@@ -124,11 +133,17 @@ impl GraphBuilder {
             edges: Vec::new(),
         }
     }
-    pub fn add_node(mut self, node: Node) -> Self {
+    pub fn add_node(
+        mut self,
+        node: Node,
+    ) -> Self {
         self.nodes.push(node);
         self
     }
-    pub fn add_edge(mut self, edge: NodeEdge) -> Self {
+    pub fn add_edge(
+        mut self,
+        edge: NodeEdge,
+    ) -> Self {
         self.edges.push(edge);
         self
     }
@@ -195,7 +210,10 @@ impl ProcessorRegistry {
             .insert(T::UUID, Box::new(|| Box::new(processor::into_any::<T>())));
     }
 
-    pub fn get_processor(&self, id: ProcessorId) -> Option<Box<dyn AnyProcessor>> {
+    pub fn get_processor(
+        &self,
+        id: ProcessorId,
+    ) -> Option<Box<dyn AnyProcessor>> {
         self.processors.get(&id).map(|p| p())
     }
 }
@@ -213,7 +231,10 @@ pub mod serialized {
         edges: Vec<NodeEdge>,
     }
     impl SerdeGraph {
-        pub fn instantiate(self, registry: &ProcessorRegistry) -> Result<Graph> {
+        pub fn instantiate(
+            self,
+            registry: &ProcessorRegistry,
+        ) -> Result<Graph> {
             let mut builder = GraphBuilder::new();
             for node in self.nodes {
                 let processor = registry
@@ -343,7 +364,10 @@ impl std::error::Error for Error {
     }
 }
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         use std::error::Error as StdError;
         match *self {
             Error::SelfReference(_) => f.write_str(self.description()),
