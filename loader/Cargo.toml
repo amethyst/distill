@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 type-uuid = "0.1"
-crossbeam-channel = "0.3"
+crossbeam-channel = "0.4"
 
 atelier-core = { path = "../core", features = ["serde-1", "importer_context"] }
 atelier-schema = { path = "../schema", optional = true }
