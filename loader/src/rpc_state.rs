@@ -5,7 +5,7 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::error::Error;
 use tokio::{
-    runtime::Runtime,
+    runtime::{Builder, Runtime},
     sync::oneshot::{self, error::TryRecvError},
 };
 
@@ -84,7 +84,7 @@ unsafe impl Send for RpcState {}
 impl RpcState {
     pub fn new() -> std::io::Result<RpcState> {
         Ok(RpcState {
-            runtime: Runtime::new()?,
+            runtime: Builder::new().basic_scheduler().enable_all().build()?,
             local: tokio::task::LocalSet::new(),
             connection: InternalConnectionState::None,
         })
@@ -182,10 +182,7 @@ impl RpcState {
         changes
     }
 
-    pub fn connect(
-        &mut self,
-        connect_string: &String,
-    ) {
+    pub fn connect(&mut self, connect_string: &String) {
         match self.connection {
             InternalConnectionState::Connected(_) | InternalConnectionState::Connecting(_) => {
                 panic!("Trying to connect while already connected or connecting")
