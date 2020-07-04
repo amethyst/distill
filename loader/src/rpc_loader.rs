@@ -3,6 +3,7 @@ use crate::{
         AssetLoadOp, AssetStorage, HandleOp, LoadHandle, LoadInfo, LoadStatus, Loader,
         LoaderInfoProvider,
     },
+    handle::{SerdeContext, RefOp},
     rpc_state::{ConnectionState, ResponsePromise, RpcState},
 };
 use atelier_core::{utils::make_array, AssetRef, AssetTypeId, AssetUuid};
@@ -352,6 +353,15 @@ impl RpcLoader {
                 pending_data_requests: Vec::new(),
             }),
         })
+    }
+
+    pub fn with_serde_context<R>(
+        &self,
+        tx: &Arc<Sender<RefOp>>,
+        f: impl FnOnce() -> R
+    ) -> R {
+        let loader_info_provider = (&self.data.uuid_to_load, &self.data.load_states, &self.data.handle_allocator);
+        SerdeContext::with_sync(&loader_info_provider, tx.clone(), f)
     }
 }
 

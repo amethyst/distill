@@ -135,7 +135,7 @@ impl<T: ?Sized> Clone for Handle<T> {
     }
 }
 
-impl<T> Debug for Handle<T> {
+impl<T: ?Sized> Debug for Handle<T> {
     fn fmt(
         &self,
         f: &mut Formatter<'_>,
