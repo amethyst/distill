@@ -26,7 +26,6 @@ serde_derive = "1.0"
 erased-serde = "0.3"
 bincode = "1.1"
 ron = "0.5"
-meowhash = "0.1.2"
 scoped_threadpool = "0.1.9"
 num_cpus = "1.10"
 smush = { version = "0.1", default-features = false, features = [ "lz4_support" ], optional = true }
