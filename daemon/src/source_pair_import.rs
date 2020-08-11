@@ -69,12 +69,6 @@ impl AssetImportResult {
     }
 }
 
-impl PairImportResult {
-    pub(crate) fn is_fully_resolved(&self) -> bool {
-        self.assets.iter().all(|asset| asset.is_fully_resolved())
-    }
-}
-
 #[derive(Default)]
 pub(crate) struct SourcePairImport<'a> {
     source: PathBuf,
@@ -589,7 +583,7 @@ impl<'a> SourcePairImport<'a> {
                 // Non-async work-around
                 let mut f = std::fs::File::open(source)?;
                 let mut contents = vec![];
-                let result = f.read_to_end(&mut contents)?;
+                f.read_to_end(&mut contents)?;
                 let mut cursor = std::io::Cursor::new(contents);
 
                 let result = importer

@@ -12,15 +12,6 @@ pub enum Error {
 }
 
 impl std::error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::IoError(ref e) => e.description(),
-            Error::RonDeError(ref e) => e.description(),
-            Error::BincodeError(ref e) => e.description(),
-            Error::Boxed(ref e) => e.description(),
-            Error::ExportUnsupported => "Exporting not supported by this Importer",
-        }
-    }
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
             Error::IoError(ref e) => Some(e),
@@ -33,18 +24,13 @@ impl std::error::Error for Error {
 }
 
 impl fmt::Display for Error {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Error::IoError(ref e) => e.fmt(f),
             Error::RonDeError(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
             Error::Boxed(ref e) => e.fmt(f),
-            Error::ExportUnsupported => {
-                write!(f, "{}", <Self as std::error::Error>::description(self))
-            }
+            Error::ExportUnsupported => write!(f, "{:?}", self),
         }
     }
 }

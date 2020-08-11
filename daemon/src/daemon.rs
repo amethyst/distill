@@ -248,11 +248,12 @@ async fn check_db_version(env: &Environment) -> Result<()> {
             .expect("failed to open unnamed DB when checking daemon info");
         use lmdb::Cursor;
         let mut databases = Vec::new();
-        for (key, _) in txn
+        for iter_result in txn
             .open_ro_cursor(unnamed_db)
             .expect("failed to create cursor when checking daemon info")
             .iter_start()
         {
+            let (key, _) = iter_result.expect("failed to start iteration for cursor when checking daemon info");
             let db_name = std::str::from_utf8(key).expect("failed to parse db name");
             databases.push(
                 env.create_db(Some(db_name), lmdb::DatabaseFlags::default())

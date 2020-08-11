@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-capnp = "0.12"
+capnp = "0.13"
 atelier-core = { path = "../core" }

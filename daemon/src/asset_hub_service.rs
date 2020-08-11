@@ -79,7 +79,7 @@ struct AssetHubImpl {
 }
 
 fn build_artifact_message<T: AsRef<[u8]>>(
-    artifact: &SerializedAsset<T>
+    artifact: &SerializedAsset<T>,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
     {
@@ -93,7 +93,7 @@ fn build_artifact_message<T: AsRef<[u8]>>(
 }
 
 fn artifact_to_serialized_asset<'a>(
-    artifact: &artifact::Reader<'a>
+    artifact: &artifact::Reader<'a>,
 ) -> Result<SerializedAsset<&'a [u8]>> {
     let metadata = crate::asset_hub::parse_artifact_metadata(&artifact.get_metadata()?);
     Ok(SerializedAsset {
@@ -523,8 +523,7 @@ impl AssetHubImpl {
                     .expect("failed to get latest change");
                 request.get().set_latest_change(latest_change);
                 request.get().set_snapshot(
-                    asset_hub::snapshot::ToClient::new(snapshot)
-                        .into_client::<::capnp_rpc::Server>(),
+                    capnp_rpc::new_client(snapshot)
                 );
                 if let Err(_) = request.send().promise.await {
                     ctx.hub.drop_listener(tx);
@@ -542,7 +541,7 @@ impl AssetHubImpl {
     ) -> Result<()> {
         let snapshot = AssetHubSnapshotImpl::new(ctx).await;
         results.get().set_snapshot(
-            asset_hub::snapshot::ToClient::new(snapshot).into_client::<::capnp_rpc::Server>(),
+            capnp_rpc::new_client(snapshot)
         );
         Ok(())
     }
@@ -557,7 +556,7 @@ fn spawn_rpc<
     ctx: Arc<ServiceContext>,
 ) {
     let service_impl = AssetHubImpl { ctx };
-    let hub_impl = asset_hub::ToClient::new(service_impl).into_client::<::capnp_rpc::Server>();
+    let hub_impl: asset_hub::Client = capnp_rpc::new_client(service_impl);
 
     let network = twoparty::VatNetwork::new(
         reader,
@@ -588,10 +587,7 @@ impl AssetHubService {
         }
     }
 
-    pub async fn run(
-        &self,
-        addr: std::net::SocketAddr,
-    ) {
+    pub async fn run(&self, addr: std::net::SocketAddr) {
         let result: std::result::Result<(), Box<dyn std::error::Error>> = async {
             let mut listener: tokio::net::TcpListener =
                 tokio::net::TcpListener::bind(&addr).await?;

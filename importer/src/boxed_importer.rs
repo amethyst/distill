@@ -1,7 +1,5 @@
-use crate::{error::Result, ExportAsset, AsyncImporter, ImporterValue, SerdeObj};
-use atelier_core::{
-    AssetRef, AssetTypeId, AssetUuid, CompressionType, importer_context::ImporterContext,
-};
+use crate::{error::Result, AsyncImporter, ExportAsset, ImporterValue, SerdeObj};
+use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use futures::future::BoxFuture;
 use ron;
 use serde::{Deserialize, Serialize};
@@ -91,21 +89,12 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync {
         &self,
         bytes: &'a [u8],
     ) -> Result<SourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>>;
-    fn deserialize_options<'a>(
-        &self,
-        bytes: &'a [u8],
-    ) -> Result<Box<dyn SerdeObj>>;
-    fn deserialize_state<'a>(
-        &self,
-        bytes: &'a [u8],
-    ) -> Result<Box<dyn SerdeObj>>;
+    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>>;
+    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>>;
 }
 
 impl std::fmt::Debug for dyn BoxedImporter {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("BoxedImporter").field(&self.uuid()).finish()
     }
 }
@@ -215,16 +204,10 @@ where
             assets: metadata.assets.clone(),
         })
     }
-    fn deserialize_options<'a>(
-        &self,
-        bytes: &'a [u8],
-    ) -> Result<Box<dyn SerdeObj>> {
+    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>> {
         Ok(Box::new(bincode::deserialize::<O>(&bytes)?))
     }
-    fn deserialize_state<'a>(
-        &self,
-        bytes: &'a [u8],
-    ) -> Result<Box<dyn SerdeObj>> {
+    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>> {
         Ok(Box::new(bincode::deserialize::<S>(&bytes)?))
     }
 }

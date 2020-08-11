@@ -98,6 +98,7 @@ impl RpcState {
             InternalConnectionState::None => ConnectionState::None,
         }
     }
+
     pub(crate) fn request<F: 'static, Params, Results, U>(
         &mut self,
         f: F,
@@ -222,11 +223,10 @@ impl RpcState {
 
                 let snapshot = response.get()?.get_snapshot()?;
                 let (snapshot_tx, snapshot_rx) = unbounded();
-                let listener = asset_hub::listener::ToClient::new(ListenerImpl {
+                let listener: asset_hub::listener::Client = capnp_rpc::new_client(ListenerImpl {
                     snapshot_channel: snapshot_tx,
                     snapshot_change: None,
-                })
-                .into_client::<::capnp_rpc::Server>();
+                });
                 let mut request = hub.register_listener_request();
                 request.get().set_listener(listener);
                 let rpc_conn = request
@@ -286,7 +286,7 @@ impl asset_hub::listener::Server for ListenerImpl {
                     }
                 }
                 let _ = channel.send(SnapshotChange {
-                    snapshot: snapshot,
+                    snapshot,
                     changed_assets,
                     deleted_assets,
                 });

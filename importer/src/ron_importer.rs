@@ -1,6 +1,5 @@
 use crate::{ImportedAsset, Importer, ImporterValue, Result, SerdeImportable, SourceFileImporter};
 use atelier_core::AssetUuid;
-use atelier_core::importer_context::ImporterContext;
 use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
 use std::io::Read;

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-capnp = "0.12"
-capnp-rpc = "0.12"
+capnp = "0.13"
+capnp-rpc = "0.13"
 tokio = { version = "0.2", features = ["io-std", "rt-util", "tcp", "io-util"] }
 tokio-util = { version = "0.2", features = ["codec"] }
 futures = "0.3"

@@ -4,7 +4,6 @@ use lmdb;
 use log;
 use notify;
 use ron;
-use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
@@ -35,29 +34,6 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl std::error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::Notify(ref e) => e.description(),
-            Error::IO(ref e) => e.description(),
-            Error::RescanRequired => "Rescan required",
-            Error::Lmdb(ref e) => e.description(),
-            Error::Capnp(ref e) => e.description(),
-            Error::NotInSchema(ref e) => e.description(),
-            Error::BincodeError(ref e) => e.description(),
-            Error::RonSerError(ref e) => e.description(),
-            Error::RonDeError(ref e) => e.description(),
-            Error::MetaDeError(_, ref e) => e.description(),
-            Error::SetLoggerError(ref e) => e.description(),
-            Error::UuidLength => "Uuid not 16 bytes",
-            Error::RecvError => "Receive error",
-            Error::SendError => "Send error",
-            Error::Exit => "Exit",
-            Error::ImporterError(ref e) => e.description(),
-            Error::StrUtf8Error(ref e) => e.description(),
-            Error::Custom(ref s) => s.as_str(),
-        }
-    }
-
     fn cause(&self) -> Option<&dyn std::error::Error> {
         match *self {
             Error::Notify(ref e) => Some(e),
@@ -82,14 +58,11 @@ impl std::error::Error for Error {
     }
 }
 impl fmt::Display for Error {
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Error::Notify(ref e) => e.fmt(f),
             Error::IO(ref e) => e.fmt(f),
-            Error::RescanRequired => f.write_str(self.description()),
+            Error::RescanRequired => write!(f, "{}", self),
             Error::Lmdb(ref e) => e.fmt(f),
             Error::Capnp(ref e) => e.fmt(f),
             Error::NotInSchema(ref e) => e.fmt(f),
@@ -107,10 +80,10 @@ impl fmt::Display for Error {
                 e.fmt(f)
             }
             Error::SetLoggerError(ref e) => e.fmt(f),
-            Error::UuidLength => f.write_str(self.description()),
-            Error::RecvError => f.write_str(self.description()),
-            Error::SendError => f.write_str(self.description()),
-            Error::Exit => f.write_str(self.description()),
+            Error::UuidLength => write!(f, "{}", self),
+            Error::RecvError => write!(f, "{}", self),
+            Error::SendError => write!(f, "{}", self),
+            Error::Exit => write!(f, "{}", self),
             Error::ImporterError(ref e) => e.fmt(f),
             Error::StrUtf8Error(ref e) => e.fmt(f),
             Error::Custom(ref s) => f.write_str(s.as_str()),

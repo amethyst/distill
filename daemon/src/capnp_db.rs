@@ -79,7 +79,7 @@ impl<'cursor, 'txn> Iterator for Iter<'cursor, 'txn> {
     );
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
-            Some((key_bytes, value_bytes)) => {
+            Some(Ok((key_bytes, value_bytes))) => {
                 let mut slice = value_bytes;
                 let value_msg = capnp::serialize::read_message_from_flat_slice(
                     &mut slice,
@@ -87,6 +87,7 @@ impl<'cursor, 'txn> Iterator for Iter<'cursor, 'txn> {
                 );
                 Some((key_bytes, value_msg))
             }
+            Some(Err(err)) => panic!("error while iterating: {}", err),
             None => None,
         }
     }

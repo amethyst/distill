@@ -362,7 +362,8 @@ mod events {
                                 .into_iter()
                                 .map(|f| f.to_string_lossy().into_owned()),
                         );
-                        for (key_bytes, _) in cursor.iter_start() {
+                        for iter_result in cursor.iter_start() {
+                            let (key_bytes, _) = iter_result.expect("Error while iterating source file metadata");
                             let key =
                                 str::from_utf8(key_bytes).expect("Encoded key was invalid utf8");
                             if !dirs_as_strings.iter().any(|dir| key.starts_with(dir)) {
