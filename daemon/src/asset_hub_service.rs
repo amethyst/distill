@@ -598,7 +598,8 @@ impl AssetHubService {
                 stream.set_nodelay(true).unwrap();
                 stream.set_send_buffer_size(1 << 22).unwrap();
                 stream.set_recv_buffer_size(1 << 22).unwrap();
-                let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+                use tokio_util::compat::*;
+                let (reader, writer) = stream.compat().split();
                 spawn_rpc(reader, writer, self.ctx.clone());
             }
         }
