@@ -729,6 +729,7 @@ pub mod tests {
     use super::*;
     use crate::capnp_db::Environment;
     use crate::file_tracker::{FileTracker, FileTrackerEvent};
+    use futures::future::Future;
     use std::{
         fs,
         path::{Path, PathBuf},
@@ -773,7 +774,7 @@ pub mod tests {
                 f(tracker.clone(), rx, asset_dir.into_path()).await;
 
                 tracker.stop().await;
-                handle.await;
+                handle.await.unwrap();
             }))
         }
     }
@@ -874,12 +875,12 @@ pub mod tests {
             .expect("truncate test file");
     }
 
-    fn expect_dirty_file_state(
+    async fn expect_dirty_file_state(
         t: &FileTracker,
         asset_dir: &Path,
         name: &str,
     ) {
-        let txn = t.get_ro_txn();
+        let txn = t.get_ro_txn().await;
         let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
         let canonical_path = path.join(name);
         t.get_dirty_file_state(&txn, &canonical_path)
