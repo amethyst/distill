@@ -13,14 +13,13 @@ pub use crate::serde_obj::typetag;
 
 pub use futures;
 pub use serde;
-pub use tokio;
 pub use type_uuid;
 
 use atelier_core::{AssetRef, AssetUuid};
 use futures::future::BoxFuture;
+use futures::io::{AsyncRead, AsyncWrite};
 use serde::Serialize;
 use std::io::{Read, Write};
-use tokio::io::{AsyncRead, AsyncWrite};
 
 pub use self::error::{Error, Result};
 #[cfg(feature = "serde_importers")]
@@ -149,7 +148,7 @@ impl<T: Importer + Sync> AsyncImporter for T {
         state: &'a mut Self::State,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
         Box::pin(async move {
-            use tokio::io::AsyncReadExt;
+            use futures::io::AsyncReadExt;
             let mut bytes = Vec::new();
             source.read_to_end(&mut bytes).await?;
             let mut reader = bytes.as_slice();
@@ -166,7 +165,7 @@ impl<T: Importer + Sync> AsyncImporter for T {
         assets: Vec<ExportAsset>,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
         Box::pin(async move {
-            use tokio::io::AsyncWriteExt;
+            use futures::io::AsyncWriteExt;
             let mut write_buf = Vec::new();
             let result = <T as Importer>::export(self, &mut write_buf, options, state, assets)?;
             output.write(&write_buf).await?;

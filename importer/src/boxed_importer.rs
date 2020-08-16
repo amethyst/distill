@@ -2,8 +2,8 @@ use crate::{error::Result, AsyncImporter, ExportAsset, ImporterValue, SerdeObj};
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use erased_serde::Deserializer;
 use futures::future::BoxFuture;
+use futures::io::{AsyncRead, AsyncWrite};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncRead, AsyncWrite};
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Serializable metadata for an asset.

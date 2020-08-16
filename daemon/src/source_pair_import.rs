@@ -486,12 +486,13 @@ impl<'a> SourcePairImport<'a> {
         let mut ctx = Self::get_importer_context_set(self.importer_contexts);
 
         let source = &self.source;
+        use tokio_util::compat::*;
         let exported = ctx
             .scope(async move {
-                let mut f = File::open(source).await?;
+                let f = File::open(source).await?;
                 importer
                     .export_boxed(
-                        &mut f,
+                        &mut f.compat(),
                         metadata.importer_options,
                         metadata.importer_state,
                         assets
@@ -544,11 +545,12 @@ impl<'a> SourcePairImport<'a> {
                 let mut f = std::fs::File::open(source)?;
                 let mut contents = vec![];
                 f.read_to_end(&mut contents)?;
-                let mut cursor = std::io::Cursor::new(contents);
+                let cursor = std::io::Cursor::new(contents);
 
+                use tokio_util::compat::*;
                 let result = importer
                     .import_boxed(
-                        &mut cursor,
+                        &mut cursor.compat(),
                         metadata.importer_options,
                         metadata.importer_state,
                     )
