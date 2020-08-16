@@ -1,13 +1,20 @@
 mod custom_asset;
-mod daemon;
 mod game;
 mod image;
 mod storage;
 
+use atelier_daemon::AssetDaemon;
+use std::path::PathBuf;
+
 fn main() {
     atelier_daemon::init_logging().expect("failed to init logging");
     std::thread::spawn(move || {
-        daemon::run();
+        AssetDaemon::default()
+            .with_importer("png", crate::image::ImageImporter)
+            .with_db_path(".assets_db")
+            .with_address("127.0.0.1:9999".parse().unwrap())
+            .with_asset_dirs(vec![PathBuf::from("assets")])
+            .run();
     });
     game::run();
 

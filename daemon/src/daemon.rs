@@ -2,13 +2,12 @@ use crate::{
     artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
     error::Result, file_asset_source, file_tracker::FileTracker,
 };
-use atelier_importer::{get_importer_contexts, BoxedImporter, ImporterContext};
+use atelier_importer::{BoxedImporter, ImporterContext};
 use atelier_schema::data;
-use futures::prelude::*;
+use futures::future::FutureExt;
 use std::{
     collections::HashMap,
     fs,
-    iter::FromIterator,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
@@ -18,18 +17,11 @@ use std::{
 pub(crate) struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
-    pub fn insert(
-        &mut self,
-        ext: &str,
-        importer: Box<dyn BoxedImporter>,
-    ) {
+    pub fn insert(&mut self, ext: &str, importer: Box<dyn BoxedImporter>) {
         self.0.insert(ext.to_lowercase(), importer);
     }
 
-    pub fn get_by_path<'a>(
-        &'a self,
-        path: &PathBuf,
-    ) -> Option<&'a dyn BoxedImporter> {
+    pub fn get_by_path<'a>(&'a self, path: &PathBuf) -> Option<&'a dyn BoxedImporter> {
         let lower_extension = path
             .extension()
             .map(|s| s.to_str().unwrap().to_lowercase())
@@ -60,68 +52,73 @@ pub struct AssetDaemon {
     asset_dirs: Vec<PathBuf>,
 }
 
+fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
+    vec![atelier_loader::if_handle_enabled!(Box::new(
+        atelier_loader::HandleSerdeContextProvider
+    ))]
+}
+
+#[allow(unused_mut)]
+fn default_importers() -> Vec<(&'static str, Box<dyn BoxedImporter>)> {
+    let mut importers: Vec<(&'static str, Box<dyn BoxedImporter>)> = vec![];
+
+    atelier_importer::if_serde_importers!(
+        importers.push(("ron", Box::new(atelier_importer::RonImporter::default())))
+    );
+    importers
+}
 impl Default for AssetDaemon {
     fn default() -> Self {
+        let mut importer_map = ImporterMap::default();
+        for (ext, importer) in default_importers() {
+            println!("ext {}", ext);
+            importer_map.insert(ext, importer);
+        }
         Self {
             db_dir: PathBuf::from(".assets_db"),
             address: "127.0.0.1:9999".parse().unwrap(),
-            importers: Default::default(),
-            importer_contexts: Vec::from_iter(get_importer_contexts()),
+            importers: importer_map,
+            importer_contexts: default_importer_contexts(),
             asset_dirs: vec![PathBuf::from("assets")],
         }
     }
 }
 
 impl AssetDaemon {
-    pub fn with_db_path<P: AsRef<Path>>(
-        mut self,
-        path: P,
-    ) -> Self {
+    pub fn with_db_path<P: AsRef<Path>>(mut self, path: P) -> Self {
         self.db_dir = path.as_ref().to_owned();
         self
     }
 
-    pub fn with_address(
-        mut self,
-        address: SocketAddr,
-    ) -> Self {
+    pub fn with_address(mut self, address: SocketAddr) -> Self {
         self.address = address;
         self
     }
 
-    pub fn with_importer(
-        mut self,
-        ext: &'static str,
-        importer: Box<dyn BoxedImporter>,
-    ) -> Self {
-        self.importers.insert(ext, importer);
+    pub fn with_importer<B>(mut self, ext: &'static str, importer: B) -> Self
+    where
+        B: BoxedImporter + 'static,
+    {
+        self.importers.insert(ext, Box::new(importer));
         self
     }
 
-    pub fn with_importers<I>(
-        self,
-        importers: I,
-    ) -> Self
+    pub fn with_importers<B, I>(self, importers: I) -> Self
     where
-        I: IntoIterator<Item = (&'static str, Box<dyn BoxedImporter>)>,
+        B: BoxedImporter + 'static,
+        I: IntoIterator<Item = (&'static str, B)>,
     {
         importers.into_iter().fold(self, |this, (ext, importer)| {
             this.with_importer(ext, importer)
         })
     }
 
-    pub fn with_importer_context(
-        mut self,
-        context: Box<dyn ImporterContext>,
-    ) -> Self {
+    pub fn with_importer_context(mut self, context: Box<dyn ImporterContext>) -> Self {
         self.importer_contexts.push(context);
         self
     }
 
-    pub fn with_importer_contexts<I>(
-        mut self,
-        contexts: I,
-    ) -> Self
+    pub fn with_importer_contexts<I>(mut self, contexts: I) -> Self
     where
         I: IntoIterator<Item = Box<dyn ImporterContext>>,
     {
@@ -129,10 +126,7 @@ impl AssetDaemon {
         self
     }
 
-    pub fn with_asset_dirs(
-        mut self,
-        dirs: Vec<PathBuf>,
-    ) -> Self {
+    pub fn with_asset_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
         self.asset_dirs = dirs;
         self
     }
@@ -210,19 +204,26 @@ impl AssetDaemon {
         );
 
         let addr = self.address;
-        let mut service_handle =
+        let service_handle =
             tokio::task::spawn_local(async move { service.run(addr).await }).fuse();
-        let mut tracker_handle =
-            tokio::task::spawn_local(async move { tracker.run().await }).fuse(); // TODO: use tokio channel to make this Send
-        let mut asset_source_handle =
+        let tracker_handle = tokio::task::spawn_local(async move { tracker.run().await }).fuse(); // TODO: use tokio channel to make this Send
+        let asset_source_handle =
             tokio::task::spawn_local(async move { asset_source.run().await }).fuse();
 
+        let mut remaining_tasks = vec![service_handle, tracker_handle, asset_source_handle];
         loop {
-            futures::select! {
-                e = tracker_handle => e.expect("FileTracker panicked"),
-                e = asset_source_handle => e.expect("AssetSource panicked"),
-                e = service_handle => e.expect("ServiceHandle panicked"),
-                complete => break,
+            let (done, done_idx, rest) = futures::future::select_all(remaining_tasks).await;
+            if let Err(_) = &done {
+                match done_idx {
+                    0 => done.expect("ServiceHandle panicked"),
+                    1 => done.expect("FileTracker panicked"),
+                    2 => done.expect("AssetSource panicked"),
+                    _ => panic!("unknown error"),
+                }
+            }
+            remaining_tasks = rest;
+            if remaining_tasks.len() == 0 {
+                break;
             }
         }
     }
@@ -253,7 +254,8 @@ async fn check_db_version(env: &Environment) -> Result<()> {
             .expect("failed to create cursor when checking daemon info")
             .iter_start()
         {
-            let (key, _) = iter_result.expect("failed to start iteration for cursor when checking daemon info");
+            let (key, _) = iter_result
+                .expect("failed to start iteration for cursor when checking daemon info");
             let db_name = std::str::from_utf8(key).expect("failed to parse db name");
             databases.push(
                 env.create_db(Some(db_name), lmdb::DatabaseFlags::default())

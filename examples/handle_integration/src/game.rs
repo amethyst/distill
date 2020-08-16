@@ -1,6 +1,4 @@
-use crate::custom_asset::BigPerf;
-use crate::image::Image;
-use crate::storage::GenericAssetStorage;
+use crate::{custom_asset::BigPerf, image::Image, storage::GenericAssetStorage};
 use atelier_loader::{
     asset_uuid,
     crossbeam_channel::Receiver,
@@ -14,11 +12,7 @@ struct Game {
     storage: GenericAssetStorage,
 }
 
-fn process(
-    loader: &mut RpcLoader,
-    game: &Game,
-    chan: &Receiver<RefOp>,
-) {
+fn process(loader: &mut RpcLoader, game: &Game, chan: &Receiver<RefOp>) {
     atelier_loader::handle::process_ref_ops(loader, chan);
     loader
         .process(&game.storage)

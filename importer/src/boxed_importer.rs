@@ -1,7 +1,7 @@
 use crate::{error::Result, AsyncImporter, ExportAsset, ImporterValue, SerdeObj};
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use erased_serde::Deserializer;
 use futures::future::BoxFuture;
-use ron;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite};
 use type_uuid::{TypeUuid, TypeUuidDynamic};
@@ -87,10 +87,16 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync {
     fn version(&self) -> u32;
     fn deserialize_metadata<'a>(
         &self,
-        bytes: &'a [u8],
+        deserializer: &mut dyn Deserializer,
     ) -> Result<SourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>>;
-    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>>;
-    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>>;
+    fn deserialize_options<'a>(
+        &self,
+        deserializer: &mut dyn Deserializer,
+    ) -> Result<Box<dyn SerdeObj>>;
+    fn deserialize_state<'a>(
+        &self,
+        deserializer: &mut dyn Deserializer,
+    ) -> Result<Box<dyn SerdeObj>>;
 }
 
 impl std::fmt::Debug for dyn BoxedImporter {
@@ -151,6 +157,7 @@ where
             })
         })
     }
+
     fn export_boxed<'a>(
         &'a self,
         output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
@@ -180,20 +187,24 @@ where
             })
         })
     }
+
     fn default_options(&self) -> Box<dyn SerdeObj> {
         Box::new(O::default())
     }
+
     fn default_state(&self) -> Box<dyn SerdeObj> {
         Box::new(S::default())
     }
+
     fn version(&self) -> u32 {
         T::version(self)
     }
+
     fn deserialize_metadata<'a>(
         &self,
-        bytes: &'a [u8],
+        deserializer: &mut dyn Deserializer,
     ) -> Result<SourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>> {
-        let metadata: SourceMetadata<O, S> = ron::de::from_bytes(&bytes)?;
+        let metadata = erased_serde::deserialize::<SourceMetadata<O, S>>(deserializer)?;
         Ok(SourceMetadata {
             version: metadata.version,
             import_hash: metadata.import_hash,
@@ -204,26 +215,18 @@ where
             assets: metadata.assets.clone(),
         })
     }
-    fn deserialize_options<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>> {
-        Ok(Box::new(bincode::deserialize::<O>(&bytes)?))
-    }
-    fn deserialize_state<'a>(&self, bytes: &'a [u8]) -> Result<Box<dyn SerdeObj>> {
-        Ok(Box::new(bincode::deserialize::<S>(&bytes)?))
-    }
-}
 
-/// Use [inventory::submit!] to register an importer to use for a file extension.
-#[derive(Debug)]
-pub struct SourceFileImporter {
-    pub extension: &'static str,
-    pub instantiator: fn() -> Box<dyn BoxedImporter>,
-}
-inventory::collect!(SourceFileImporter);
+    fn deserialize_options<'a>(
+        &self,
+        deserializer: &mut dyn Deserializer,
+    ) -> Result<Box<dyn SerdeObj>> {
+        Ok(Box::new(erased_serde::deserialize::<O>(deserializer)?))
+    }
 
-/// Get the registered importers and their associated extension.
-pub fn get_source_importers(
-) -> impl Iterator<Item = (&'static str, Box<dyn BoxedImporter + 'static>)> {
-    inventory::iter::<SourceFileImporter>
-        .into_iter()
-        .map(|s| (s.extension.trim_start_matches("."), (s.instantiator)()))
+    fn deserialize_state<'a>(
+        &self,
+        deserializer: &mut dyn Deserializer,
+    ) -> Result<Box<dyn SerdeObj>> {
+        Ok(Box::new(erased_serde::deserialize::<S>(deserializer)?))
+    }
 }

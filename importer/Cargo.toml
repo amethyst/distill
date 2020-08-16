@@ -6,20 +6,16 @@ edition = "2018"
 [dependencies]
 atelier-core = { path = "../core", features = ["serde-1"] }
 uuid = { version = "0.8", features = ["v4"] }
-mopa = "0.2.2"
+mopa = "0.2"
 serde = "1.0"
 type-uuid = "0.1"
 erased-serde = "0.3"
-ron = "0.5"
-bincode = "1.1"
-inventory = "0.1"
+ron = { version = "0.5", optional = true }
 typetag = { version = "0.1", optional = true }
 serde-importable-derive = { path = "./serde-importable-derive", optional = true }
-futures = "0.3"
+futures = { version = "0.3", default-features = false }
 tokio = { version = "0.2", features = ["io-util"] }
 log = { version = "0.4", features = ["serde"] }
 
 [features]
-default = ["serde_importers", "importer_context"]
-serde_importers = ["typetag", "serde-importable-derive"]
-importer_context = ["atelier-core/importer_context"]
+serde_importers = ["typetag", "serde-importable-derive", "ron"]

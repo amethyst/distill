@@ -19,7 +19,8 @@ use atelier_schema::{
 use capnp;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use futures::{AsyncReadExt, TryFutureExt};
+use futures::io::AsyncReadExt;
+use futures::TryFutureExt;
 use std::{
     collections::{HashMap, HashSet},
     path,
@@ -548,8 +549,8 @@ impl AssetHubImpl {
 }
 
 fn spawn_rpc<
-    R: std::marker::Unpin + futures::AsyncRead + Send + 'static,
-    W: std::marker::Unpin + futures::AsyncWrite + Send + 'static,
+    R: std::marker::Unpin + futures::io::AsyncRead + Send + 'static,
+    W: std::marker::Unpin + futures::io::AsyncWrite + Send + 'static,
 >(
     reader: R,
     writer: W,

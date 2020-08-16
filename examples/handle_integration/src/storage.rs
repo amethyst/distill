@@ -45,22 +45,13 @@ impl<A: TypeUuid> Storage<A> {
             uncommitted: HashMap::new(),
         }
     }
-    fn get<T: AssetHandle>(
-        &self,
-        handle: &T,
-    ) -> Option<&A> {
+    fn get<T: AssetHandle>(&self, handle: &T) -> Option<&A> {
         self.assets.get(&handle.load_handle()).map(|a| &a.asset)
     }
-    fn get_version<T: AssetHandle>(
-        &self,
-        handle: &T,
-    ) -> Option<u32> {
+    fn get_version<T: AssetHandle>(&self, handle: &T) -> Option<u32> {
         self.assets.get(&handle.load_handle()).map(|a| a.version)
     }
-    fn get_asset_with_version<T: AssetHandle>(
-        &self,
-        handle: &T,
-    ) -> Option<(&A, u32)> {
+    fn get_asset_with_version<T: AssetHandle>(&self, handle: &T) -> Option<(&A, u32)> {
         self.assets
             .get(&handle.load_handle())
             .map(|a| (&a.asset, a.version))
@@ -69,10 +60,7 @@ impl<A: TypeUuid> Storage<A> {
 impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A>
     for GenericAssetStorage
 {
-    fn get<T: AssetHandle>(
-        &self,
-        handle: &T,
-    ) -> Option<&A> {
+    fn get<T: AssetHandle>(&self, handle: &T) -> Option<&A> {
         // This transmute can probably be unsound, but I don't have the energy to fix it right now
         unsafe {
             std::mem::transmute(
@@ -87,10 +75,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
             )
         }
     }
-    fn get_version<T: AssetHandle>(
-        &self,
-        handle: &T,
-    ) -> Option<u32> {
+    fn get_version<T: AssetHandle>(&self, handle: &T) -> Option<u32> {
         self.storage
             .borrow()
             .get(&AssetTypeId(A::UUID))
@@ -100,10 +85,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
             .expect("failed to downcast")
             .get_version(handle)
     }
-    fn get_asset_with_version<T: AssetHandle>(
-        &self,
-        handle: &T,
-    ) -> Option<(&A, u32)> {
+    fn get_asset_with_version<T: AssetHandle>(&self, handle: &T) -> Option<(&A, u32)> {
         // This transmute can probably be unsound, but I don't have the energy to fix it right now
         unsafe {
             std::mem::transmute(
@@ -128,15 +110,8 @@ pub trait TypedStorage: Any {
         load_op: AssetLoadOp,
         version: u32,
     ) -> Result<(), Box<dyn Error>>;
-    fn commit_asset_version(
-        &mut self,
-        handle: LoadHandle,
-        version: u32,
-    );
-    fn free(
-        &mut self,
-        handle: LoadHandle,
-    );
+    fn commit_asset_version(&mut self, handle: LoadHandle, version: u32);
+    fn free(&mut self, handle: LoadHandle);
 }
 mopafy!(TypedStorage);
 impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for Storage<A> {
@@ -149,11 +124,11 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         version: u32,
     ) -> Result<(), Box<dyn Error>> {
         // To enable automatic serde of Handle, we need to set up a SerdeContext with a RefOp sender
-        let asset = atelier_loader::handle::SerdeContext::with_sync(
+        let asset = futures::executor::block_on(atelier_loader::handle::SerdeContext::with(
             loader_info,
             self.refop_sender.clone(),
-            || bincode::deserialize::<A>(data),
-        )?;
+            async { bincode::deserialize::<A>(data) },
+        ))?;
         self.uncommitted
             .insert(load_handle, AssetState { asset, version });
         log::info!("{} bytes loaded for {:?}", data.len(), load_handle);
@@ -162,11 +137,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         load_op.complete();
         Ok(())
     }
-    fn commit_asset_version(
-        &mut self,
-        load_handle: LoadHandle,
-        _version: u32,
-    ) {
+    fn commit_asset_version(&mut self, load_handle: LoadHandle, _version: u32) {
         // The commit step is done after an asset load has completed.
         // It exists to avoid frames where an asset that was loaded is unloaded, which
         // could happen when hot reloading. To support this case, you must support having multiple
@@ -179,10 +150,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         );
         log::info!("Commit {:?}", load_handle);
     }
-    fn free(
-        &mut self,
-        load_handle: LoadHandle,
-    ) {
+    fn free(&mut self, load_handle: LoadHandle) {
         self.assets.remove(&load_handle);
         log::info!("Free {:?}", load_handle);
     }
@@ -217,11 +185,7 @@ impl AssetStorage for GenericAssetStorage {
             .expect("unknown asset type")
             .commit_asset_version(load_handle, version)
     }
-    fn free(
-        &self,
-        asset_type_id: &AssetTypeId,
-        load_handle: LoadHandle,
-    ) {
+    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
         self.storage
             .borrow_mut()
             .get_mut(asset_type_id)

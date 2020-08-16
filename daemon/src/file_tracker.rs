@@ -5,12 +5,10 @@ use crate::error::{Error, Result};
 use crate::watcher::{self, FileEvent, FileMetadata};
 use atelier_core::utils;
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
+use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures::future::{Fuse, FusedFuture, FutureExt};
+use futures::stream::StreamExt;
 use futures::select;
-use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-    future::{Fuse, FusedFuture},
-    prelude::*,
-};
 use lmdb::Cursor;
 use log::{debug, info};
 use std::{

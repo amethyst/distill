@@ -1,4 +1,4 @@
-use crate::{ImportedAsset, Importer, ImporterValue, Result, SerdeImportable, SourceFileImporter};
+use crate::{ImportedAsset, Importer, ImporterValue, Result, SerdeImportable};
 use atelier_core::AssetUuid;
 use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
@@ -19,11 +19,11 @@ pub struct RonImporterState {
 
 #[derive(Default, TypeUuid)]
 #[uuid = "162ede20-6fdd-44c1-8387-8f93983c067c"]
-pub struct RonImporter {}
+pub struct RonImporter;
 
 impl Importer for RonImporter {
-    type State = RonImporterState;
     type Options = RonImporterOptions;
+    type State = RonImporterState;
 
     fn version_static() -> u32 {
         1
@@ -56,12 +56,6 @@ impl Importer for RonImporter {
         })
     }
 }
-
-inventory::submit!(SourceFileImporter {
-    extension: ".ron",
-    instantiator: || Box::new(RonImporter::default())
-});
-
 #[cfg(test)]
 mod tests {
     use super::*;

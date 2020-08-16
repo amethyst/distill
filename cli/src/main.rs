@@ -65,7 +65,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:9999".to_socket_addrs()?.next().unwrap();
     let stream = tokio::net::TcpStream::connect(&addr).await?;
     stream.set_nodelay(true).unwrap();
-    let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+    use tokio_util::compat::*;
+    let (reader, writer) = stream.compat().split();
     let rpc_network = Box::new(twoparty::VatNetwork::new(
         reader,
         writer,
@@ -84,15 +85,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         let request = hub.get_snapshot_request();
         request.send().promise.await?.get()?.get_snapshot()?
     }));
-    let listener = asset_hub::listener::ToClient::new(ListenerImpl {
+    let listener: asset_hub::listener::Client = capnp_rpc::new_client(ListenerImpl {
         snapshot: snapshot.clone(),
-    })
-    .into_client::<::capnp_rpc::Server>();
+    });
     let mut request = hub.register_listener_request();
     request.get().set_listener(listener);
 
     request.send().promise.await?;
-    let ctx = Context { snapshot: snapshot };
+    let ctx = Context { snapshot };
 
     let mut shell = Shell::new(ctx);
 
@@ -111,11 +111,8 @@ impl Command<Context> for CmdShowAll {
     fn desc(&self) -> &str {
         "- Get all asset metadata"
     }
-    async fn run(
-        &self,
-        ctx: &Context,
-        _args: Vec<&str>,
-    ) -> DynResult {
+
+    async fn run(&self, ctx: &Context, _args: Vec<&str>) -> DynResult {
         let start = Instant::now();
         let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
         let response = request.send().promise.await?;
@@ -141,14 +138,12 @@ impl Command<Context> for CmdGet {
     fn desc(&self) -> &str {
         "<uuid> - Get asset metadata from uuid"
     }
+
     fn nargs(&self) -> usize {
         1
     }
-    async fn run(
-        &self,
-        ctx: &Context,
-        args: Vec<&str>,
-    ) -> DynResult {
+
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_asset_metadata_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -212,14 +207,12 @@ impl Command<Context> for CmdBuild {
     fn desc(&self) -> &str {
         "<uuid> - Get build artifact from uuid"
     }
+
     fn nargs(&self) -> usize {
         1
     }
-    async fn run(
-        &self,
-        ctx: &Context,
-        args: Vec<&str>,
-    ) -> DynResult {
+
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_import_artifacts_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -265,14 +258,12 @@ impl Command<Context> for CmdPathForAsset {
     fn desc(&self) -> &str {
         "<uuid> - Get path from asset uuid"
     }
+
     fn nargs(&self) -> usize {
         1
     }
-    async fn run(
-        &self,
-        ctx: &Context,
-        args: Vec<&str>,
-    ) -> DynResult {
+
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
         let id = uuid::Uuid::parse_str(args[0])?;
         let mut request = ctx.snapshot.borrow().get_path_for_assets_request();
         request.get().init_assets(1).get(0).set_id(id.as_bytes());
@@ -316,14 +307,12 @@ impl Command<Context> for CmdAssetsForPath {
     fn desc(&self) -> &str {
         "<path> - Get asset metadata from path"
     }
+
     fn nargs(&self) -> usize {
         1
     }
-    async fn run(
-        &self,
-        ctx: &Context,
-        args: Vec<&str>,
-    ) -> DynResult {
+
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
         let mut request = ctx.snapshot.borrow().get_assets_for_paths_request();
         request.get().init_paths(1).set(0, args[0].as_bytes());
         let start = Instant::now();

@@ -1,13 +1,9 @@
 use bincode;
 use capnp;
 use lmdb;
-use log;
 use notify;
 use ron;
-use std::fmt;
-use std::io;
-use std::path::PathBuf;
-use std::str;
+use std::{fmt, io, path::PathBuf, str};
 
 #[derive(Debug)]
 pub enum Error {
@@ -20,7 +16,9 @@ pub enum Error {
     BincodeError(bincode::ErrorKind),
     RonSerError(ron::ser::Error),
     RonDeError(ron::de::Error),
+    ErasedSerde(erased_serde::Error),
     MetaDeError(PathBuf, ron::de::Error),
+    #[cfg(feature = "pretty_log")]
     SetLoggerError(log::SetLoggerError),
     UuidLength,
     RecvError,
@@ -43,9 +41,11 @@ impl std::error::Error for Error {
             Error::Capnp(ref e) => Some(e),
             Error::NotInSchema(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
+            Error::ErasedSerde(ref e) => Some(e),
             Error::RonSerError(ref e) => Some(e),
             Error::RonDeError(ref e) => Some(e),
             Error::MetaDeError(_, ref e) => Some(e),
+            #[cfg(feature = "pretty_log")]
             Error::SetLoggerError(ref e) => Some(e),
             Error::UuidLength => None,
             Error::RecvError => None,
@@ -67,6 +67,7 @@ impl fmt::Display for Error {
             Error::Capnp(ref e) => e.fmt(f),
             Error::NotInSchema(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
+            Error::ErasedSerde(ref e) => e.fmt(f),
             Error::RonSerError(ref e) => e.fmt(f),
             Error::RonDeError(ref e) => e.fmt(f),
             Error::MetaDeError(ref path, ref e) => {
@@ -79,6 +80,7 @@ impl fmt::Display for Error {
                 }
                 e.fmt(f)
             }
+            #[cfg(feature = "pretty_log")]
             Error::SetLoggerError(ref e) => e.fmt(f),
             Error::UuidLength => write!(f, "{}", self),
             Error::RecvError => write!(f, "{}", self),
@@ -130,11 +132,18 @@ impl From<ron::de::Error> for Error {
         Error::RonDeError(err)
     }
 }
+
+impl From<erased_serde::Error> for Error {
+    fn from(err: erased_serde::Error) -> Error {
+        Error::ErasedSerde(err)
+    }
+}
 impl From<Error> for capnp::Error {
     fn from(err: Error) -> capnp::Error {
         capnp::Error::failed(format!("{}", err))
     }
 }
+#[cfg(feature = "pretty_log")]
 impl From<log::SetLoggerError> for Error {
     fn from(err: log::SetLoggerError) -> Error {
         Error::SetLoggerError(err)

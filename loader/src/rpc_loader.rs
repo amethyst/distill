@@ -1,9 +1,9 @@
 use crate::{
+    handle::{RefOp, SerdeContext},
     loader::{
         AssetLoadOp, AssetStorage, HandleOp, LoadHandle, LoadInfo, LoadStatus, Loader,
         LoaderInfoProvider,
     },
-    handle::{SerdeContext, RefOp},
     rpc_state::{ConnectionState, ResponsePromise, RpcState},
 };
 use atelier_core::{utils::make_array, AssetRef, AssetTypeId, AssetUuid};
@@ -55,10 +55,7 @@ enum LoadState {
 }
 
 impl LoadState {
-    fn map_asset_load_state<F>(
-        self,
-        f: F,
-    ) -> LoadState
+    fn map_asset_load_state<F>(self, f: F) -> LoadState
     where
         F: FnOnce(AssetLoadState) -> AssetLoadState,
     {
@@ -184,10 +181,7 @@ impl LoaderData {
             .map(|h| h.refs.fetch_add(1, Ordering::Relaxed));
         handle
     }
-    fn get_asset(
-        &self,
-        load: LoadHandle,
-    ) -> Option<(AssetTypeId, LoadHandle)> {
+    fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.load_states
             .get(&load)
             .filter(|a| match a.state {
@@ -196,10 +190,7 @@ impl LoaderData {
             })
             .and_then(|a| a.asset_type.map(|t| (t, load)))
     }
-    fn remove_ref(
-        load_states: &DashMap<LoadHandle, AssetLoad>,
-        load: LoadHandle,
-    ) {
+    fn remove_ref(load_states: &DashMap<LoadHandle, AssetLoad>, load: LoadHandle) {
         load_states
             .get(&load)
             .map(|h| h.refs.fetch_sub(1, Ordering::Relaxed));
@@ -216,25 +207,16 @@ pub struct RpcLoader {
 }
 
 impl Loader for RpcLoader {
-    fn get_load(
-        &self,
-        id: AssetUuid,
-    ) -> Option<LoadHandle> {
+    fn get_load(&self, id: AssetUuid) -> Option<LoadHandle> {
         self.data.uuid_to_load.get(&id).map(|l| *l)
     }
-    fn get_load_info(
-        &self,
-        load: LoadHandle,
-    ) -> Option<LoadInfo> {
+    fn get_load_info(&self, load: LoadHandle) -> Option<LoadInfo> {
         self.data.load_states.get(&load).map(|s| LoadInfo {
             asset_id: s.asset_id,
             refs: s.refs.load(Ordering::Relaxed) as u32,
         })
     }
-    fn get_load_status(
-        &self,
-        load: LoadHandle,
-    ) -> LoadStatus {
+    fn get_load_status(&self, load: LoadHandle) -> LoadStatus {
         use LoadState::*;
         self.data
             .load_states
@@ -257,10 +239,7 @@ impl Loader for RpcLoader {
             })
             .unwrap_or(LoadStatus::NotRequested)
     }
-    fn add_ref(
-        &self,
-        id: AssetUuid,
-    ) -> LoadHandle {
+    fn add_ref(&self, id: AssetUuid) -> LoadHandle {
         LoaderData::add_ref(
             &self.data.uuid_to_load,
             &self.data.handle_allocator,
@@ -268,22 +247,13 @@ impl Loader for RpcLoader {
             id,
         )
     }
-    fn get_asset(
-        &self,
-        load: LoadHandle,
-    ) -> Option<(AssetTypeId, LoadHandle)> {
+    fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.data.get_asset(load)
     }
-    fn remove_ref(
-        &self,
-        load: LoadHandle,
-    ) {
+    fn remove_ref(&self, load: LoadHandle) {
         LoaderData::remove_ref(&self.data.load_states, load)
     }
-    fn process(
-        &mut self,
-        asset_storage: &dyn AssetStorage,
-    ) -> Result<(), Box<dyn Error>> {
+    fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>> {
         let mut rpc = self.rpc.lock().expect("rpc mutex poisoned");
         let mut requests = self.requests.lock().expect("rpc requests mutex poisoned");
         match rpc.connection_state() {
@@ -319,16 +289,10 @@ impl LoaderInfoProvider
         &HandleAllocator,
     )
 {
-    fn get_load_handle(
-        &self,
-        id: &AssetRef,
-    ) -> Option<LoadHandle> {
+    fn get_load_handle(&self, id: &AssetRef) -> Option<LoadHandle> {
         self.0.get(id.expect_uuid()).map(|l| *l)
     }
-    fn get_asset_id(
-        &self,
-        load: LoadHandle,
-    ) -> Option<AssetUuid> {
+    fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
         self.1.get(&load).map(|l| l.asset_id)
     }
 }
@@ -355,13 +319,18 @@ impl RpcLoader {
         })
     }
 
-    pub fn with_serde_context<R>(
-        &self,
-        tx: &Arc<Sender<RefOp>>,
-        f: impl FnOnce() -> R
-    ) -> R {
-        let loader_info_provider = (&self.data.uuid_to_load, &self.data.load_states, &self.data.handle_allocator);
-        SerdeContext::with_sync(&loader_info_provider, tx.clone(), f)
+    pub fn with_serde_context<R>(&self, tx: &Arc<Sender<RefOp>>, f: impl FnOnce() -> R) -> R {
+        let loader_info_provider = (
+            &self.data.uuid_to_load,
+            &self.data.load_states,
+            &self.data.handle_allocator,
+        );
+        let mut rpc = self.rpc.lock().expect("lock poisoned");
+        rpc.runtime_mut().block_on(SerdeContext::with(
+            &loader_info_provider,
+            tx.clone(),
+            async { f() },
+        ))
     }
 }
 
@@ -697,11 +666,7 @@ fn process_metadata_requests(
     Ok(())
 }
 
-fn commit_asset(
-    handle: LoadHandle,
-    load: &mut AssetLoad,
-    asset_storage: &dyn AssetStorage,
-) {
+fn commit_asset(handle: LoadHandle, load: &mut AssetLoad, asset_storage: &dyn AssetStorage) {
     match load.state {
         LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
             assert!(
@@ -957,57 +922,57 @@ fn process_load_states(
     }
 }
 
-fn dump_dependencies(
-    asset_id: &AssetUuid,
-    load_states: &DashMap<LoadHandle, AssetLoad>,
-    uuid_to_load: &DashMap<AssetUuid, LoadHandle>,
-    metadata: &HashMap<AssetUuid, AssetMetadata>,
-    indent: usize,
-) {
-    if let Some(load_handle) = uuid_to_load.get(asset_id) {
-        if let Some(load_state) = load_states.get(&load_handle) {
-            log::trace!(
-                "{} Load Handle: {:?}  Load State: {:?}",
-                String::from_utf8(vec![b' '; indent]).unwrap(),
-                *load_handle,
-                *load_state
-            );
+// fn dump_dependencies(
+//     asset_id: &AssetUuid,
+//     load_states: &DashMap<LoadHandle, AssetLoad>,
+//     uuid_to_load: &DashMap<AssetUuid, LoadHandle>,
+//     metadata: &HashMap<AssetUuid, AssetMetadata>,
+//     indent: usize,
+// ) {
+//     if let Some(load_handle) = uuid_to_load.get(asset_id) {
+//         if let Some(load_state) = load_states.get(&load_handle) {
+//             log::trace!(
+//                 "{} Load Handle: {:?}  Load State: {:?}",
+//                 String::from_utf8(vec![b' '; indent]).unwrap(),
+//                 *load_handle,
+//                 *load_state
+//             );
 
-            if let Some(asset_metadata) = metadata.get(&asset_id) {
-                asset_metadata
-                    .load_deps
-                    .iter()
-                    .for_each(|dependency_asset_id| {
-                        dump_dependencies(
-                            dependency_asset_id,
-                            load_states,
-                            uuid_to_load,
-                            metadata,
-                            indent + 2,
-                        );
-                    });
-            } else {
-                log::trace!(
-                    "{} Metadata not found for asset `{:?}`",
-                    String::from_utf8(vec![b' '; indent]).unwrap(),
-                    asset_id
-                );
-            }
-        } else {
-            log::trace!(
-                "{} Load state not found for asset `{:?}`",
-                String::from_utf8(vec![b' '; indent]).unwrap(),
-                asset_id
-            );
-        }
-    } else {
-        log::trace!(
-            "{} Load handle not found for asset `{:?}`",
-            String::from_utf8(vec![b' '; indent]).unwrap(),
-            asset_id
-        );
-    }
-}
+//             if let Some(asset_metadata) = metadata.get(&asset_id) {
+//                 asset_metadata
+//                     .load_deps
+//                     .iter()
+//                     .for_each(|dependency_asset_id| {
+//                         dump_dependencies(
+//                             dependency_asset_id,
+//                             load_states,
+//                             uuid_to_load,
+//                             metadata,
+//                             indent + 2,
+//                         );
+//                     });
+//             } else {
+//                 log::trace!(
+//                     "{} Metadata not found for asset `{:?}`",
+//                     String::from_utf8(vec![b' '; indent]).unwrap(),
+//                     asset_id
+//                 );
+//             }
+//         } else {
+//             log::trace!(
+//                 "{} Load state not found for asset `{:?}`",
+//                 String::from_utf8(vec![b' '; indent]).unwrap(),
+//                 asset_id
+//             );
+//         }
+//     } else {
+//         log::trace!(
+//             "{} Load handle not found for asset `{:?}`",
+//             String::from_utf8(vec![b' '; indent]).unwrap(),
+//             asset_id
+//         );
+//     }
+// }
 
 /// Checks for changed assets that need to be reloaded or unloaded
 fn process_asset_changes(
@@ -1180,11 +1145,7 @@ mod tests {
             state.commit_version = Some(version);
             state.load_version = None;
         }
-        fn free(
-            &self,
-            _asset_type: &AssetTypeId,
-            loader_handle: LoadHandle,
-        ) {
+        fn free(&self, _asset_type: &AssetTypeId, loader_handle: LoadHandle) {
             println!("free asset {:?}", loader_handle);
             self.map.write().unwrap().remove(&loader_handle);
         }
@@ -1195,10 +1156,7 @@ mod tests {
     #[uuid = "346e6a3e-3278-4c53-b21c-99b4350662db"]
     pub struct TxtFormat;
     impl TxtFormat {
-        fn from_utf8(
-            &self,
-            vec: Vec<u8>,
-        ) -> Result<String, FromUtf8Error> {
+        fn from_utf8(&self, vec: Vec<u8>) -> Result<String, FromUtf8Error> {
             String::from_utf8(vec).map(|data| {
                 let processed = data
                     .lines()

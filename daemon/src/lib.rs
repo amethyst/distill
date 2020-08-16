@@ -11,6 +11,7 @@ mod error;
 mod file_asset_source;
 mod file_tracker;
 mod scope;
+mod serialized_asset;
 mod source_pair_import;
 mod watcher;
 
@@ -24,6 +25,36 @@ const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
 #[cfg(not(debug_assertions))]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Info;
 
+mod simple_logger {
+    use log::{Level, Metadata, Record};
+
+    pub struct SimpleLogger;
+
+    impl log::Log for SimpleLogger {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() <= Level::Info
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                println!("{} - {}", record.level(), record.args());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+}
+#[cfg(not(feature = "pretty_log"))]
+static LOGGER: simple_logger::SimpleLogger = simple_logger::SimpleLogger;
+
+#[cfg(not(feature = "pretty_log"))]
+pub fn init_logging() -> Result<()> {
+    log::set_logger(&LOGGER)
+        .map(|()| log::set_max_level(DEFAULT_LOGGING_LEVEL))
+        .expect("failed to init logger");
+    Ok(())
+}
+#[cfg(feature = "pretty_log")]
 pub fn init_logging() -> Result<()> {
     fern::Dispatch::new()
         .format(|out, message, record| {

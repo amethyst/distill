@@ -13,8 +13,10 @@ use atelier_importer::{
 };
 use atelier_schema::data::{self, path_refs, source_metadata};
 use bincode;
-use futures::{channel::mpsc::unbounded, prelude::*};
+use futures::channel::mpsc::unbounded;
+use futures::stream::StreamExt;
 use log::{debug, error, info};
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::{path::PathBuf, str, sync::Arc, time::Instant};
@@ -56,6 +58,7 @@ struct PairImportResultMetadata<'a> {
 
 type SerializedAssetVec = SerializedAsset<Vec<u8>>;
 
+#[cfg(feature = "parallel_hash")]
 fn hash_files<'a, T, I>(pairs: I) -> Vec<Result<HashedSourcePair>>
 where
     I: IntoParallelIterator<Item = &'a SourcePair, Iter = T>,
@@ -88,10 +91,41 @@ where
     }))
 }
 
-fn resolve_source_path(
-    abs_source_path: &PathBuf,
-    path: &PathBuf,
-) -> PathBuf {
+#[cfg(not(feature = "parallel_hash"))]
+fn hash_files<'a, T, I>(pairs: I) -> Vec<Result<HashedSourcePair>>
+where
+    I: IntoIterator<Item = &'a SourcePair, IntoIter = T>,
+    T: Iterator<Item = &'a SourcePair>,
+{
+    use std::iter::FromIterator;
+    Vec::from_iter(pairs.into_iter().map(|s| {
+        let mut hashed_pair = HashedSourcePair {
+            meta: s.meta.clone(),
+            source: s.source.clone(),
+            source_hash: None,
+            meta_hash: None,
+        };
+        match s.meta {
+            Some(ref state) if state.state == data::FileState::Exists => {
+                let (state, hash) = hash_file(state)?;
+                hashed_pair.meta = Some(state);
+                hashed_pair.meta_hash = hash;
+            }
+            _ => {}
+        };
+        match s.source {
+            Some(ref state) if state.state == data::FileState::Exists => {
+                let (state, hash) = hash_file(state)?;
+                hashed_pair.source = Some(state);
+                hashed_pair.source_hash = hash;
+            }
+            _ => {}
+        };
+        Ok(hashed_pair)
+    }))
+}
+
+fn resolve_source_path(abs_source_path: &PathBuf, path: &PathBuf) -> PathBuf {
     let absolute_path = if path.is_relative() {
         // TODO check from root of asset folder as well?
         let mut parent_path = abs_source_path.clone();
@@ -326,11 +360,7 @@ impl FileAssetSource {
             })
     }
 
-    fn delete_metadata(
-        &self,
-        txn: &mut RwTransaction<'_>,
-        path: &PathBuf,
-    ) -> Vec<AssetUuid> {
+    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Vec<AssetUuid> {
         let to_remove: Vec<AssetUuid> = self
             .get_metadata(txn, path)
             .map(|existing| {
@@ -426,11 +456,7 @@ impl FileAssetSource {
             .map(|p| PathBuf::from(str::from_utf8(p).expect("utf8: Failed to parse path")))
     }
 
-    fn delete_asset_path(
-        &self,
-        txn: &mut RwTransaction<'_>,
-        asset_id: &AssetUuid,
-    ) -> bool {
+    fn delete_asset_path(&self, txn: &mut RwTransaction<'_>, asset_id: &AssetUuid) -> bool {
         txn.delete(self.tables.asset_id_to_path, asset_id)
             .expect("db: Failed to delete asset_id from asset_id_to_path table")
     }
@@ -660,7 +686,7 @@ impl FileAssetSource {
                         import_hash,
                         load_deps.iter().chain(build_deps.iter()),
                     );
-                    let serialized_asset = SerializedAsset::create(
+                    let serialized_asset = crate::serialized_asset::create(
                         hash,
                         asset.metadata.id,
                         build_deps
@@ -929,11 +955,7 @@ impl FileAssetSource {
         }
     }
 
-    fn ack_dirty_file_states(
-        &self,
-        txn: &mut RwTransaction<'_>,
-        pair: &HashedSourcePair,
-    ) {
+    fn ack_dirty_file_states(&self, txn: &mut RwTransaction<'_>, pair: &HashedSourcePair) {
         let mut skip_ack_dirty = false;
 
         {
@@ -963,10 +985,7 @@ impl FileAssetSource {
         }
     }
 
-    fn handle_rename_events(
-        &self,
-        txn: &mut RwTransaction<'_>,
-    ) {
+    fn handle_rename_events(&self, txn: &mut RwTransaction<'_>) {
         let rename_events = self.tracker.read_rename_events(txn);
         debug!("rename events");
 
@@ -1083,10 +1102,7 @@ impl FileAssetSource {
         has_changed_paths
     }
 
-    fn handle_dirty_files(
-        &self,
-        txn: &mut RwTransaction<'_>,
-    ) -> HashMap<PathBuf, SourcePair> {
+    fn handle_dirty_files(&self, txn: &mut RwTransaction<'_>) -> HashMap<PathBuf, SourcePair> {
         let dirty_files = self.tracker.read_dirty_files(txn);
         let mut source_meta_pairs: HashMap<PathBuf, SourcePair> = HashMap::new();
 
@@ -1447,15 +1463,23 @@ where
                 );
             }
             if saved_metadata.get_importer_options_type()? == metadata.importer_options.uuid() {
-                if let Ok(options) =
-                    importer.deserialize_options(saved_metadata.get_importer_options()?)
-                {
+                let mut deserializer = bincode::Deserializer::from_slice(
+                    saved_metadata.get_importer_options()?,
+                    bincode::options(),
+                );
+                let mut deserializer = erased_serde::Deserializer::erase(&mut deserializer);
+
+                if let Ok(options) = importer.deserialize_options(&mut deserializer) {
                     metadata.importer_options = options;
                 }
             }
             if saved_metadata.get_importer_state_type()? == metadata.importer_state.uuid() {
-                if let Ok(state) = importer.deserialize_state(saved_metadata.get_importer_state()?)
-                {
+                let mut deserializer = bincode::Deserializer::from_slice(
+                    saved_metadata.get_importer_state()?,
+                    bincode::options(),
+                );
+                let mut deserializer = erased_serde::Deserializer::erase(&mut deserializer);
+                if let Ok(state) = importer.deserialize_state(&mut deserializer) {
                     metadata.importer_state = state;
                 }
             }

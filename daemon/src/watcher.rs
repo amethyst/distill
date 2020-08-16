@@ -63,10 +63,7 @@ pub fn canonicalize_path(path: &PathBuf) -> PathBuf {
 }
 
 impl DirWatcher {
-    pub fn from_path_iter<'a, T>(
-        paths: T,
-        chan: UnboundedSender<FileEvent>,
-    ) -> Result<DirWatcher>
+    pub fn from_path_iter<'a, T>(paths: T, chan: UnboundedSender<FileEvent>) -> Result<DirWatcher>
     where
         T: IntoIterator<Item = &'a str>,
     {
@@ -98,11 +95,7 @@ impl DirWatcher {
             tx: self.tx.clone(),
         }
     }
-    fn scan_directory<F>(
-        &mut self,
-        dir: &PathBuf,
-        evt_create: &F,
-    ) -> Result<()>
+    fn scan_directory<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
     {
@@ -116,11 +109,7 @@ impl DirWatcher {
             .map_err(|_| Error::SendError)?;
         result
     }
-    fn scan_directory_recurse<F>(
-        &mut self,
-        dir: &PathBuf,
-        evt_create: &F,
-    ) -> Result<()>
+    fn scan_directory_recurse<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
     {
@@ -205,10 +194,7 @@ impl DirWatcher {
         }
     }
 
-    fn watch(
-        &mut self,
-        path: &PathBuf,
-    ) -> Result<bool> {
+    fn watch(&mut self, path: &PathBuf) -> Result<bool> {
         let refs = *self.watch_refs.get(path).unwrap_or(&0);
         if refs == 0 {
             self.watcher.watch(path, RecursiveMode::Recursive)?;
@@ -221,10 +207,7 @@ impl DirWatcher {
         Ok(false)
     }
 
-    fn unwatch(
-        &mut self,
-        path: &PathBuf,
-    ) -> Result<bool> {
+    fn unwatch(&mut self, path: &PathBuf) -> Result<bool> {
         let refs = *self.watch_refs.get(path).unwrap_or(&0);
         if refs == 1 {
             self.watcher.unwatch(path)?;

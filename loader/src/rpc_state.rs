@@ -3,6 +3,7 @@ use atelier_schema::{data::asset_change_event, service::asset_hub};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use futures_util::io::AsyncReadExt;
 use std::error::Error;
 use tokio::{
     runtime::{Builder, Runtime},
@@ -97,6 +98,10 @@ impl RpcState {
             InternalConnectionState::Error(ref err) => ConnectionState::Error(err),
             InternalConnectionState::None => ConnectionState::None,
         }
+    }
+
+    pub(crate) fn runtime_mut(&mut self) -> &mut Runtime {
+        &mut self.runtime
     }
 
     pub(crate) fn request<F: 'static, Params, Results, U>(
@@ -199,8 +204,8 @@ impl RpcState {
                     .await
                     .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
                 stream.set_nodelay(true)?;
-                use futures::AsyncReadExt;
-                let (reader, writer) = futures_tokio_compat::Compat::new(stream).split();
+                use tokio_util::compat::*;
+                let (reader, writer) = stream.compat().split();
                 let rpc_network = Box::new(twoparty::VatNetwork::new(
                     reader,
                     writer,

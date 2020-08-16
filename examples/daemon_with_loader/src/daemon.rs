@@ -36,34 +36,7 @@ fn parse_socket_addr(s: &str) -> std::result::Result<SocketAddr, AddrParseError>
     s.parse()
 }
 
-// This is only required if you use the built-in `atelier_importer::get_source_importers` to
-// register importers with the daemon builder.
-// It's required because rustc does not recognize .ctor segments when considering which symbols
-// to include when linking static libraries to avoid having the module eliminated as "dead code".
-// We need to reference a symbol in each module (crate) that registers an importer since atelier_importer uses
-// inventory::submit and the .ctor linkage hack.
-fn init_modules() {
-    // An example of how referencing of types could look to avoid dead code elimination
-    // #[cfg(feature = "amethyst-importers")]
-    // {
-    //     use amethyst::assets::Asset;
-    //     amethyst::renderer::types::Texture::name();
-    //     amethyst::assets::experimental::DefaultLoader::default();
-    //     let _w = amethyst::audio::output::outputs();
-    // }
-}
-
 pub fn run() {
-    init_modules();
-
-    log::info!(
-        "registered importers for {}",
-        atelier_importer::get_source_importers()
-            .map(|(ext, _)| ext)
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-
     let opt = AssetDaemonOpt::from_args();
 
     let deamon = AssetDaemon::default()

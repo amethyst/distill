@@ -7,11 +7,11 @@ edition = "2018"
 capnp = "0.13"
 capnp-rpc = "0.13"
 tokio = { version = "0.2", features = ["io-std", "rt-util", "tcp", "io-util"] }
-tokio-util = { version = "0.2", features = ["codec"] }
-futures = "0.3"
+tokio-util = { version = "0.3", features = ["codec", "compat"] }
+futures = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", default-features = false, features = ["async-await-macro"] }
 atelier-schema = { path = "../schema" }
 uuid = "0.8"
-futures-tokio-compat = { git = "https://github.com/dwrensha/futures-tokio-compat", branch = "tokio-0.2" }
 async-trait = "0.1.22"
-crossterm = { version = "0.14.2", features = ["event-stream"] }
+crossterm = { version = "0.17", features = ["event-stream"] }
 defer = "0.1.0"

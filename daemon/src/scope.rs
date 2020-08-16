@@ -1,6 +1,5 @@
-use futures::future::BoxFuture;
-use futures::stream::FuturesUnordered;
-use futures::{Future, FutureExt, Stream};
+use futures::future::{Future, FutureExt, BoxFuture};
+use futures::stream::{Stream, FuturesUnordered};
 use pin_project::{pin_project, pinned_drop};
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -78,7 +77,7 @@ impl<'a, T> Scope<'a, T> {
     pub async fn collect(&mut self) -> Vec<T> {
         let mut proc_outputs = Vec::with_capacity(self.remaining);
 
-        use futures::StreamExt;
+        use futures::stream::StreamExt;
         while let Some(item) = self.next().await {
             proc_outputs.push(item);
         }
