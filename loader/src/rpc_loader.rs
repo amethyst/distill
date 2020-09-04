@@ -146,36 +146,31 @@ impl LoaderData {
         load_states: &DashMap<LoadHandle, AssetLoad>,
         id: AssetUuid,
     ) -> LoadHandle {
-        let handle = uuid_to_load.get(&id).map(|h| *h);
-        let handle = if let Some(handle) = handle {
-            handle
-        } else {
-            *uuid_to_load.entry(id).or_insert_with(|| {
-                let new_handle = handle_allocator.alloc();
+        let handle = *uuid_to_load.entry(id).or_insert_with(|| {
+            let new_handle = handle_allocator.alloc();
 
-                log::trace!(
-                    "Inserting load state for {:?} load handle {:?}",
-                    id,
-                    new_handle
-                );
-
-                load_states.insert(
-                    new_handle,
-                    AssetLoad {
-                        asset_id: id,
-                        state: LoadState::None,
-                        last_state_change_instant: std::time::Instant::now(),
-                        refs: AtomicUsize::new(0),
-                        asset_type: None,
-                        requested_version: None,
-                        loaded_version: None,
-                        auto_commit: true,
-                        pending_reload: false,
-                    },
-                );
+            log::trace!(
+                "Inserting load state for {:?} load handle {:?}",
+                id,
                 new_handle
-            })
-        };
+            );
+
+            load_states.insert(
+                new_handle,
+                AssetLoad {
+                    asset_id: id,
+                    state: LoadState::None,
+                    last_state_change_instant: std::time::Instant::now(),
+                    refs: AtomicUsize::new(0),
+                    asset_type: None,
+                    requested_version: None,
+                    loaded_version: None,
+                    auto_commit: true,
+                    pending_reload: false,
+                },
+            );
+            new_handle
+        });
         load_states
             .get(&handle)
             .map(|h| h.refs.fetch_add(1, Ordering::Relaxed));
