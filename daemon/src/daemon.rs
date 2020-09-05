@@ -95,12 +95,19 @@ impl AssetDaemon {
         self
     }
 
-    pub fn with_importer<B>(mut self, ext: &'static str, importer: B) -> Self
+    pub fn with_importer<B>(mut self, ext: &str, importer: B) -> Self
     where
         B: BoxedImporter + 'static,
     {
         self.importers.insert(ext, Box::new(importer));
         self
+    }
+
+    pub fn add_importer<B>(&mut self, ext: &str, importer: B)
+    where
+        B: BoxedImporter + 'static,
+    {
+        self.importers.insert(ext, Box::new(importer));
     }
 
     pub fn with_importers<B, I>(self, importers: I) -> Self
@@ -111,6 +118,16 @@ impl AssetDaemon {
         importers.into_iter().fold(self, |this, (ext, importer)| {
             this.with_importer(ext, importer)
         })
+    }
+
+    pub fn add_importers<B, I>(&mut self, importers: I)
+    where
+        B: BoxedImporter + 'static,
+        I: IntoIterator<Item = (&'static str, B)>,
+    {
+        for (ext, importer) in importers {
+            self.add_importer(ext, importer)
+        }
     }
 
     pub fn with_importer_context(mut self, context: Box<dyn ImporterContext>) -> Self {

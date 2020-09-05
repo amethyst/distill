@@ -68,7 +68,7 @@ pub struct SourceMetadata<Options: 'static, State: 'static> {
 /// Trait object wrapper for [Importer] implementations.
 /// Enables using Importers without knowing the concrete type.
 /// See [Importer] for documentation on fields.
-pub trait BoxedImporter: TypeUuidDynamic + Send + Sync {
+pub trait BoxedImporter: TypeUuidDynamic + Send + Sync + 'static {
     fn import_boxed<'a>(
         &'a self,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),

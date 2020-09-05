@@ -1,6 +1,12 @@
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
 use crossbeam_channel::Sender;
-use std::{error::Error, sync::Arc};
+use std::{
+    error::Error,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 /// Loading ID allocated by `atelier-assets` to track loading of a particular asset.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -20,10 +26,7 @@ pub struct AssetLoadOp {
 }
 
 impl AssetLoadOp {
-    pub(crate) fn new(
-        sender: Arc<Sender<HandleOp>>,
-        handle: LoadHandle,
-    ) -> Self {
+    pub(crate) fn new(sender: Arc<Sender<HandleOp>>, handle: LoadHandle) -> Self {
         Self {
             sender: Some(sender),
             handle,
@@ -46,10 +49,7 @@ impl AssetLoadOp {
     }
 
     /// Signals that this load operation has completed with an error.
-    pub fn error<E: Error + 'static + Send>(
-        mut self,
-        error: E,
-    ) {
+    pub fn error<E: Error + 'static + Send>(mut self, error: E) {
         let _ = self
             .sender
             .as_ref()
@@ -102,12 +102,7 @@ pub trait AssetStorage {
     /// * `asset_type_id`: UUID of the asset type.
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of a particular asset.
     /// * `version`: Runtime load version of this asset, increments each time the asset is updated.
-    fn commit_asset_version(
-        &self,
-        asset_type: &AssetTypeId,
-        load_handle: LoadHandle,
-        version: u32,
-    );
+    fn commit_asset_version(&self, asset_type: &AssetTypeId, load_handle: LoadHandle, version: u32);
 
     /// Frees the asset identified by the load handle.
     ///
@@ -115,11 +110,7 @@ pub trait AssetStorage {
     ///
     /// * `asset_type_id`: UUID of the asset type.
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of a particular asset.
-    fn free(
-        &self,
-        asset_type_id: &AssetTypeId,
-        load_handle: LoadHandle,
-    );
+    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle);
 }
 
 /// Asset loading status.
@@ -164,30 +155,21 @@ pub trait Loader {
     /// # Parameters
     ///
     /// * `id`: UUID of the asset.
-    fn add_ref(
-        &self,
-        id: AssetUuid,
-    ) -> LoadHandle;
+    fn add_ref(&self, id: AssetUuid) -> LoadHandle;
 
     /// Removes a reference to an asset.
     ///
     /// # Parameters
     ///
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn remove_ref(
-        &self,
-        load_handle: LoadHandle,
-    );
+    fn remove_ref(&self, load_handle: LoadHandle);
 
     /// Returns the `AssetType` UUID and load handle if the asset is loaded.
     ///
     /// # Parameters
     ///
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn get_asset(
-        &self,
-        load: LoadHandle,
-    ) -> Option<(AssetTypeId, LoadHandle)>;
+    fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)>;
 
     /// Returns the load handle for the asset with the given UUID, if present.
     ///
@@ -196,10 +178,7 @@ pub trait Loader {
     /// # Parameters
     ///
     /// * `id`: UUID of the asset.
-    fn get_load(
-        &self,
-        id: AssetUuid,
-    ) -> Option<LoadHandle>;
+    fn get_load(&self, id: AssetUuid) -> Option<LoadHandle>;
 
     /// Returns the number of references to an asset.
     ///
@@ -209,20 +188,14 @@ pub trait Loader {
     /// # Parameters
     ///
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn get_load_info(
-        &self,
-        load: LoadHandle,
-    ) -> Option<LoadInfo>;
+    fn get_load_info(&self, load: LoadHandle) -> Option<LoadInfo>;
 
     /// Returns the asset load status.
     ///
     /// # Parameters
     ///
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn get_load_status(
-        &self,
-        load: LoadHandle,
-    ) -> LoadStatus;
+    fn get_load_status(&self, load: LoadHandle) -> LoadStatus;
 
     /// Processes pending load operations.
     ///
@@ -236,10 +209,7 @@ pub trait Loader {
     /// # Parameters
     ///
     /// * `asset_storage`: Storage for all assets of all asset types.
-    fn process(
-        &mut self,
-        asset_storage: &dyn AssetStorage,
-    ) -> Result<(), Box<dyn Error>>;
+    fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>>;
 }
 
 /// Provides information about mappings between `AssetUuid` and `LoadHandle`.
@@ -252,18 +222,41 @@ pub trait LoaderInfoProvider: Send + Sync {
     /// # Parameters
     ///
     /// * `id`: UUID of the asset.
-    fn get_load_handle(
-        &self,
-        asset_ref: &AssetRef,
-    ) -> Option<LoadHandle>;
+    fn get_load_handle(&self, asset_ref: &AssetRef) -> Option<LoadHandle>;
 
     /// Returns the AssetUUID for the given LoadHandle, if present.
     ///
     /// # Parameters
     ///
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn get_asset_id(
-        &self,
-        load: LoadHandle,
-    ) -> Option<AssetUuid>;
+    fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid>;
+}
+
+pub trait HandleAllocator: Send + Sync + 'static {
+    fn alloc(&self) -> LoadHandle;
+    fn free(&self, handle: LoadHandle);
+}
+pub struct AtomicHandleAllocator(AtomicU64);
+impl AtomicHandleAllocator {
+    pub const fn new(starting_value: u64) -> Self {
+        Self(AtomicU64::new(starting_value))
+    }
+}
+impl Default for AtomicHandleAllocator {
+    fn default() -> Self {
+        Self(AtomicU64::new(1))
+    }
+}
+impl HandleAllocator for AtomicHandleAllocator {
+    fn alloc(&self) -> LoadHandle {
+        LoadHandle(self.0.fetch_add(1, Ordering::Relaxed))
+    }
+    fn free(&self, _handle: LoadHandle) {}
+}
+
+impl HandleAllocator for &'static AtomicHandleAllocator {
+    fn alloc(&self) -> LoadHandle {
+        LoadHandle(self.0.fetch_add(1, Ordering::Relaxed))
+    }
+    fn free(&self, _handle: LoadHandle) {}
 }

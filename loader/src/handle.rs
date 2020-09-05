@@ -46,12 +46,12 @@ pub fn process_ref_ops<T: Loader>(loader: &T, rx: &Receiver<RefOp>) {
 #[derive(Debug)]
 pub enum HandleRefType {
     /// Strong references decrement the count on drop
-    Strong(Arc<Sender<RefOp>>),
+    Strong(Sender<RefOp>),
     /// Weak references do nothing on drop.
-    Weak(Arc<Sender<RefOp>>),
+    Weak(Sender<RefOp>),
     /// Internal references do nothing on drop, but turn into Strong references on clone.
     /// Should only be used for references stored in loaded assets to avoid self-referencing
-    Internal(Arc<Sender<RefOp>>),
+    Internal(Sender<RefOp>),
     /// Implementation detail, used when changing state in this enum
     None,
 }
@@ -143,9 +143,18 @@ impl<T: ?Sized> Debug for Handle<T> {
     }
 }
 
+impl<T: ?Sized> From<GenericHandle> for Handle<T> {
+    fn from(handle: GenericHandle) -> Self {
+        Self {
+            handle_ref: handle.handle_ref,
+            marker: PhantomData,
+        }
+    }
+}
+
 impl<T> Handle<T> {
     /// Creates a new handle with `HandleRefType::Strong`
-    pub fn new(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub fn new(chan: Sender<RefOp>, handle: LoadHandle) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -156,7 +165,7 @@ impl<T> Handle<T> {
     }
 
     /// Creates a new handle with `HandleRefType::Internal`
-    pub(crate) fn new_internal(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub(crate) fn new_internal(chan: Sender<RefOp>, handle: LoadHandle) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -187,7 +196,7 @@ pub struct GenericHandle {
 
 impl GenericHandle {
     /// Creates a new handle with `HandleRefType::Strong`
-    pub fn new(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub fn new(chan: Sender<RefOp>, handle: LoadHandle) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -197,7 +206,7 @@ impl GenericHandle {
     }
 
     /// Creates a new handle with `HandleRefType::Internal`
-    pub(crate) fn new_internal(chan: Arc<Sender<RefOp>>, handle: LoadHandle) -> Self {
+    pub(crate) fn new_internal(chan: Sender<RefOp>, handle: LoadHandle) -> Self {
         Self {
             handle_ref: HandleRef {
                 id: handle,
@@ -210,6 +219,14 @@ impl GenericHandle {
 impl AssetHandle for GenericHandle {
     fn load_handle(&self) -> LoadHandle {
         self.handle_ref.load_handle()
+    }
+}
+
+impl<T: ?Sized> From<Handle<T>> for GenericHandle {
+    fn from(handle: Handle<T>) -> Self {
+        Self {
+            handle_ref: handle.handle_ref,
+        }
     }
 }
 
@@ -240,21 +257,17 @@ impl AssetHandle for WeakHandle {
 
 tokio::task_local! {
     static LOADER: &'static dyn LoaderInfoProvider;
-    static REFOP_SENDER: Arc<Sender<RefOp>>;
+    static REFOP_SENDER: Sender<RefOp>;
 }
 
 /// Used to make some limited Loader interactions available to `serde` Serialize/Deserialize
 /// implementations by using thread-local storage. Required to support Serialize/Deserialize of Handle.
 pub struct SerdeContext;
 impl SerdeContext {
-    pub fn with_active<R>(f: impl FnOnce(&dyn LoaderInfoProvider, &Arc<Sender<RefOp>>) -> R) -> R {
+    pub fn with_active<R>(f: impl FnOnce(&dyn LoaderInfoProvider, &Sender<RefOp>) -> R) -> R {
         LOADER.with(|l| REFOP_SENDER.with(|r| f(*l, &r)))
     }
-    pub async fn with<F>(
-        loader: &dyn LoaderInfoProvider,
-        sender: Arc<Sender<RefOp>>,
-        f: F,
-    ) -> F::Output
+    pub async fn with<F>(loader: &dyn LoaderInfoProvider, sender: Sender<RefOp>, f: F) -> F::Output
     where
         F: Future,
     {
@@ -276,7 +289,7 @@ impl SerdeContext {
 struct DummySerdeContext {
     maps: RwLock<DummySerdeContextMaps>,
     current: Mutex<DummySerdeContextCurrent>,
-    ref_sender: Arc<Sender<RefOp>>,
+    ref_sender: Sender<RefOp>,
     handle_gen: AtomicU64,
 }
 
@@ -302,7 +315,7 @@ impl DummySerdeContext {
                 current_serde_dependencies: HashSet::new(),
                 current_serde_asset: None,
             }),
-            ref_sender: Arc::new(tx),
+            ref_sender: tx,
             handle_gen: AtomicU64::new(1),
         }
     }
@@ -426,7 +439,7 @@ impl Serialize for GenericHandle {
     }
 }
 
-fn get_handle_ref(asset_ref: AssetRef) -> (LoadHandle, Arc<Sender<RefOp>>) {
+fn get_handle_ref(asset_ref: AssetRef) -> (LoadHandle, Sender<RefOp>) {
     SerdeContext::with_active(|loader, sender| {
         let handle = if asset_ref == AssetRef::Uuid(AssetUuid::default()) {
             LoadHandle(0)

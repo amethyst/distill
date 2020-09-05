@@ -9,7 +9,8 @@ pub mod rpc_loader;
 mod rpc_state;
 
 pub use crate::loader::{
-    AssetLoadOp, AssetStorage, LoadHandle, LoadInfo, LoadStatus, Loader, LoaderInfoProvider,
+    AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, LoadHandle, LoadInfo,
+    LoadStatus, Loader, LoaderInfoProvider,
 };
 #[cfg(feature = "asset_uuid_macro")]
 pub use atelier_core::asset_uuid;

@@ -1,8 +1,8 @@
 use crate::{
     handle::{RefOp, SerdeContext},
     loader::{
-        AssetLoadOp, AssetStorage, HandleOp, LoadHandle, LoadInfo, LoadStatus, Loader,
-        LoaderInfoProvider,
+        AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, HandleOp, LoadHandle,
+        LoadInfo, LoadStatus, Loader, LoaderInfoProvider,
     },
     rpc_state::{ConnectionState, ResponsePromise, RpcState},
 };
@@ -25,7 +25,7 @@ use std::{
     collections::HashMap,
     error::Error,
     sync::{
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
     task::Poll,
@@ -104,13 +104,6 @@ struct AssetMetadata {
     load_deps: Vec<AssetUuid>,
 }
 
-struct HandleAllocator(AtomicU64);
-impl HandleAllocator {
-    fn alloc(&self) -> LoadHandle {
-        LoadHandle(self.0.fetch_add(1, Ordering::Relaxed))
-    }
-}
-
 /// Keeps track of a pending reload
 struct PendingReload {
     /// ID of asset that should be reloaded
@@ -120,7 +113,7 @@ struct PendingReload {
 }
 
 struct LoaderData {
-    handle_allocator: HandleAllocator,
+    handle_allocator: Arc<dyn HandleAllocator>,
     load_states: DashMap<LoadHandle, AssetLoad>,
     uuid_to_load: DashMap<AssetUuid, LoadHandle>,
     metadata: HashMap<AssetUuid, AssetMetadata>,
@@ -142,7 +135,7 @@ unsafe impl Send for RpcRequests {}
 impl LoaderData {
     fn add_ref(
         uuid_to_load: &DashMap<AssetUuid, LoadHandle>,
-        handle_allocator: &HandleAllocator,
+        handle_allocator: &dyn HandleAllocator,
         load_states: &DashMap<LoadHandle, AssetLoad>,
         id: AssetUuid,
     ) -> LoadHandle {
@@ -237,7 +230,7 @@ impl Loader for RpcLoader {
     fn add_ref(&self, id: AssetUuid) -> LoadHandle {
         LoaderData::add_ref(
             &self.data.uuid_to_load,
-            &self.data.handle_allocator,
+            &*self.data.handle_allocator,
             &self.data.load_states,
             id,
         )
@@ -265,7 +258,7 @@ impl Loader for RpcLoader {
             process_load_ops(asset_storage, &mut self.data.load_states, &self.data.op_rx);
             process_load_states(
                 asset_storage,
-                &self.data.handle_allocator,
+                &*self.data.handle_allocator,
                 &mut self.data.load_states,
                 &self.data.uuid_to_load,
                 &self.data.metadata,
@@ -281,7 +274,7 @@ impl LoaderInfoProvider
     for (
         &DashMap<AssetUuid, LoadHandle>,
         &DashMap<LoadHandle, AssetLoad>,
-        &HandleAllocator,
+        &dyn HandleAllocator,
     )
 {
     fn get_load_handle(&self, id: &AssetRef) -> Option<LoadHandle> {
@@ -294,11 +287,17 @@ impl LoaderInfoProvider
 
 impl RpcLoader {
     pub fn new(connect_string: String) -> std::io::Result<RpcLoader> {
+        Self::new_with_handle_allocator(connect_string, Arc::new(AtomicHandleAllocator::default()))
+    }
+    pub fn new_with_handle_allocator(
+        connect_string: String,
+        handle_allocator: Arc<dyn HandleAllocator>,
+    ) -> std::io::Result<RpcLoader> {
         let (tx, rx) = unbounded();
         Ok(RpcLoader {
             connect_string: connect_string,
             data: LoaderData {
-                handle_allocator: HandleAllocator(AtomicU64::new(1)),
+                handle_allocator,
                 load_states: DashMap::default(),
                 uuid_to_load: DashMap::default(),
                 metadata: HashMap::new(),
@@ -314,11 +313,11 @@ impl RpcLoader {
         })
     }
 
-    pub fn with_serde_context<R>(&self, tx: &Arc<Sender<RefOp>>, f: impl FnOnce() -> R) -> R {
+    pub fn with_serde_context<R>(&self, tx: &Sender<RefOp>, f: impl FnOnce() -> R) -> R {
         let loader_info_provider = (
             &self.data.uuid_to_load,
             &self.data.load_states,
-            &self.data.handle_allocator,
+            &*self.data.handle_allocator,
         );
         let mut rpc = self.rpc.lock().expect("lock poisoned");
         rpc.runtime_mut().block_on(SerdeContext::with(
@@ -488,7 +487,7 @@ fn process_data_requests(
                             &(
                                 &data.uuid_to_load,
                                 &data.load_states,
-                                &data.handle_allocator,
+                                &*data.handle_allocator,
                             ),
                             op_channel,
                             *handle,
@@ -715,7 +714,7 @@ fn process_load_ops(
 
 fn process_load_states(
     asset_storage: &dyn AssetStorage,
-    handle_allocator: &HandleAllocator,
+    handle_allocator: &dyn HandleAllocator,
     load_states: &mut DashMap<LoadHandle, AssetLoad>,
     uuid_to_load: &DashMap<AssetUuid, LoadHandle>,
     metadata: &HashMap<AssetUuid, AssetMetadata>,
@@ -1062,9 +1061,13 @@ fn process_asset_changes(
     Ok(())
 }
 
+pub fn default_connect_string() -> &'static str {
+    "127.0.0.1:9999"
+}
+
 impl Default for RpcLoader {
     fn default() -> RpcLoader {
-        RpcLoader::new("127.0.0.1:9999".to_string()).unwrap()
+        RpcLoader::new(default_connect_string().to_string()).unwrap()
     }
 }
 
