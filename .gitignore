@@ -5,3 +5,4 @@ target
 */tests/assets_db
 Cargo.lock
 .DS_Store
+/.idea
