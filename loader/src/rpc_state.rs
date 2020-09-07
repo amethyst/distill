@@ -3,7 +3,7 @@ use atelier_schema::{data::asset_change_event, service::asset_hub};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use futures_util::io::AsyncReadExt;
+use futures_util::AsyncReadExt;
 use std::error::Error;
 use futures_channel::oneshot;
 use tokio::{

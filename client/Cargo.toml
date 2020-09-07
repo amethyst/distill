@@ -7,6 +7,6 @@ edition = "2018"
 capnp = "0.13"
 capnp-rpc = "0.13"
 tokio = "0.2"
-futures = { version = "0.3", default-features = false }
+tokio-util = { version = "0.3", features = ["compat"] }
 futures-util = { version = "0.3", default-features = false }
 atelier-schema = { path = "../schema" }
