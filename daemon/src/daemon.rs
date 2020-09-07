@@ -4,7 +4,7 @@ use crate::{
 };
 use atelier_importer::{BoxedImporter, ImporterContext};
 use atelier_schema::data;
-use futures::future::FutureExt;
+use futures_util::future::FutureExt;
 use std::{
     collections::HashMap,
     fs,
@@ -229,7 +229,7 @@ impl AssetDaemon {
 
         let mut remaining_tasks = vec![service_handle, tracker_handle, asset_source_handle];
         loop {
-            let (done, done_idx, rest) = futures::future::select_all(remaining_tasks).await;
+            let (done, done_idx, rest) = futures_util::future::select_all(remaining_tasks).await;
             if let Err(_) = &done {
                 match done_idx {
                     0 => done.expect("ServiceHandle panicked"),

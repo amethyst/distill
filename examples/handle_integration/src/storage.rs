@@ -124,9 +124,9 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         version: u32,
     ) -> Result<(), Box<dyn Error>> {
         // To enable automatic serde of Handle, we need to set up a SerdeContext with a RefOp sender
-        let asset = futures::executor::block_on(atelier_loader::handle::SerdeContext::with(
+        let asset = futures_executor::block_on(atelier_loader::handle::SerdeContext::with(
             loader_info,
-            self.refop_sender.clone(),
+            (*self.refop_sender).clone(),
             async { bincode::deserialize::<A>(data) },
         ))?;
         self.uncommitted

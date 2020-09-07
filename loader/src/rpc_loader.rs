@@ -445,10 +445,10 @@ fn process_pending_requests<T, U, ProcessFunc>(
         match result {
             Err(err) => {
                 let _ = process_request_func(Err(err), &mut request.1);
-                requests.swap_remove(i);
+                requests.swap_remove(i); //TODO: await this
             }
             Ok(Poll::Ready(_)) => {
-                requests.swap_remove(i);
+                requests.swap_remove(i); // TODO: await this
             }
             Ok(Poll::Pending) => {}
         }
@@ -1080,7 +1080,7 @@ mod tests {
     use atelier_importer::{
         BoxedImporter, ImportedAsset, Importer, ImporterValue, Result as ImportResult,
     };
-    use futures::future::BoxFuture;
+    use futures_core::BoxFuture;
     use serde::{Deserialize, Serialize};
     use std::{
         iter::FromIterator,
@@ -1090,7 +1090,7 @@ mod tests {
         sync::RwLock,
         thread::{self, JoinHandle},
     };
-    use tokio::io::{AsyncRead, AsyncReadExt};
+    use futures_io::{AsyncRead, AsyncReadExt};
     use uuid::Uuid;
 
     #[derive(Debug)]

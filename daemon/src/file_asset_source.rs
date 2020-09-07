@@ -13,8 +13,8 @@ use atelier_importer::{
 };
 use atelier_schema::data::{self, path_refs, source_metadata};
 use bincode;
-use futures::channel::mpsc::unbounded;
-use futures::stream::StreamExt;
+use futures_channel::mpsc::unbounded;
+use futures_util::stream::StreamExt;
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;

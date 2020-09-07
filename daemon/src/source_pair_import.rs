@@ -10,7 +10,7 @@ use atelier_importer::{
 };
 use atelier_schema::data;
 use bincode;
-use futures::future::{Future, BoxFuture};
+use futures_core::future::{Future, BoxFuture};
 use log::{debug, error};
 use ron;
 use std::io::Read;

@@ -1,5 +1,6 @@
-use futures::future::{Future, FutureExt, BoxFuture};
-use futures::stream::{Stream, FuturesUnordered};
+use futures_core::future::{Future, BoxFuture};
+use futures_util::future::FutureExt;
+use futures_util::stream::{Stream, FuturesUnordered};
 use pin_project::{pin_project, pinned_drop};
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -77,7 +78,7 @@ impl<'a, T> Scope<'a, T> {
     pub async fn collect(&mut self) -> Vec<T> {
         let mut proc_outputs = Vec::with_capacity(self.remaining);
 
-        use futures::stream::StreamExt;
+        use futures_util::stream::StreamExt;
         while let Some(item) = self.next().await {
             proc_outputs.push(item);
         }
@@ -112,7 +113,7 @@ impl<'a, T> Stream for Scope<'a, T> {
 impl<'a, T> PinnedDrop for Scope<'a, T> {
     fn drop(mut self: Pin<&mut Self>) {
         if !self.done {
-            futures::executor::block_on(async {
+            futures_executor::block_on(async {
                 // self.cancel().await;
                 self.collect().await;
             });
@@ -173,7 +174,7 @@ pub fn scope_and_block<'a, T: Send + 'static, R, F: FnOnce(&mut Scope<'a, T>) ->
     f: F
 ) -> (R, Vec<T>) {
     let (mut stream, block_output) = unsafe { scope(f) };
-    let proc_outputs = futures::executor::block_on(stream.collect());
+    let proc_outputs = futures_executor::block_on(stream.collect());
     (block_output, proc_outputs)
 }
 

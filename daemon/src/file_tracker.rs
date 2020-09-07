@@ -5,10 +5,10 @@ use crate::error::{Error, Result};
 use crate::watcher::{self, FileEvent, FileMetadata};
 use atelier_core::utils;
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures::future::{Fuse, FusedFuture, FutureExt};
-use futures::stream::StreamExt;
-use futures::select;
+use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures_util::future::{Fuse, FusedFuture, FutureExt};
+use futures_util::stream::StreamExt;
+use futures_util::select;
 use lmdb::Cursor;
 use log::{debug, info};
 use std::{
@@ -677,7 +677,7 @@ impl FileTracker {
         let listener_tx = listener_tx_guard.get_mut();
         let mut update_debounce = Fuse::terminated();
 
-        futures::pin_mut!(stopping);
+        futures_util::pin_mut!(stopping);
 
         loop {
             select! {
@@ -730,7 +730,7 @@ pub mod tests {
     use super::*;
     use crate::capnp_db::Environment;
     use crate::file_tracker::{FileTracker, FileTrackerEvent};
-    use futures::future::Future;
+    use std::future::Future;
     use std::{
         fs,
         path::{Path, PathBuf},

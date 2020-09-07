@@ -1,8 +1,8 @@
 use crate::{error::Result, AsyncImporter, ExportAsset, ImporterValue, SerdeObj};
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use erased_serde::Deserializer;
-use futures::future::BoxFuture;
-use futures::io::{AsyncRead, AsyncWrite};
+use futures_core::future::BoxFuture;
+use futures_io::{AsyncRead, AsyncWrite};
 use serde::{Deserialize, Serialize};
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 

@@ -21,3 +21,6 @@ uuid = "0.8"
 bincode = "1.3"
 tokio = { version = "0.2", features = ["io-util"] }
 futures = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
+futures-io = { version = "0.3", default-features = false }
+futures-core = { version = "0.3", default-features = false, features = ["alloc"] }

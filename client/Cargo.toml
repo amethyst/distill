@@ -8,4 +8,5 @@ capnp = "0.13"
 capnp-rpc = "0.13"
 tokio = "0.2"
 futures = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
 atelier-schema = { path = "../schema" }
