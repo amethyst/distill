@@ -10,7 +10,7 @@ license = "MIT/Apache-2.0"
 atelier-core = { version = "0.1", path = "../../core" }
 atelier-daemon = { version = "0.1", path = "../../daemon" }
 atelier-importer = { version = "0.1", path = "../../importer" }
-atelier-loader = { version = "0.1", path = "../../loader" }
+atelier-loader = { version = "0.1", path = "../../loader", features = [ "asset_uuid_macro"] }
 
 type-uuid = "0.1"
 structopt = "0.3"
