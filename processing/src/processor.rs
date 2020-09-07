@@ -107,13 +107,11 @@ pub trait AnyProcessor: Send + Sync + TypeUuidDynamic {
         access: &mut ProcessorValues,
     );
 }
-impl<T> TypeUuidDynamic for AnyProcessorImpl<T>
+impl<T> TypeUuid for AnyProcessorImpl<T>
 where
     T: Processor + TypeUuid,
 {
-    fn uuid(&self) -> type_uuid::Bytes {
-        T::UUID
-    }
+    const UUID: type_uuid::Bytes = T::UUID;
 }
 impl<T> AnyProcessor for AnyProcessorImpl<T>
 where
