@@ -14,6 +14,7 @@ tokio = { version = "0.2", features = ["tcp", "sync", "rt-core", "rt-util", "str
 tokio-util = { version = "0.3", features = ["compat"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["io"], optional = true }
 futures-channel = { version = "0.3", default-features = false, features = ["alloc"] }
+futures-core = { version = "0.3", default-features = false }
 capnp = { version = "0.13", optional = true}
 capnp-rpc = { version = "0.13", optional = true }
 log = { version = "0.4", optional = true }

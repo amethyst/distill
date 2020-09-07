@@ -1,6 +1,6 @@
 use crate::{AssetRef, AssetUuid, LoadHandle, LoadStatus, Loader, LoaderInfoProvider};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use futures_util::future::{BoxFuture, Future};
+use futures_core::future::{BoxFuture, Future};
 use serde::{
     de::{self, Deserialize, Visitor},
     export::Formatter,
