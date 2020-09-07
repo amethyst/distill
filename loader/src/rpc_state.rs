@@ -5,9 +5,9 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures_util::io::AsyncReadExt;
 use std::error::Error;
+use futures_channel::oneshot;
 use tokio::{
     runtime::{Builder, Runtime},
-    sync::oneshot::{self, error::TryRecvError},
 };
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
@@ -151,12 +151,16 @@ impl RpcState {
                 InternalConnectionState::Connecting(mut pending_connection) => {
                     match pending_connection.try_recv() {
                         Ok(connection_result) => match connection_result {
-                            Ok(conn) => InternalConnectionState::Connected(conn),
-                            Err(err) => InternalConnectionState::Error(err),
+                            Some(value) => match value {
+                                Ok(conn) => InternalConnectionState::Connected(conn),
+                                Err(err) => InternalConnectionState::Error(err),
+                            },
+                            None => {
+                                // still waiting
+                                InternalConnectionState::Connecting(pending_connection)
+                            }
                         },
-                        Err(TryRecvError::Empty) => {
-                            InternalConnectionState::Connecting(pending_connection)
-                        } // still waiting
+                        // Sender was closed
                         Err(e) => InternalConnectionState::Error(Box::new(e)),
                     }
                 }

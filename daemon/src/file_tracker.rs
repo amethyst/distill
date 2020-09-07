@@ -24,10 +24,11 @@ use std::{
     sync::Arc,
     thread,
 };
+use futures_util::lock::Mutex;
 use tokio::{
-    sync::{Mutex, Semaphore},
     time::{self, Duration},
 };
+use event_listener::Event;
 
 #[derive(Clone)]
 struct FileTrackerTables {
@@ -49,7 +50,7 @@ pub struct FileTracker {
     listener_rx: Mutex<Cell<UnboundedReceiver<UnboundedSender<FileTrackerEvent>>>>,
     listener_tx: UnboundedSender<UnboundedSender<FileTrackerEvent>>,
     is_running: AtomicBool,
-    stopping: Semaphore, // Semaphore receives a permit once stop is requested
+    stopping_event: event_listener::Event,
     watch_dirs: Vec<PathBuf>,
 }
 #[derive(Clone, Debug)]
@@ -422,7 +423,7 @@ impl FileTracker {
 
         FileTracker {
             is_running: AtomicBool::new(false),
-            stopping: Semaphore::new(0),
+            stopping_event: Event::new(),
             tables: FileTrackerTables {
                 source_files,
                 dirty_files,
@@ -635,7 +636,7 @@ impl FileTracker {
     #[allow(dead_code)]
     pub async fn stop(&self) {
         if self.is_running() {
-            self.stopping.add_permits(1);
+            self.stopping_event.notify(std::usize::MAX);
             self.listener_rx.lock().await;
             assert_eq!(false, self.is_running.load(Ordering::Acquire));
         }
@@ -646,6 +647,8 @@ impl FileTracker {
     }
 
     pub async fn run(&self) {
+        let stopping = self.stopping_event.listen().fuse();
+
         let already_running = self
             .is_running
             .compare_and_swap(false, true, Ordering::AcqRel);
@@ -674,7 +677,6 @@ impl FileTracker {
         let listener_tx = listener_tx_guard.get_mut();
         let mut update_debounce = Fuse::terminated();
 
-        let stopping = self.stopping.acquire().fuse();
         futures::pin_mut!(stopping);
 
         loop {
@@ -707,9 +709,8 @@ impl FileTracker {
                         update_debounce = time::delay_for(Duration::from_millis(50)).fuse();
                     }
                 }
-                permit = stopping => {
-                    // do not release a premit, otherwise next run would terminate immediately
-                    permit.forget();
+                _ = stopping => {
+                    debug!("FileTracker: stopping to to stop() notification");
                     break;
                 }
             }

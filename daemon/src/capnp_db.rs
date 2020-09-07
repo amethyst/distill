@@ -4,7 +4,7 @@ use capnp;
 use lmdb::{self, Cursor, Transaction};
 use std::path::Path;
 use std::result::Result as StdResult;
-use tokio::sync::{Semaphore, SemaphorePermit};
+use async_lock::{Semaphore, SemaphoreGuard};
 
 pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
@@ -15,13 +15,13 @@ pub struct Environment {
 }
 pub struct RoTransaction<'a> {
     txn: lmdb::RoTransaction<'a>,
-    permit: SemaphorePermit<'a>,
+    guard: SemaphoreGuard<'a>,
 }
 
 #[must_use]
 pub struct RwTransaction<'a> {
     txn: lmdb::RwTransaction<'a>,
-    permit: SemaphorePermit<'a>,
+    guard: SemaphoreGuard<'a>,
     pub dirty: bool,
 }
 
@@ -314,7 +314,7 @@ impl Environment {
 
     pub async fn rw_txn(&self) -> Result<RwTransaction<'_>> {
         Ok(RwTransaction {
-            permit: self.write_semaphore.acquire().await,
+            guard: self.write_semaphore.acquire().await,
             txn: self.env.begin_rw_txn()?,
             dirty: false,
         })
@@ -322,7 +322,7 @@ impl Environment {
 
     pub async fn ro_txn(&self) -> Result<RoTransaction<'_>> {
         Ok(RoTransaction {
-            permit: self.read_semaphore.acquire().await,
+            guard: self.read_semaphore.acquire().await,
             txn: self.env.begin_ro_txn()?,
         })
     }

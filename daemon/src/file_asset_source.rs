@@ -20,7 +20,8 @@ use log::{debug, error, info};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::{path::PathBuf, str, sync::Arc, time::Instant};
-use tokio::{runtime::Runtime, sync::Mutex};
+use tokio::{runtime::Runtime};
+use futures_util::lock::Mutex;
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,

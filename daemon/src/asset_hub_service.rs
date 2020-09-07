@@ -27,7 +27,6 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
-use tokio::sync::mpsc;
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
@@ -509,13 +508,13 @@ impl AssetHubImpl {
         let params = params.get()?;
         let listener = Rc::new(params.get_listener()?);
         let ctx = self.ctx.clone();
-        let (mut tx, mut rx) = mpsc::channel(16);
+        let (mut tx, mut rx) = async_channel::bounded(16);
         tx.try_send(AssetBatchEvent::Commit).unwrap();
 
         let tx = self.ctx.hub.register_listener(tx);
 
         tokio::task::spawn_local(async move {
-            while let Some(_) = rx.recv().await {
+            while let Ok(_) = rx.recv().await {
                 let mut request = listener.update_request();
                 let snapshot = AssetHubSnapshotImpl::new(ctx.clone()).await;
                 let latest_change = ctx
