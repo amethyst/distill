@@ -33,3 +33,12 @@ atelier-daemon = { version = "0.1", path = "daemon" }
 atelier-importer = { version = "0.1", path = "importer" }
 atelier-loader = { version = "0.1", path = "loader" }
 
+[features]
+serde-1 = ["atelier-core/serde"]
+asset_uuid_macro = ["atelier-core/asset_uuid_macro"]
+serde_importers = ["atelier-importer/serde_importers"]
+compression = [ "atelier-daemon/compression" ]
+parallel_hash = [ "atelier-daemon/parallel_hash" ]
+pretty_log = [ "atelier-daemon/pretty_log" ]
+rpc_loader = ["atelier-loader/rpc_loader"]
+handle = ["atelier-loader/handle"]
