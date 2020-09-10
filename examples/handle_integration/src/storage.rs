@@ -5,6 +5,7 @@ use atelier_loader::{
 };
 use mopa::{mopafy, Any};
 use std::{cell::RefCell, collections::HashMap, error::Error, sync::Arc};
+use bincode::Options;
 
 pub struct GenericAssetStorage {
     storage: RefCell<HashMap<AssetTypeId, Box<dyn TypedStorage>>>,
@@ -127,7 +128,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         let asset = futures_executor::block_on(atelier_loader::handle::SerdeContext::with(
             loader_info,
             (*self.refop_sender).clone(),
-            async { bincode::deserialize::<A>(data) },
+            async { bincode::options().deserialize::<A>(data) },
         ))?;
         self.uncommitted
             .insert(load_handle, AssetState { asset, version });

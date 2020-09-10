@@ -1,6 +1,7 @@
 use crate::Result;
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{ArtifactMetadata, SerdeObj, SerializedAsset};
+use bincode::Options;
 
 pub fn create(
     hash: u64,
@@ -11,10 +12,10 @@ pub fn create(
     compression: CompressionType,
     scratch_buf: &mut Vec<u8>,
 ) -> Result<SerializedAsset<Vec<u8>>> {
-    let size = bincode::serialized_size(value)? as usize;
+    let size = bincode::options().serialized_size(value)? as usize;
     scratch_buf.clear();
     scratch_buf.resize(size, 0);
-    bincode::serialize_into(scratch_buf.as_mut_slice(), value)?;
+    bincode::options().serialize_into(scratch_buf.as_mut_slice(), value)?;
     let asset_buf = {
         #[cfg(feature = "compression")]
         use smush::{encode, Encoding, Quality};

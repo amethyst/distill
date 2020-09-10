@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::{path::PathBuf, str, sync::Arc, time::Instant};
 use tokio::{runtime::Runtime};
 use futures_util::lock::Mutex;
+use bincode::Options;
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -269,15 +270,16 @@ impl FileAssetSource {
             let mut value = value_builder.init_root::<source_metadata::Builder<'_>>();
 
             {
+                let bincode_options = bincode::options();
                 value.set_importer_version(metadata.importer_version);
                 value.set_importer_type(&metadata.importer_type.0);
                 value.set_importer_state_type(&metadata.importer_state.uuid());
                 let mut state_buf = Vec::new();
-                bincode::serialize_into(&mut state_buf, &metadata.importer_state)?;
+                bincode_options.serialize_into(&mut state_buf, &metadata.importer_state)?;
                 value.set_importer_state(&state_buf);
                 value.set_importer_options_type(&metadata.importer_options.uuid());
                 let mut options_buf = Vec::new();
-                bincode::serialize_into(&mut options_buf, &metadata.importer_options)?;
+                bincode_options.serialize_into(&mut options_buf, &metadata.importer_options)?;
                 value.set_importer_options(&options_buf);
                 let hash_bytes = metadata
                     .import_hash

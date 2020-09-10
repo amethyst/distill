@@ -23,6 +23,7 @@ use std::{
     time::Instant,
 };
 use tokio::{fs::File, prelude::*};
+use bincode::Options;
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -221,10 +222,10 @@ impl<'a> SourcePairImport<'a> {
     ) -> Result<u64> {
         let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
         scratch_buf.clear();
-        bincode::serialize_into(&mut *scratch_buf, &options)?;
+        bincode::options().serialize_into(&mut *scratch_buf, &options)?;
         scratch_buf.hash(&mut hasher);
         scratch_buf.clear();
-        bincode::serialize_into(&mut *scratch_buf, &state)?;
+        bincode::options().serialize_into(&mut *scratch_buf, &state)?;
         scratch_buf.hash(&mut hasher);
         self.source_hash
             .expect("cannot calculate import hash without source hash")

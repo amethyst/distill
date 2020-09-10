@@ -4,6 +4,7 @@ use atelier_loader::{
     LoadStatus, Loader, LoaderInfoProvider, TypeUuid,
 };
 use std::{cell::RefCell, collections::HashMap, error::Error};
+use bincode::Options;
 
 struct AssetState<A> {
     version: u32,
@@ -36,7 +37,7 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         uncommitted.insert(
             load_handle,
             AssetState {
-                asset: bincode::deserialize::<A>(data)?,
+                asset: bincode::options().deserialize::<A>(data)?,
                 version,
             },
         );
