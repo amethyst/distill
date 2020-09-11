@@ -11,7 +11,7 @@ atelier-core = { version = "0.1", path = "../../core"}
 atelier-daemon = { version = "0.1", path = "../../daemon" }
 atelier-importer = { version = "0.1", path = "../../importer", features = [ "serde_importers" ] }
 atelier-loader = { version = "0.1", path = "../../loader", features = [ "asset_uuid_macro"]  }
-futures = { version = "0.3", default-features = false }
+futures-executor = { version = "0.3", default-features = false }
 tokio = { version = "0.2", features = ["io-util"] }
 
 type-uuid = "0.1"

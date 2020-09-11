@@ -435,20 +435,20 @@ fn process_pending_requests<T, U, ProcessFunc>(
             .get_mut(i)
             .expect("invalid iteration logic when processing RPC requests");
         let result: Result<Poll<()>, Box<dyn Error>> = match request.0.try_recv() {
-            Ok(Ok(response)) => {
+            Ok(Some(Ok(response))) => {
                 process_request_func(Ok(response), &mut request.1).map(|r| Poll::Ready(r))
             }
-            Ok(Err(err)) => Err(Box::new(err)),
-            Err(err @ tokio::sync::oneshot::error::TryRecvError::Closed) => Err(Box::new(err)),
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => Ok(Poll::Pending),
+            Ok(Some(Err(err))) => Err(Box::new(err)),
+            Ok(None) => Ok(Poll::Pending),
+            Err(err @ futures_channel::oneshot::Canceled) => Err(Box::new(err)),
         };
         match result {
             Err(err) => {
                 let _ = process_request_func(Err(err), &mut request.1);
-                requests.swap_remove(i);
+                requests.swap_remove(i); //TODO: await this
             }
             Ok(Poll::Ready(_)) => {
-                requests.swap_remove(i);
+                requests.swap_remove(i); // TODO: await this
             }
             Ok(Poll::Pending) => {}
         }
@@ -1080,7 +1080,7 @@ mod tests {
     use atelier_importer::{
         BoxedImporter, ImportedAsset, Importer, ImporterValue, Result as ImportResult,
     };
-    use futures::future::BoxFuture;
+    use futures_core::BoxFuture;
     use serde::{Deserialize, Serialize};
     use std::{
         iter::FromIterator,
@@ -1090,7 +1090,7 @@ mod tests {
         sync::RwLock,
         thread::{self, JoinHandle},
     };
-    use tokio::io::{AsyncRead, AsyncReadExt};
+    use futures_io::{AsyncRead, AsyncReadExt};
     use uuid::Uuid;
 
     #[derive(Debug)]

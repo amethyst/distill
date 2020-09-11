@@ -16,7 +16,7 @@ use std::{
         Arc, Mutex,
     },
 };
-use tokio::sync::mpsc::Sender;
+use async_channel::Sender;
 
 pub type ListenerID = u64;
 

@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use futures::channel::mpsc::UnboundedSender;
+use futures_channel::mpsc::UnboundedSender;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::fs;

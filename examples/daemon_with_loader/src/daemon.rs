@@ -5,6 +5,7 @@ use std::{
 
 use atelier_daemon::AssetDaemon;
 use structopt::StructOpt;
+use crate::image::ImageImporter;
 
 /// Parameters to the asset daemon.
 ///
@@ -40,7 +41,9 @@ pub fn run() {
     let opt = AssetDaemonOpt::from_args();
 
     let deamon = AssetDaemon::default()
-        .with_importers(atelier_importer::get_source_importers())
+        .with_importer("png", ImageImporter {})
+        .with_importer("jpg", ImageImporter {})
+        .with_importer("tga", ImageImporter {})
         .with_db_path(opt.db_dir)
         .with_address(opt.address)
         .with_asset_dirs(opt.asset_dirs)

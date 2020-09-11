@@ -13,14 +13,15 @@ use atelier_importer::{
 };
 use atelier_schema::data::{self, path_refs, source_metadata};
 use bincode;
-use futures::channel::mpsc::unbounded;
-use futures::stream::StreamExt;
+use futures_channel::mpsc::unbounded;
+use futures_util::stream::StreamExt;
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::{path::PathBuf, str, sync::Arc, time::Instant};
-use tokio::{runtime::Runtime, sync::Mutex};
+use tokio::{runtime::Runtime};
+use futures_util::lock::Mutex;
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,

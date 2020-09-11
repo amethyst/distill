@@ -1,9 +1,10 @@
 use atelier_core::AssetUuid;
-use atelier_importer::{Error, ImportedAsset, Importer, ImporterValue, Result};
-use futures::future::BoxFuture;
+use atelier_importer::{Error, ImportedAsset, Importer, ImporterValue, Result, AsyncImporter};
+use futures_core::future::BoxFuture;
 use image2::{color, ImageBuf};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncRead, AsyncReadExt};
+use futures_io::AsyncRead;
+use futures_util::AsyncReadExt;
 use type_uuid::*;
 
 #[derive(TypeUuid, Serialize, Deserialize)]
@@ -15,11 +16,11 @@ pub enum Image {
 
 #[derive(TypeUuid, Serialize, Deserialize, Default)]
 #[uuid = "3c8367c8-45fb-40bb-a229-00e5e9c3fc70"]
-struct SimpleState(Option<AssetUuid>);
+pub struct SimpleState(Option<AssetUuid>);
 #[derive(TypeUuid)]
 #[uuid = "720d636b-b79c-42d4-8f46-a2d8e1ada46e"]
-struct ImageImporter;
-impl Importer for ImageImporter {
+pub struct ImageImporter;
+impl AsyncImporter for ImageImporter {
     fn version_static() -> u32
     where
         Self: Sized,
@@ -63,16 +64,3 @@ impl Importer for ImageImporter {
         })
     }
 }
-// make a macro to reduce duplication here :)
-inventory::submit!(atelier_importer::SourceFileImporter {
-    extension: "png",
-    instantiator: || Box::new(ImageImporter {}),
-});
-inventory::submit!(atelier_importer::SourceFileImporter {
-    extension: "jpg",
-    instantiator: || Box::new(ImageImporter {}),
-});
-inventory::submit!(atelier_importer::SourceFileImporter {
-    extension: "tga",
-    instantiator: || Box::new(ImageImporter {}),
-});

@@ -7,7 +7,7 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use capnp::message::ReaderOptions;
 
 use async_trait::async_trait;
-use futures::AsyncReadExt;
+use futures_util::AsyncReadExt;
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use tokio::runtime::Runtime;
 

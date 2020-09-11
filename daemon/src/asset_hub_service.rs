@@ -19,15 +19,14 @@ use atelier_schema::{
 use capnp;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use futures::io::AsyncReadExt;
-use futures::TryFutureExt;
+use futures_util::AsyncReadExt;
+use futures_util::TryFutureExt;
 use std::{
     collections::{HashMap, HashSet},
     path,
     rc::Rc,
     sync::Arc,
 };
-use tokio::sync::mpsc;
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
@@ -509,13 +508,13 @@ impl AssetHubImpl {
         let params = params.get()?;
         let listener = Rc::new(params.get_listener()?);
         let ctx = self.ctx.clone();
-        let (mut tx, mut rx) = mpsc::channel(16);
+        let (tx, rx) = async_channel::bounded(16);
         tx.try_send(AssetBatchEvent::Commit).unwrap();
 
         let tx = self.ctx.hub.register_listener(tx);
 
         tokio::task::spawn_local(async move {
-            while let Some(_) = rx.recv().await {
+            while let Ok(_) = rx.recv().await {
                 let mut request = listener.update_request();
                 let snapshot = AssetHubSnapshotImpl::new(ctx.clone()).await;
                 let latest_change = ctx
@@ -549,8 +548,8 @@ impl AssetHubImpl {
 }
 
 fn spawn_rpc<
-    R: std::marker::Unpin + futures::io::AsyncRead + Send + 'static,
-    W: std::marker::Unpin + futures::io::AsyncWrite + Send + 'static,
+    R: std::marker::Unpin + futures_io::AsyncRead + Send + 'static,
+    W: std::marker::Unpin + futures_io::AsyncWrite + Send + 'static,
 >(
     reader: R,
     writer: W,

@@ -35,7 +35,7 @@ pub fn run() {
         // From the returned LoadHandle, create a typed, internally refcounted Handle.
         // This requires a channel to send increase/decrease over to be able to implement
         // Clone and Drop. In a real implementation, you would probably create nicer wrappers for this.
-        let handle = Handle::<BigPerf>::new(tx.clone(), handle);
+        let handle = Handle::<BigPerf>::new((*tx).clone(), handle);
         loop {
             process(&mut loader, &game, &rx);
             if let LoadStatus::Loaded = handle.load_status(&loader) {

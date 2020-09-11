@@ -20,6 +20,14 @@ log = { version = "0.4", features = ["serde"] }
 tokio = { version = "0.2", features = ["tcp", "fs", "sync", "time", "rt-core", "rt-util", "stream", "rt-threaded"] }
 tokio-util = { version = "0.3", features = ["compat"] }
 futures = { version = "0.3", default-features = false, features = ["std", "async-await", "executor"] }
+futures-util = { version = "0.3", default-features = false }
+futures-core = { version = "0.3", default-features = false }
+futures-io = { version = "0.3", default-features = false }
+futures-executor = { version = "0.3", default-features = false }
+futures-channel = { version = "0.3", default-features = false }
+async-lock = { version = "2.1" }
+async-channel = { version = "1.4" }
+event-listener = { version = "2.4.0" }
 mopa = "0.2"
 serde = "1.0"
 serde_derive = "1.0"
