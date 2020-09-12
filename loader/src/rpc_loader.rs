@@ -445,14 +445,15 @@ fn process_pending_requests<T, U, ProcessFunc>(
             Err(err @ futures_channel::oneshot::Canceled) => Err(Box::new(err)),
         };
         match result {
-
-
             Err(err) => {
                 let _ = process_request_func(Err(err), &mut request.1);
-                requests.swap_remove(i); //TODO: await this
+
+                // The request returned Err and does not need to be polled
+                let _ = requests.swap_remove(i);
             }
             Ok(Poll::Ready(_)) => {
-                requests.swap_remove(i); // TODO: await this
+                // The request returned Ready and does not need to be polled
+                let _ = requests.swap_remove(i);
             }
             Ok(Poll::Pending) => {}
         }
