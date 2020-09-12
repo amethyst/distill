@@ -5,7 +5,6 @@ use serde::{
 };
 #[cfg(feature = "serde-1")]
 use std::str::FromStr;
-use uuid;
 
 use std::fmt;
 

@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use crate::error::{Error, Result};
-use capnp;
 use lmdb::{self, Cursor, Transaction};
 use std::path::Path;
 use std::result::Result as StdResult;
@@ -112,16 +111,15 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
         K: AsRef<[u8]>,
     {
         let get_result = self.txn().get(db, key);
-        if get_result.is_err() {
-            Ok(None)
-        } else {
-            let mut slice = get_result.unwrap();
+        if let Ok(mut slice) = get_result {
             let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut slice,
                 capnp::message::ReaderOptions::default(),
             )?
             .into_typed::<V>();
             Ok(Some(msg))
+        } else {
+            Ok(None)
         }
     }
     fn get_as_bytes<K>(
@@ -133,10 +131,10 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
         K: AsRef<[u8]>,
     {
         let get_result = self.txn().get(db, key);
-        if get_result.is_err() {
-            Ok(None)
+        if let Ok(get_result) = get_result {
+            Ok(Some(get_result))
         } else {
-            Ok(Some(get_result.unwrap()))
+            Ok(None)
         }
     }
     fn get_capnp<K: capnp::message::Allocator, V: for<'b> capnp::traits::Owned<'b>>(
@@ -146,16 +144,15 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
     ) -> Result<Option<MessageReader<'a, V>>> {
         let key_vec = capnp::serialize::write_message_to_words(key);
         let get_result = self.txn().get(db, &key_vec);
-        if get_result.is_err() {
-            Ok(None)
-        } else {
-            let mut slice = get_result.unwrap();
+        if let Ok(mut slice) = get_result {
             let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut slice,
                 capnp::message::ReaderOptions::default(),
             )?
             .into_typed::<V>();
             Ok(Some(msg))
+        } else {
+            Ok(None)
         }
     }
 }

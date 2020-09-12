@@ -85,15 +85,15 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync + 'static {
     fn default_options(&self) -> Box<dyn SerdeObj>;
     fn default_state(&self) -> Box<dyn SerdeObj>;
     fn version(&self) -> u32;
-    fn deserialize_metadata<'a>(
+    fn deserialize_metadata(
         &self,
         deserializer: &mut dyn Deserializer,
     ) -> Result<SourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>>;
-    fn deserialize_options<'a>(
+    fn deserialize_options(
         &self,
         deserializer: &mut dyn Deserializer,
     ) -> Result<Box<dyn SerdeObj>>;
-    fn deserialize_state<'a>(
+    fn deserialize_state(
         &self,
         deserializer: &mut dyn Deserializer,
     ) -> Result<Box<dyn SerdeObj>>;
@@ -212,7 +212,7 @@ where
             importer_type: metadata.importer_type,
             importer_options: Box::new(metadata.importer_options),
             importer_state: Box::new(metadata.importer_state),
-            assets: metadata.assets.clone(),
+            assets: metadata.assets,
         })
     }
 

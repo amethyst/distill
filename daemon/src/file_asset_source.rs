@@ -12,7 +12,6 @@ use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
 };
 use atelier_schema::data::{self, path_refs, source_metadata};
-use bincode;
 use futures_channel::mpsc::unbounded;
 use futures_util::stream::StreamExt;
 use log::{debug, error, info};
@@ -423,7 +422,7 @@ impl FileAssetSource {
                         })
                         .expect("capnp: failed to read asset list");
                     // Resolve the path into asset with index 0, if it exists
-                    assets.into_iter().nth(0)
+                    assets.into_iter().next()
                 } else {
                     log::error!(
                         "Failed to resolve path {:?} at {:?}: could not find metadata for file",
@@ -646,7 +645,7 @@ impl FileAssetSource {
                         .cloned()
                         .collect()
                 })
-                .unwrap_or(Vec::new());
+                .unwrap_or_else(Vec::new);
             let mut load_deps = asset
                 .metadata
                 .artifact
@@ -660,7 +659,7 @@ impl FileAssetSource {
                         .cloned()
                         .collect()
                 })
-                .unwrap_or(Vec::new());
+                .unwrap_or_else(Vec::new);
             for unresolved_ref in asset.unresolved_build_refs.iter() {
                 if let Some(uuid) = self.resolve_asset_ref(txn, &path, &unresolved_ref) {
                     context_set.resolve_ref(&unresolved_ref, uuid);
@@ -693,11 +692,11 @@ impl FileAssetSource {
                         asset.metadata.id,
                         build_deps
                             .into_iter()
-                            .map(|dep| AssetRef::Uuid(dep))
+                            .map(AssetRef::Uuid)
                             .collect(),
                         load_deps
                             .into_iter()
-                            .map(|dep| AssetRef::Uuid(dep))
+                            .map(AssetRef::Uuid)
                             .collect(),
                         &*asset
                             .asset
@@ -1196,7 +1195,7 @@ impl FileAssetSource {
                     if let Some((import, import_output)) = result {
                         let metadata = if let Some(mut import_output) = import_output {
                             // put import artifact in cache if it doesn't have unresolved refs
-                            if import_output.assets.len() > 0 {
+                            if !import_output.assets.is_empty() {
                                 let mut txn = self
                                     .artifact_cache
                                     .rw_txn()
@@ -1278,12 +1277,10 @@ impl FileAssetSource {
         let metadata_changes = metadata_changes.lock().await;
 
         self.process_metadata_changes(&mut txn, &metadata_changes, &mut change_batch);
-        let asset_metadata_changed = self
+        self
             .hub
             .add_changes(&mut txn, change_batch)
-            .expect("Failed to process metadata changes");
-
-        asset_metadata_changed
+            .expect("Failed to process metadata changes")
     }
 
     async fn handle_update(&self) {

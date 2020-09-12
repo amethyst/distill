@@ -241,13 +241,12 @@ impl DirWatcher {
         }
         if let Some(dst) = dst {
             let link = fs::read_link(&dst);
-            if link.is_ok() {
-                let link_path = link.unwrap();
+            if let Ok(link_path) = link {
                 let link_path = canonicalize_path(&dst.join(link_path));
                 if self.watch(&link_path)? {
                     self.scan_directory(&link_path, &|p| DebouncedEvent::Create(p))?;
                 }
-                self.symlink_map.insert(dst.clone(), link_path.clone());
+                self.symlink_map.insert(dst.clone(), link_path);
             }
         }
         Ok(())

@@ -230,7 +230,7 @@ impl AssetDaemon {
         let mut remaining_tasks = vec![service_handle, tracker_handle, asset_source_handle];
         loop {
             let (done, done_idx, rest) = futures_util::future::select_all(remaining_tasks).await;
-            if let Err(_) = &done {
+            if done.is_err() {
                 match done_idx {
                     0 => done.expect("ServiceHandle panicked"),
                     1 => done.expect("FileTracker panicked"),
@@ -239,7 +239,7 @@ impl AssetDaemon {
                 }
             }
             remaining_tasks = rest;
-            if remaining_tasks.len() == 0 {
+            if remaining_tasks.is_empty() {
                 break;
             }
         }
