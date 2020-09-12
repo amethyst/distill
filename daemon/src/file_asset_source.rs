@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::{path::PathBuf, str, sync::Arc, time::Instant};
 use tokio::{runtime::Runtime};
 use futures_util::lock::Mutex;
+use bincode::config::Options;
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -1466,7 +1467,9 @@ where
             if saved_metadata.get_importer_options_type()? == metadata.importer_options.uuid() {
                 let mut deserializer = bincode::Deserializer::from_slice(
                     saved_metadata.get_importer_options()?,
-                    bincode::options(),
+                    bincode::options()
+                        .with_fixint_encoding()
+                        .allow_trailing_bytes(),
                 );
                 let mut deserializer = erased_serde::Deserializer::erase(&mut deserializer);
 
@@ -1477,7 +1480,9 @@ where
             if saved_metadata.get_importer_state_type()? == metadata.importer_state.uuid() {
                 let mut deserializer = bincode::Deserializer::from_slice(
                     saved_metadata.get_importer_state()?,
-                    bincode::options(),
+                    bincode::options()
+                        .with_fixint_encoding()
+                        .allow_trailing_bytes(),
                 );
                 let mut deserializer = erased_serde::Deserializer::erase(&mut deserializer);
                 if let Ok(state) = importer.deserialize_state(&mut deserializer) {
