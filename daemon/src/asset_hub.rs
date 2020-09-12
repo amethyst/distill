@@ -147,8 +147,8 @@ pub fn parse_artifact_metadata(artifact: &artifact_metadata::Reader<'_>) -> Arti
             .get_compression()
             .expect("capnp: failed to read compression type")
             .into(),
-        compressed_size: compressed_size,
-        uncompressed_size: uncompressed_size,
+        compressed_size,
+        uncompressed_size,
     }
 }
 
@@ -175,7 +175,7 @@ pub fn parse_db_metadata(metadata: &asset_metadata::Reader<'_>) -> AssetMetadata
             )
             .expect("failed to read tag value as utf8")
             .to_owned();
-            if value.len() > 0 {
+            if !value.is_empty() {
                 (key, Some(value))
             } else {
                 (key, None)
@@ -196,7 +196,7 @@ pub fn parse_db_metadata(metadata: &asset_metadata::Reader<'_>) -> AssetMetadata
         .expect("capnp: failed to read build pipeline")
         .get_id()
         .expect("capnp: failed to read build pipeline id");
-    let build_pipeline = if build_pipeline.len() > 0 {
+    let build_pipeline = if !build_pipeline.is_empty() {
         Some(utils::make_array(build_pipeline))
     } else {
         None
@@ -411,7 +411,7 @@ impl AssetHub {
                 let mut existing_deps = HashSet::new();
                 if let latest_artifact::Artifact(Ok(artifact)) = latest_artifact.which()? {
                     artifact_changed =
-                        &artifact_metadata.hash.to_le_bytes() != artifact.get_hash()?;
+                        artifact_metadata.hash.to_le_bytes() != artifact.get_hash()?;
                     for dep in artifact.get_build_deps()? {
                         let dep = *parse_db_asset_ref(&dep).expect_uuid();
                         existing_deps.insert(dep);
@@ -625,11 +625,8 @@ impl AssetHub {
         let listeners = &mut *self.listeners.lock().unwrap();
         let mut to_remove = Vec::new();
         for (id, listener) in listeners.iter_mut() {
-            match listener.try_send(AssetBatchEvent::Commit) {
-                Err(_) => {
-                    to_remove.push(*id);
-                }
-                _ => {}
+            if listener.try_send(AssetBatchEvent::Commit).is_err() {
+                to_remove.push(*id);
             }
         }
         for id in to_remove {

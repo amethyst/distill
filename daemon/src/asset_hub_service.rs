@@ -16,7 +16,6 @@ use atelier_schema::{
     },
     service::asset_hub,
 };
-use capnp;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use futures_util::AsyncReadExt;
@@ -456,26 +455,26 @@ impl AssetHubSnapshotImpl {
                                 results_builder.set_new_import_hash(&artifact.hash.to_le_bytes());
                                 Ok(())
                             } else {
-                                return Err(Error::Custom(
+                                Err(Error::Custom(
                                     "Metadata for the updated asset does not contain artifact metadata after exporting"
                                         .into(),
-                                ));
+                                ))
                             }
                         } else {
-                            return Err(Error::Custom(
+                            Err(Error::Custom(
                                 "Metadata for the updated asset doesn't exist after exporting"
                                     .into(),
-                            ));
+                            ))
                         }
                     } else {
-                        return Err(Error::Custom("Source file does not exist for asset".into()));
+                        Err(Error::Custom("Source file does not exist for asset".into()))
                     }
                 }
             }
         } else {
-            return Err(Error::Custom(
+            Err(Error::Custom(
                 "Unable to find asset metadata for asset".into(),
-            ));
+            ))
         }
     }
 }
@@ -514,7 +513,7 @@ impl AssetHubImpl {
         let tx = self.ctx.hub.register_listener(tx);
 
         tokio::task::spawn_local(async move {
-            while let Ok(_) = rx.recv().await {
+            while rx.recv().await.is_ok() {
                 let mut request = listener.update_request();
                 let snapshot = AssetHubSnapshotImpl::new(ctx.clone()).await;
                 let latest_change = ctx
@@ -525,7 +524,7 @@ impl AssetHubImpl {
                 request.get().set_snapshot(
                     capnp_rpc::new_client(snapshot)
                 );
-                if let Err(_) = request.send().promise.await {
+                if request.send().promise.await.is_err() {
                     ctx.hub.drop_listener(tx);
                     break;
                 }

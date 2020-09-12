@@ -445,6 +445,8 @@ fn process_pending_requests<T, U, ProcessFunc>(
             Err(err @ futures_channel::oneshot::Canceled) => Err(Box::new(err)),
         };
         match result {
+
+
             Err(err) => {
                 let _ = process_request_func(Err(err), &mut request.1);
                 requests.swap_remove(i); //TODO: await this
@@ -817,8 +819,7 @@ fn process_load_states(
                         let mut entry = load_states.get_mut(&key).unwrap();
                         let value = entry.value_mut();
 
-                        #[allow(clippy::absurd_extreme_comparisons)]
-                        if value.refs.load(Ordering::Relaxed) <= 0 {
+                        if value.refs.load(Ordering::Relaxed) == 0 {
                             LoadState::UnloadRequested
                         } else if value.pending_reload {
                             // turn off auto_commit for hot reloads
@@ -872,8 +873,7 @@ fn process_load_states(
                 let entry = load_states.get(&key).unwrap();
                 let (key, value) = entry.pair();
 
-                #[allow(clippy::absurd_extreme_comparisons)]
-                if value.refs.load(Ordering::Relaxed) <= 0 {
+                if value.refs.load(Ordering::Relaxed) == 0 {
                     to_remove.push(*key);
                 }
                 LoadState::None
