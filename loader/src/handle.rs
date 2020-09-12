@@ -114,7 +114,7 @@ impl AssetHandle for HandleRef {
 }
 
 /// Handle to an asset.
-#[derive(Eq, Hash)]
+#[derive(Eq)]
 pub struct Handle<T: ?Sized> {
     handle_ref: HandleRef,
     marker: PhantomData<T>,
@@ -132,6 +132,12 @@ impl<T: ?Sized> Clone for Handle<T> {
             handle_ref: self.handle_ref.clone(),
             marker: PhantomData,
         }
+    }
+}
+
+impl<T: ?Sized> Hash for Handle<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.handle_ref.hash(state);
     }
 }
 
@@ -278,8 +284,7 @@ impl SerdeContext {
             std::mem::transmute::<&dyn LoaderInfoProvider, &'static dyn LoaderInfoProvider>(loader)
         };
 
-        let out = LOADER.scope(loader, REFOP_SENDER.scope(sender, f)).await;
-        out
+        LOADER.scope(loader, REFOP_SENDER.scope(sender, f)).await
     }
 }
 
@@ -341,7 +346,7 @@ impl LoaderInfoProvider for DummySerdeContext {
 
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
         let maps = self.maps.read().unwrap();
-        let maybe_asset = maps.load_to_uuid.get(&load).map(|r| r.clone());
+        let maybe_asset = maps.load_to_uuid.get(&load).cloned();
         if let Some(asset_ref) = maybe_asset.as_ref() {
             let mut current = self.current.lock().unwrap();
             if let Some(ref current_serde_id) = current.current_serde_asset {
@@ -414,7 +419,7 @@ where
 {
     SerdeContext::with_active(|loader, _| {
         use ser::SerializeSeq;
-        let uuid: AssetUuid = loader.get_asset_id(load).unwrap_or(Default::default());
+        let uuid: AssetUuid = loader.get_asset_id(load).unwrap_or_default();
         let mut seq = serializer.serialize_seq(Some(uuid.0.len()))?;
         for element in &uuid.0 {
             seq.serialize_element(element)?;
@@ -504,9 +509,9 @@ impl<'de> Visitor<'de> for AssetRefVisitor {
     {
         use de::Error;
         let mut uuid: [u8; 16] = Default::default();
-        for i in 0..16 {
+        for (i, uuid_byte) in uuid.iter_mut().enumerate() {
             if let Some(byte) = seq.next_element::<u8>()? {
-                uuid[i] = byte;
+                *uuid_byte = byte;
             } else {
                 return Err(A::Error::custom(format!(
                     "expected byte at element {} when deserializing handle",
@@ -514,7 +519,7 @@ impl<'de> Visitor<'de> for AssetRefVisitor {
                 )));
             }
         }
-        if let Some(_) = seq.next_element::<u8>()? {
+        if seq.next_element::<u8>()?.is_some() {
             return Err(A::Error::custom(
                 "too many elements when deserializing handle",
             ));

@@ -122,12 +122,14 @@ struct LoaderData {
     pending_reloads: Vec<PendingReload>,
 }
 
+type PendingMetadataRequests = Vec<(
+    ResponsePromise<GetAssetMetadataWithDependenciesResults>,
+    Vec<(AssetUuid, LoadHandle)>,
+)>;
+
 struct RpcRequests {
     pending_data_requests: Vec<(ResponsePromise<GetImportArtifactsResults>, LoadHandle)>,
-    pending_metadata_requests: Vec<(
-        ResponsePromise<GetAssetMetadataWithDependenciesResults>,
-        Vec<(AssetUuid, LoadHandle)>,
-    )>,
+    pending_metadata_requests: PendingMetadataRequests,
 }
 
 unsafe impl Send for RpcRequests {}
@@ -217,7 +219,7 @@ impl Loader for RpcLoader {
                 | WaitingForDependencies
                 | LoadingAsset(_) => LoadStatus::Loading,
                 Loaded(_) => {
-                    if let Some(_) = s.loaded_version {
+                    if s.loaded_version.is_some() {
                         LoadStatus::Loaded
                     } else {
                         LoadStatus::Loading
@@ -295,7 +297,7 @@ impl RpcLoader {
     ) -> std::io::Result<RpcLoader> {
         let (tx, rx) = unbounded();
         Ok(RpcLoader {
-            connect_string: connect_string,
+            connect_string,
             data: LoaderData {
                 handle_allocator,
                 load_states: DashMap::default(),
@@ -436,7 +438,7 @@ fn process_pending_requests<T, U, ProcessFunc>(
             .expect("invalid iteration logic when processing RPC requests");
         let result: Result<Poll<()>, Box<dyn Error>> = match request.0.try_recv() {
             Ok(Some(Ok(response))) => {
-                process_request_func(Ok(response), &mut request.1).map(|r| Poll::Ready(r))
+                process_request_func(Ok(response), &mut request.1).map(Poll::Ready)
             }
             Ok(Some(Err(err))) => Err(Box::new(err)),
             Ok(None) => Ok(Poll::Pending),
@@ -542,7 +544,7 @@ fn process_data_requests(
                     (entry.value().asset_id, *entry.key())
                 }),
         );
-        if assets_to_request.len() > 0 {
+        if !assets_to_request.is_empty() {
             for (asset, handle) in assets_to_request {
                 log::trace!(
                     "Queue request for asset import artifact {:?} {:?}",
@@ -638,7 +640,7 @@ fn process_metadata_requests(
                     (entry.value().asset_id, *entry.key())
                 }),
         );
-        if assets_to_request.len() > 0 {
+        if !assets_to_request.is_empty() {
             for (asset, handle) in &assets_to_request {
                 log::trace!("Queue request for asset metadata {:?} {:?}", asset, handle);
             }
@@ -721,7 +723,7 @@ fn process_load_states(
 ) {
     let mut to_remove = Vec::new();
 
-    let keys: Vec<_> = load_states.iter().map(|x| x.key().clone()).collect();
+    let keys: Vec<_> = load_states.iter().map(|x| *x.key()).collect();
 
     for key in keys {
         let (asset_id, state, has_refs) = {
@@ -814,6 +816,8 @@ fn process_load_states(
                     AssetLoadState::Loaded => {
                         let mut entry = load_states.get_mut(&key).unwrap();
                         let value = entry.value_mut();
+
+                        #[allow(clippy::absurd_extreme_comparisons)]
                         if value.refs.load(Ordering::Relaxed) <= 0 {
                             LoadState::UnloadRequested
                         } else if value.pending_reload {
@@ -867,6 +871,8 @@ fn process_load_states(
             LoadState::Unloading => {
                 let entry = load_states.get(&key).unwrap();
                 let (key, value) = entry.pair();
+
+                #[allow(clippy::absurd_extreme_comparisons)]
                 if value.refs.load(Ordering::Relaxed) <= 0 {
                     to_remove.push(*key);
                 }
@@ -1041,15 +1047,12 @@ fn process_asset_changes(
                     })
                     .map(|(load_handle, mut load)| match load.state {
                         LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
-                            match asset_state {
-                                AssetLoadState::LoadedUncommitted => {
-                                    // Commit reloaded asset and turn auto_commit back on
-                                    // The assets are not auto_commit for reloads to ensure all assets in a
-                                    // changeset are made visible together, atomically
-                                    commit_asset(**load_handle, &mut load, asset_storage);
-                                    load.auto_commit = true;
-                                }
-                                _ => {}
+                            if asset_state == AssetLoadState::LoadedUncommitted {
+                                // Commit reloaded asset and turn auto_commit back on
+                                // The assets are not auto_commit for reloads to ensure all assets in a
+                                // changeset are made visible together, atomically
+                                commit_asset(**load_handle, &mut load, asset_storage);
+                                load.auto_commit = true;
                             }
                         }
                         _ => {}
