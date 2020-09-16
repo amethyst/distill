@@ -427,12 +427,12 @@ impl FileTracker {
         self.watch_dirs.iter()
     }
 
-    pub async fn get_rw_txn<'a>(&'a self) -> RwTransaction<'a> {
+    pub async fn get_rw_txn(&self) -> RwTransaction<'_> {
         self.db.rw_txn().await.expect("db: Failed to open rw txn")
     }
 
     #[cfg(test)]
-    pub async fn get_ro_txn<'a>(&'a self) -> RoTransaction<'a> {
+    pub async fn get_ro_txn(&self) -> RoTransaction<'_> {
         self.db.ro_txn().await.expect("db: Failed to open ro txn")
     }
 

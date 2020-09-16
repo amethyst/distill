@@ -58,7 +58,7 @@ impl SnapshotTxn {
         Self { ctx, txn }
     }
 
-    fn txn<'a>(&'a self) -> &'a RoTransaction<'a> {
+    fn txn(&self) -> &RoTransaction<'_> {
         &self.txn
     }
 

@@ -170,19 +170,11 @@ impl AssetRef {
     }
 
     pub fn is_path(&self) -> bool {
-        if let AssetRef::Path(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, AssetRef::Path(_))
     }
 
     pub fn is_uuid(&self) -> bool {
-        if let AssetRef::Uuid(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, AssetRef::Uuid(_))
     }
 }
 

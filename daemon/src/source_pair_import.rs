@@ -69,7 +69,7 @@ impl AssetImportResult {
 pub(crate) struct SourcePairImport<'a> {
     source: PathBuf,
     importer: Option<&'a dyn BoxedImporter>,
-    importer_contexts: Option<&'a Vec<Box<dyn ImporterContext>>>,
+    importer_contexts: Option<&'a [Box<dyn ImporterContext>]>,
     source_hash: Option<u64>,
     meta_hash: Option<u64>,
     import_hash: Option<u64>,
@@ -172,7 +172,7 @@ impl<'a> SourcePairImport<'a> {
         self.importer.is_some()
     }
 
-    pub fn set_importer_contexts(&mut self, importer_contexts: &'a Vec<Box<dyn ImporterContext>>) {
+    pub fn set_importer_contexts(&mut self, importer_contexts: &'a [Box<dyn ImporterContext>]) {
         self.importer_contexts = Some(importer_contexts);
     }
 
@@ -272,7 +272,7 @@ impl<'a> SourcePairImport<'a> {
     }
 
     fn get_importer_context_set(
-        import_contexts: Option<&Vec<Box<dyn ImporterContext>>>,
+        import_contexts: Option<&[Box<dyn ImporterContext>]>,
     ) -> ImporterContextHandleSet {
         let mut ctx_handles = Vec::new();
         if let Some(contexts) = import_contexts {
@@ -586,7 +586,7 @@ impl<'a> SourcePairImport<'a> {
 pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
     metadata_cache: &C,
     importer_map: &'a ImporterMap,
-    importer_contexts: &'a Vec<Box<dyn ImporterContext>>,
+    importer_contexts: &'a [Box<dyn ImporterContext>],
     pair: &HashedSourcePair,
     scratch_buf: &mut Vec<u8>,
 ) -> Result<Option<(SourcePairImport<'a>, Option<PairImportResult>)>> {
@@ -775,7 +775,7 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
     assets: Vec<SerializedAsset<Vec<u8>>>,
     metadata_cache: &C,
     importer_map: &'a ImporterMap,
-    importer_contexts: &'a Vec<Box<dyn ImporterContext>>,
+    importer_contexts: &'a [Box<dyn ImporterContext>],
     source_path: PathBuf,
     meta_path: PathBuf,
     scratch_buf: &mut Vec<u8>,

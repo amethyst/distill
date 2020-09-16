@@ -694,10 +694,10 @@ fn process_load_ops(
 ) {
     while let Ok(op) = op_rx.try_recv() {
         match op {
-            HandleOp::LoadError(_handle, err) => {
+            HandleOp::Error(_handle, err) => {
                 panic!("load error {}", err);
             }
-            HandleOp::LoadComplete(handle) => {
+            HandleOp::Complete(handle) => {
                 let mut load = load_states
                     .get_mut(&handle)
                     .expect("load op completed but load state does not exist");
@@ -709,7 +709,7 @@ fn process_load_ops(
                         .map_asset_load_state(|_| AssetLoadState::LoadedUncommitted)
                 }
             }
-            HandleOp::LoadDrop(handle) => panic!(
+            HandleOp::Drop(handle) => panic!(
                 "load op dropped without calling complete/error, handle {:?}",
                 handle
             ),
@@ -1038,7 +1038,8 @@ fn process_asset_changes(
         });
         if is_finished {
             data.pending_reloads.iter().for_each(|reload| {
-                data.uuid_to_load
+                if let Some((load_handle, mut load)) = data
+                    .uuid_to_load
                     .get(&reload.asset_id)
                     .as_ref()
                     .and_then(|load_handle| {
@@ -1046,7 +1047,8 @@ fn process_asset_changes(
                             .get_mut(load_handle)
                             .map(|load| (load_handle, load))
                     })
-                    .map(|(load_handle, mut load)| match load.state {
+                {
+                    match load.state {
                         LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
                             if asset_state == AssetLoadState::LoadedUncommitted {
                                 // Commit reloaded asset and turn auto_commit back on
@@ -1057,7 +1059,8 @@ fn process_asset_changes(
                             }
                         }
                         _ => {}
-                    });
+                    }
+                }
             });
             data.pending_reloads.clear();
         }

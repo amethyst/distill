@@ -13,14 +13,11 @@ atelier-importer = { version = "0.1", path = "../../importer" }
 atelier-loader = { version = "0.1", path = "../../loader", features = [ "asset_uuid_macro"] }
 
 type-uuid = "0.1"
-structopt = "0.3"
 image2 = { version = "0.11", features = [ "ser" ] }
 log = { version = "0.4", features = ["serde"] }
 serde = "1"
 uuid = "0.8"
 bincode = "1.3"
-tokio = { version = "0.2", features = ["io-util"] }
-futures = { version = "0.3", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 futures-io = { version = "0.3", default-features = false }
 futures-core = { version = "0.3", default-features = false, features = ["alloc"] }

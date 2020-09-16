@@ -13,9 +13,9 @@ use std::{
 pub struct LoadHandle(pub u64);
 
 pub(crate) enum HandleOp {
-    LoadError(LoadHandle, Box<dyn Error + Send>),
-    LoadComplete(LoadHandle),
-    LoadDrop(LoadHandle),
+    Error(LoadHandle, Box<dyn Error + Send>),
+    Complete(LoadHandle),
+    Drop(LoadHandle),
 }
 
 /// Type that allows the downstream asset storage implementation to signal that this asset is
@@ -44,7 +44,7 @@ impl AssetLoadOp {
             .sender
             .as_ref()
             .unwrap()
-            .send(HandleOp::LoadComplete(self.handle));
+            .send(HandleOp::Complete(self.handle));
         self.sender = None;
     }
 
@@ -54,7 +54,7 @@ impl AssetLoadOp {
             .sender
             .as_ref()
             .unwrap()
-            .send(HandleOp::LoadError(self.handle, Box::new(error)));
+            .send(HandleOp::Error(self.handle, Box::new(error)));
         self.sender = None;
     }
 }
@@ -62,7 +62,7 @@ impl AssetLoadOp {
 impl Drop for AssetLoadOp {
     fn drop(&mut self) {
         if let Some(ref sender) = self.sender {
-            let _ = sender.send(HandleOp::LoadDrop(self.handle));
+            let _ = sender.send(HandleOp::Drop(self.handle));
         }
     }
 }

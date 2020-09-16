@@ -831,7 +831,7 @@ impl FileAssetSource {
                         .expect("path changed but no import hash present");
                     // TODO set error state for unresolved path references?
                     // this code strips out path references for now, but it will probably crash and burn when loading
-                    asset_metadata.artifact.as_mut().map(|a| {
+                    if let Some(a) = asset_metadata.artifact.as_mut() {
                         a.load_deps = a
                             .load_deps
                             .iter()
@@ -854,7 +854,7 @@ impl FileAssetSource {
                                 .chain(a.build_deps.iter())
                                 .map(|dep| dep.expect_uuid()),
                         )
-                    });
+                    }
 
                     self.hub
                         .update_asset(txn, &asset_metadata, data::AssetSource::File, change_batch)

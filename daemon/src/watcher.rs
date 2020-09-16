@@ -196,13 +196,17 @@ impl DirWatcher {
 
     fn watch(&mut self, path: &PathBuf) -> Result<bool> {
         let refs = *self.watch_refs.get(path).unwrap_or(&0);
-        if refs == 0 {
-            self.watcher.watch(path, RecursiveMode::Recursive)?;
-            self.dirs.push(path.clone());
-            self.watch_refs.insert(path.clone(), 1);
-            return Ok(true);
-        } else if refs > 0 {
-            self.watch_refs.entry(path.clone()).and_modify(|r| *r += 1);
+        match refs {
+            0 => {
+                self.watcher.watch(path, RecursiveMode::Recursive)?;
+                self.dirs.push(path.clone());
+                self.watch_refs.insert(path.clone(), 1);
+                return Ok(true);
+            }
+            refs if refs > 0 => {
+                self.watch_refs.entry(path.clone()).and_modify(|r| *r += 1);
+            }
+            _ => {}
         }
         Ok(false)
     }
