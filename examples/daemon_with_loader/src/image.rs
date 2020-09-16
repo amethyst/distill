@@ -1,5 +1,5 @@
 use atelier_core::AssetUuid;
-use atelier_importer::{Error, ImportedAsset, Importer, ImporterValue, Result, AsyncImporter};
+use atelier_importer::{Error, ImportedAsset, ImporterValue, Result, AsyncImporter};
 use futures_core::future::BoxFuture;
 use image2::{color, ImageBuf};
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,7 @@ impl AsyncImporter for ImageImporter {
     fn import<'a>(
         &'a self,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
-        options: Self::Options,
+        _options: Self::Options,
         state: &'a mut Self::State,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
         Box::pin(async move {

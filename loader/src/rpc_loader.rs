@@ -1081,10 +1081,10 @@ mod tests {
     use crate::TypeUuid;
     use atelier_core::AssetUuid;
     use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{
-        BoxedImporter, ImportedAsset, Importer, ImporterValue, Result as ImportResult,
-    };
-    use futures_core::BoxFuture;
+    use atelier_importer::{AsyncImporter, ImportedAsset, ImporterValue, Result as ImportResult};
+    use futures_core::future::BoxFuture;
+    use futures_io::AsyncRead;
+    use futures_util::io::AsyncReadExt;
     use serde::{Deserialize, Serialize};
     use std::{
         iter::FromIterator,
@@ -1094,7 +1094,6 @@ mod tests {
         sync::RwLock,
         thread::{self, JoinHandle},
     };
-    use futures_io::{AsyncRead, AsyncReadExt};
     use uuid::Uuid;
 
     #[derive(Debug)]
@@ -1184,7 +1183,7 @@ mod tests {
     #[derive(TypeUuid)]
     #[uuid = "fa50e08c-af6c-4ada-aed1-447c116d63bc"]
     struct TxtImporter;
-    impl Importer for TxtImporter {
+    impl AsyncImporter for TxtImporter {
         type State = TxtImporterState;
         type Options = TxtFormat;
 
@@ -1374,10 +1373,7 @@ mod tests {
                 AssetDaemon::default()
                     .with_db_path(tests_path.join("assets_db"))
                     .with_address(daemon_address)
-                    .with_importers(std::iter::once((
-                        "txt",
-                        Box::new(TxtImporter) as Box<dyn BoxedImporter>,
-                    )))
+                    .with_importer("txt", TxtImporter)
                     .with_asset_dirs(vec![tests_path.join("assets")])
                     .run();
             })

@@ -3,9 +3,9 @@ use std::{
     path::PathBuf,
 };
 
+use crate::image::ImageImporter;
 use atelier_daemon::AssetDaemon;
 use structopt::StructOpt;
-use crate::image::ImageImporter;
 
 /// Parameters to the asset daemon.
 ///
@@ -40,7 +40,7 @@ fn parse_socket_addr(s: &str) -> std::result::Result<SocketAddr, AddrParseError>
 pub fn run() {
     let opt = AssetDaemonOpt::from_args();
 
-    let deamon = AssetDaemon::default()
+    AssetDaemon::default()
         .with_importer("png", ImageImporter {})
         .with_importer("jpg", ImageImporter {})
         .with_importer("tga", ImageImporter {})

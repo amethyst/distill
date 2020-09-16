@@ -89,13 +89,12 @@ mod tests {
                      }"
         .as_bytes();
 
-        let a_boxed_res = importer
-            .import_boxed(
-                &mut a,
-                Box::new(RonImporterOptions {}),
-                Box::new(RonImporterState { id: None }),
-            )
-            .unwrap();
+        let a_boxed_res = futures_executor::block_on(importer.import_boxed(
+            &mut a,
+            Box::new(RonImporterOptions {}),
+            Box::new(RonImporterState { id: None }),
+        ))
+        .unwrap();
         let a_serde_obj = a_boxed_res
             .value
             .assets
@@ -130,13 +129,12 @@ mod tests {
                      }"
         .as_bytes();
 
-        let b_boxed_res = importer
-            .import_boxed(
-                &mut b,
-                Box::new(RonImporterOptions {}),
-                Box::new(RonImporterState { id: None }),
-            )
-            .unwrap();
+        let b_boxed_res = futures_executor::block_on(importer.import_boxed(
+            &mut b,
+            Box::new(RonImporterOptions {}),
+            Box::new(RonImporterState { id: None }),
+        ))
+        .unwrap();
         let b_serde_obj = b_boxed_res
             .value
             .assets

@@ -4,18 +4,13 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use capnp::message::ReaderOptions;
 
-use std::future::Future;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
     thread,
     time::Instant,
 };
-use tokio::{prelude::*, runtime::Runtime};
-use std::time::Duration;
-use capnp_rpc::rpc_twoparty_capnp::Side;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use tokio::runtime::Runtime;
 
 pub fn main() {
     use std::net::ToSocketAddrs;

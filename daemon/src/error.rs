@@ -13,7 +13,6 @@ pub enum Error {
     RonDeError(ron::de::Error),
     ErasedSerde(erased_serde::Error),
     MetaDeError(PathBuf, ron::de::Error),
-    #[cfg(feature = "pretty_log")]
     SetLoggerError(log::SetLoggerError),
     UuidLength,
     RecvError,
@@ -40,7 +39,6 @@ impl std::error::Error for Error {
             Error::RonSerError(ref e) => Some(e),
             Error::RonDeError(ref e) => Some(e),
             Error::MetaDeError(_, ref e) => Some(e),
-            #[cfg(feature = "pretty_log")]
             Error::SetLoggerError(ref e) => Some(e),
             Error::UuidLength => None,
             Error::RecvError => None,
@@ -75,7 +73,6 @@ impl fmt::Display for Error {
                 }
                 e.fmt(f)
             }
-            #[cfg(feature = "pretty_log")]
             Error::SetLoggerError(ref e) => e.fmt(f),
             Error::UuidLength => write!(f, "{}", self),
             Error::RecvError => write!(f, "{}", self),
@@ -138,7 +135,6 @@ impl From<Error> for capnp::Error {
         capnp::Error::failed(format!("{}", err))
     }
 }
-#[cfg(feature = "pretty_log")]
 impl From<log::SetLoggerError> for Error {
     fn from(err: log::SetLoggerError) -> Error {
         Error::SetLoggerError(err)

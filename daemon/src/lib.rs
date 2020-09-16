@@ -51,8 +51,7 @@ static LOGGER: simple_logger::SimpleLogger = simple_logger::SimpleLogger;
 pub fn init_logging() -> Result<()> {
     log::set_logger(&LOGGER)
         .map(|()| log::set_max_level(DEFAULT_LOGGING_LEVEL))
-        .expect("failed to init logger");
-    Ok(())
+        .map_err(Error::SetLoggerError)
 }
 #[cfg(feature = "pretty_log")]
 pub fn init_logging() -> Result<()> {

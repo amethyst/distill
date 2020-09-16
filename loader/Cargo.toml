@@ -28,6 +28,7 @@ atelier-importer = { path = "../importer" }
 uuid = { version = "0.8", features = ["v4"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "0.2", features = ["io-util"] }
+futures-io = { version = "0.3" }
 
 [features]
 default = ["rpc_loader", "handle"]

@@ -5,6 +5,7 @@ use atelier_loader::{
 };
 use std::{cell::RefCell, collections::HashMap, error::Error};
 
+#[allow(dead_code)]
 struct AssetState<A> {
     version: u32,
     asset: A,
@@ -25,8 +26,8 @@ impl<A> Storage<A> {
 impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
     fn update_asset(
         &self,
-        loader_info: &dyn LoaderInfoProvider,
-        asset_type_id: &AssetTypeId,
+        _loader_info: &dyn LoaderInfoProvider,
+        _asset_type_id: &AssetTypeId,
         data: &[u8],
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
@@ -48,9 +49,9 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
     }
     fn commit_asset_version(
         &self,
-        asset_type: &AssetTypeId,
+        _asset_type: &AssetTypeId,
         load_handle: LoadHandle,
-        version: u32,
+        _version: u32,
     ) {
         // The commit step is done after an asset load has completed.
         // It exists to avoid frames where an asset that was loaded is unloaded, which
@@ -66,11 +67,7 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         );
         log::info!("Commit {:?}", load_handle);
     }
-    fn free(
-        &self,
-        asset_type_id: &AssetTypeId,
-        load_handle: LoadHandle,
-    ) {
+    fn free(&self, _asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
         let mut committed = self.assets.borrow_mut();
         committed.remove(&load_handle);
         log::info!("Free {:?}", load_handle);
@@ -114,11 +111,7 @@ impl AssetStorage for Game {
             .expect("unknown asset type")
             .commit_asset_version(asset_type, load_handle, version)
     }
-    fn free(
-        &self,
-        asset_type_id: &AssetTypeId,
-        load_handle: LoadHandle,
-    ) {
+    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
         self.storage
             .get(asset_type_id)
             .expect("unknown asset type")
