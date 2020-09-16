@@ -3,12 +3,10 @@ use atelier_schema::{data::asset_change_event, service::asset_hub};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use futures_channel::oneshot;
 use futures_util::AsyncReadExt;
 use std::error::Error;
-use futures_channel::oneshot;
-use tokio::{
-    runtime::{Builder, Runtime},
-};
+use tokio::runtime::{Builder, Runtime};
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 pub type Response<T> =

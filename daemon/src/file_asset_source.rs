@@ -12,16 +12,16 @@ use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
 };
 use atelier_schema::data::{self, path_refs, source_metadata};
+use bincode::config::Options;
 use futures_channel::mpsc::unbounded;
+use futures_util::lock::Mutex;
 use futures_util::stream::StreamExt;
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::{path::PathBuf, str, sync::Arc, time::Instant};
-use tokio::{runtime::Runtime};
-use futures_util::lock::Mutex;
-use bincode::config::Options;
+use tokio::runtime::Runtime;
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -690,14 +690,8 @@ impl FileAssetSource {
                     let serialized_asset = crate::serialized_asset::create(
                         hash,
                         asset.metadata.id,
-                        build_deps
-                            .into_iter()
-                            .map(AssetRef::Uuid)
-                            .collect(),
-                        load_deps
-                            .into_iter()
-                            .map(AssetRef::Uuid)
-                            .collect(),
+                        build_deps.into_iter().map(AssetRef::Uuid).collect(),
+                        load_deps.into_iter().map(AssetRef::Uuid).collect(),
                         &*asset
                             .asset
                             .expect("expected asset obj when regenerating artifact"),
@@ -1277,8 +1271,7 @@ impl FileAssetSource {
         let metadata_changes = metadata_changes.lock().await;
 
         self.process_metadata_changes(&mut txn, &metadata_changes, &mut change_batch);
-        self
-            .hub
+        self.hub
             .add_changes(&mut txn, change_batch)
             .expect("Failed to process metadata changes")
     }

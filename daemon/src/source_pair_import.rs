@@ -9,7 +9,7 @@ use atelier_importer::{
     SOURCEMETADATA_VERSION,
 };
 use atelier_schema::data;
-use futures_core::future::{Future, BoxFuture};
+use futures_core::future::{BoxFuture, Future};
 use log::{debug, error};
 use std::io::Read;
 use std::{
@@ -806,19 +806,15 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
             source: Some(_),
             source_hash: None,
             ..
-        } => {
-            Err(Error::Custom("Export target path is a directory".into()))
-        }
+        } => Err(Error::Custom("Export target path is a directory".into())),
         // Meta path is a directory
         HashedSourcePair {
             meta: Some(_meta),
             meta_hash: None,
             ..
-        } => {
-            Err(Error::Custom(
-                "Export target .meta path is a directory".into(),
-            ))
-        }
+        } => Err(Error::Custom(
+            "Export target .meta path is a directory".into(),
+        )),
         HashedSourcePair {
             source_hash,
             meta_hash,

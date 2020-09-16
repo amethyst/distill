@@ -7,11 +7,11 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
+use futures_util::select;
 use futures_util::{
     future::{pending, FusedFuture, FutureExt},
     stream::StreamExt,
 };
-use futures_util::select;
 use std::{collections::HashMap, io::Write, pin::Pin};
 
 #[async_trait(?Send)]

@@ -1,10 +1,10 @@
 use atelier_core::AssetUuid;
-use atelier_importer::{Error, ImportedAsset, ImporterValue, Result, AsyncImporter};
+use atelier_importer::{AsyncImporter, Error, ImportedAsset, ImporterValue, Result};
 use futures_core::future::BoxFuture;
-use image2::{color, ImageBuf};
-use serde::{Deserialize, Serialize};
 use futures_io::AsyncRead;
 use futures_util::AsyncReadExt;
+use image2::{color, ImageBuf};
+use serde::{Deserialize, Serialize};
 use type_uuid::*;
 
 #[derive(TypeUuid, Serialize, Deserialize)]

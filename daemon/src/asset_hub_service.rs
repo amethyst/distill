@@ -521,9 +521,7 @@ impl AssetHubImpl {
                     .get_latest_asset_change(snapshot.txn.txn())
                     .expect("failed to get latest change");
                 request.get().set_latest_change(latest_change);
-                request.get().set_snapshot(
-                    capnp_rpc::new_client(snapshot)
-                );
+                request.get().set_snapshot(capnp_rpc::new_client(snapshot));
                 if request.send().promise.await.is_err() {
                     ctx.hub.drop_listener(tx);
                     break;
@@ -539,9 +537,7 @@ impl AssetHubImpl {
         mut results: asset_hub::GetSnapshotResults,
     ) -> Result<()> {
         let snapshot = AssetHubSnapshotImpl::new(ctx).await;
-        results.get().set_snapshot(
-            capnp_rpc::new_client(snapshot)
-        );
+        results.get().set_snapshot(capnp_rpc::new_client(snapshot));
         Ok(())
     }
 }

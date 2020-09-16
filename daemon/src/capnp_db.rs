@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 use crate::error::{Error, Result};
+use async_lock::{Semaphore, SemaphoreGuard};
 use lmdb::{self, Cursor, Transaction};
 use std::path::Path;
 use std::result::Result as StdResult;
-use async_lock::{Semaphore, SemaphoreGuard};
 
 pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
@@ -41,10 +41,7 @@ pub struct Iter<'cursor, 'txn> {
 
 pub trait CapnpCursor<'txn> {
     fn capnp_iter_start<'cursor>(self) -> Iter<'cursor, 'txn>;
-    fn capnp_iter_from<'cursor, K>(
-        self,
-        key: &K,
-    ) -> Iter<'cursor, 'txn>
+    fn capnp_iter_from<'cursor, K>(self, key: &K) -> Iter<'cursor, 'txn>
     where
         K: AsRef<[u8]>;
 }
@@ -56,10 +53,7 @@ impl<'txn> CapnpCursor<'txn> for lmdb::RoCursor<'txn> {
             _marker: std::marker::PhantomData,
         }
     }
-    fn capnp_iter_from<'cursor, K>(
-        mut self,
-        key: &K,
-    ) -> Iter<'cursor, 'txn>
+    fn capnp_iter_from<'cursor, K>(mut self, key: &K) -> Iter<'cursor, 'txn>
     where
         K: AsRef<[u8]>,
     {
@@ -95,10 +89,7 @@ impl<'cursor, 'txn> Iterator for Iter<'cursor, 'txn> {
 pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
     fn txn(&'a self) -> &'a T;
 
-    fn open_ro_cursor(
-        &'a self,
-        db: lmdb::Database,
-    ) -> Result<lmdb::RoCursor<'a>> {
+    fn open_ro_cursor(&'a self, db: lmdb::Database) -> Result<lmdb::RoCursor<'a>> {
         Ok(self.txn().open_ro_cursor(db)?)
     }
 
@@ -122,11 +113,7 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
             Ok(None)
         }
     }
-    fn get_as_bytes<K>(
-        &'a self,
-        db: lmdb::Database,
-        key: &K,
-    ) -> Result<Option<&[u8]>>
+    fn get_as_bytes<K>(&'a self, db: lmdb::Database, key: &K) -> Result<Option<&[u8]>>
     where
         K: AsRef<[u8]>,
     {
@@ -199,12 +186,7 @@ impl<'a> RwTransaction<'a> {
         self.dirty = true;
         Ok(())
     }
-    pub fn put_bytes<K, V>(
-        &mut self,
-        db: lmdb::Database,
-        key: &K,
-        value: &V,
-    ) -> Result<()>
+    pub fn put_bytes<K, V>(&mut self, db: lmdb::Database, key: &K, value: &V) -> Result<()>
     where
         K: AsRef<[u8]>,
         V: AsRef<[u8]>,
@@ -213,11 +195,7 @@ impl<'a> RwTransaction<'a> {
         self.dirty = true;
         Ok(())
     }
-    pub fn delete<K>(
-        &mut self,
-        db: lmdb::Database,
-        key: &K,
-    ) -> Result<bool>
+    pub fn delete<K>(&mut self, db: lmdb::Database, key: &K) -> Result<bool>
     where
         K: AsRef<[u8]>,
     {
@@ -242,10 +220,7 @@ impl<'a> RwTransaction<'a> {
         Ok(())
     }
 
-    pub fn clear_db(
-        &mut self,
-        db: lmdb::Database,
-    ) -> Result<()> {
+    pub fn clear_db(&mut self, db: lmdb::Database) -> Result<()> {
         self.txn.clear_db(db)?;
         Ok(())
     }
@@ -257,10 +232,7 @@ impl<'a> RwTransaction<'a> {
         Ok(())
     }
 
-    pub fn open_rw_cursor(
-        &'a mut self,
-        db: lmdb::Database,
-    ) -> Result<lmdb::RwCursor<'a>> {
+    pub fn open_rw_cursor(&'a mut self, db: lmdb::Database) -> Result<lmdb::RwCursor<'a>> {
         Ok(self.txn.open_rw_cursor(db)?)
     }
 }
@@ -275,10 +247,7 @@ impl Environment {
         Self::with_map_size(path, map_size)
     }
 
-    pub fn with_map_size(
-        path: &Path,
-        map_size: usize,
-    ) -> Result<Environment> {
+    pub fn with_map_size(path: &Path, map_size: usize) -> Result<Environment> {
         // safety notice:
         // - NO_TLS flag is required for RwTransaction Send derive to be safe.
         let flags = lmdb::EnvironmentFlags::NO_TLS;

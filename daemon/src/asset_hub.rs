@@ -1,5 +1,6 @@
 use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::{Error, Result};
+use async_channel::Sender;
 use atelier_core::{utils, AssetRef, AssetUuid};
 use atelier_importer::{ArtifactMetadata, AssetMetadata};
 use atelier_schema::data::{
@@ -16,7 +17,6 @@ use std::{
         Arc, Mutex,
     },
 };
-use async_channel::Sender;
 
 pub type ListenerID = u64;
 
@@ -634,19 +634,13 @@ impl AssetHub {
         }
     }
 
-    pub fn register_listener(
-        &self,
-        listener: Sender<AssetBatchEvent>,
-    ) -> ListenerID {
+    pub fn register_listener(&self, listener: Sender<AssetBatchEvent>) -> ListenerID {
         let id = self.id_gen.fetch_add(1, Ordering::Relaxed);
         self.listeners.lock().unwrap().insert(id, listener);
         id
     }
 
-    pub fn drop_listener(
-        &self,
-        listener: ListenerID,
-    ) -> Option<Sender<AssetBatchEvent>> {
+    pub fn drop_listener(&self, listener: ListenerID) -> Option<Sender<AssetBatchEvent>> {
         self.listeners.lock().unwrap().remove(&listener)
     }
 }

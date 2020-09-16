@@ -39,11 +39,7 @@ pub fn to_meta_path(p: &PathBuf) -> PathBuf {
     ))
 }
 
-pub fn calc_import_artifact_hash<T, V>(
-    id: &AssetUuid,
-    import_hash: u64,
-    dep_list: T,
-) -> u64
+pub fn calc_import_artifact_hash<T, V>(id: &AssetUuid, import_hash: u64, dep_list: T) -> u64
 where
     V: std::borrow::Borrow<AssetUuid>,
     T: IntoIterator<Item = V>,

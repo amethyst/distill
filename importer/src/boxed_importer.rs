@@ -89,14 +89,9 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync + 'static {
         &self,
         deserializer: &mut dyn Deserializer,
     ) -> Result<SourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>>;
-    fn deserialize_options(
-        &self,
-        deserializer: &mut dyn Deserializer,
-    ) -> Result<Box<dyn SerdeObj>>;
-    fn deserialize_state(
-        &self,
-        deserializer: &mut dyn Deserializer,
-    ) -> Result<Box<dyn SerdeObj>>;
+    fn deserialize_options(&self, deserializer: &mut dyn Deserializer)
+        -> Result<Box<dyn SerdeObj>>;
+    fn deserialize_state(&self, deserializer: &mut dyn Deserializer) -> Result<Box<dyn SerdeObj>>;
 }
 
 impl std::fmt::Debug for dyn BoxedImporter {
