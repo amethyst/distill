@@ -1,3 +1,5 @@
+[![Rust](https://github.com/bevyengine/bevy/workflows/CI/badge.svg)](https://github.com/bevyengine/bevy/actions)
+
 # Atelier Assets
 An asset management & processing framework for game engines.
 
