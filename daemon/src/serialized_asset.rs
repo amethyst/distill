@@ -18,9 +18,7 @@ pub fn create(
     let asset_buf = {
         match compression {
             CompressionType::None => scratch_buf.clone(),
-            CompressionType::Lz4 => {
-                unimplemented!()
-            }
+            CompressionType::Lz4 => unimplemented!(),
         }
     };
 
