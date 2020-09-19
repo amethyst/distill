@@ -16,17 +16,10 @@ pub fn create(
     scratch_buf.resize(size, 0);
     bincode::serialize_into(scratch_buf.as_mut_slice(), value)?;
     let asset_buf = {
-        #[cfg(feature = "compression")]
-        use smush::{encode, Encoding, Quality};
-        #[cfg(feature = "compression")]
-        let quality = Quality::Maximum;
         match compression {
             CompressionType::None => scratch_buf.clone(),
-            #[cfg(feature = "compression")]
-            CompressionType::Lz4 => encode(scratch_buf, Encoding::Lz4, quality)?,
-            #[cfg(not(feature = "compression"))]
             CompressionType::Lz4 => {
-                panic!("compression not enabled: compile with `compression` feature")
+                unimplemented!()
             }
         }
     };
