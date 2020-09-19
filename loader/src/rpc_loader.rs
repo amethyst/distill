@@ -1203,7 +1203,7 @@ mod tests {
         fn import<'a>(
             &'a self,
             source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
-            txt_format: Self::Options,
+            txt_format: &'a Self::Options,
             state: &'a mut Self::State,
         ) -> BoxFuture<'a, ImportResult<ImporterValue>> {
             Box::pin(async move {

@@ -246,6 +246,7 @@ impl AssetDaemon {
     }
 }
 
+#[allow(clippy::string_lit_as_bytes)]
 async fn check_db_version(env: &Environment) -> Result<()> {
     use crate::capnp_db::DBTransaction;
     let tables = AssetDaemonTables::new(env).expect("failed to create AssetDaemon tables");

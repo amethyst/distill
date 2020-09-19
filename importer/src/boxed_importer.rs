@@ -125,30 +125,30 @@ where
         &'a self,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         options: Box<dyn SerdeObj>,
-        state: Box<dyn SerdeObj>,
+        mut state: Box<dyn SerdeObj>,
     ) -> BoxFuture<'a, Result<BoxedImporterValue>> {
         log::trace!("import_boxed");
         Box::pin(async move {
-            let s = state.downcast::<S>();
-            let mut s = if let Ok(s) = s {
+            let s = state.any_mut().downcast_mut::<S>();
+            let s = if let Some(s) = s {
                 s
             } else {
                 panic!("Failed to downcast Importer::State");
             };
-            let o = options.downcast::<O>();
-            let o = if let Ok(o) = o {
-                *o
+            let o = options.any().downcast_ref::<O>();
+            let o = if let Some(o) = o {
+                o
             } else {
                 panic!("Failed to downcast Importer::Options");
             };
 
             log::trace!("import_boxed about to import");
-            let result = self.import(source, o.clone(), &mut s).await?;
+            let result = self.import(source, o, s).await?;
             log::trace!("import_boxed imported");
             Ok(BoxedImporterValue {
                 value: result,
-                options: Box::new(o),
-                state: s,
+                options,
+                state,
             })
         })
     }
@@ -157,27 +157,27 @@ where
         &'a self,
         output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
         options: Box<dyn SerdeObj>,
-        state: Box<dyn SerdeObj>,
+        mut state: Box<dyn SerdeObj>,
         assets: Vec<ExportAsset>,
     ) -> BoxFuture<'a, Result<BoxedExportInputs>> {
         Box::pin(async move {
-            let s = state.downcast::<S>();
-            let mut s = if let Ok(s) = s {
+            let s = state.any_mut().downcast_mut::<S>();
+            let s = if let Some(s) = s {
                 s
             } else {
                 panic!("Failed to downcast Importer::State");
             };
-            let o = options.downcast::<O>();
-            let o = if let Ok(o) = o {
-                *o
+            let o = options.any().downcast_ref::<O>();
+            let o = if let Some(o) = o {
+                o
             } else {
                 panic!("Failed to downcast Importer::Options");
             };
 
-            let result = self.export(output, o.clone(), &mut s, assets).await?;
+            let result = self.export(output, o, s, assets).await?;
             Ok(BoxedExportInputs {
-                options: Box::new(o),
-                state: s,
+                options,
+                state,
                 value: result,
             })
         })

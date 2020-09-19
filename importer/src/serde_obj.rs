@@ -1,10 +1,20 @@
 use erased_serde::*;
-use mopa::*;
+use std::any::Any;
 use type_uuid::TypeUuidDynamic;
 
 /// A trait for serializing any struct with a TypeUuid
-pub trait SerdeObj: Any + Serialize + TypeUuidDynamic + Send {}
-impl<T: Serialize + TypeUuidDynamic + Send + 'static> SerdeObj for T {}
+pub trait SerdeObj: Any + Serialize + TypeUuidDynamic + Send {
+    fn any(&self) -> &dyn Any;
+    fn any_mut(&mut self) -> &mut dyn Any;
+}
+impl<T: Serialize + TypeUuidDynamic + Send + 'static> SerdeObj for T {
+    fn any(&self) -> &dyn Any {
+        self
+    }
+    fn any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
 
 pub trait IntoSerdeObj {
     fn into_serde_obj(self: Box<Self>) -> Box<dyn SerdeObj>
@@ -34,4 +44,3 @@ pub use serde_importable_derive::*;
 pub use typetag;
 
 serialize_trait_object!(SerdeObj);
-mopafy!(SerdeObj);

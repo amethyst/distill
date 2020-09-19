@@ -3,8 +3,7 @@ use atelier_loader::{
     handle::{AssetHandle, RefOp, TypedAssetStorage},
     AssetLoadOp, AssetStorage, AssetTypeId, LoadHandle, LoaderInfoProvider, TypeUuid,
 };
-use mopa::{mopafy, Any};
-use std::{cell::RefCell, collections::HashMap, error::Error, sync::Arc};
+use std::{any::Any, cell::RefCell, collections::HashMap, error::Error, sync::Arc};
 
 pub struct GenericAssetStorage {
     storage: RefCell<HashMap<AssetTypeId, Box<dyn TypedStorage>>>,
@@ -69,6 +68,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
                     .get(&AssetTypeId(A::UUID))
                     .expect("unknown asset type")
                     .as_ref()
+                    .any()
                     .downcast_ref::<Storage<A>>()
                     .expect("failed to downcast")
                     .get(handle),
@@ -81,6 +81,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
             .get(&AssetTypeId(A::UUID))
             .expect("unknown asset type")
             .as_ref()
+            .any()
             .downcast_ref::<Storage<A>>()
             .expect("failed to downcast")
             .get_version(handle)
@@ -94,6 +95,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
                     .get(&AssetTypeId(A::UUID))
                     .expect("unknown asset type")
                     .as_ref()
+                    .any()
                     .downcast_ref::<Storage<A>>()
                     .expect("failed to downcast")
                     .get_asset_with_version(handle),
@@ -102,6 +104,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
     }
 }
 pub trait TypedStorage: Any {
+    fn any(&self) -> &dyn Any;
     fn update_asset(
         &mut self,
         loader_info: &dyn LoaderInfoProvider,
@@ -113,8 +116,11 @@ pub trait TypedStorage: Any {
     fn commit_asset_version(&mut self, handle: LoadHandle, version: u32);
     fn free(&mut self, handle: LoadHandle);
 }
-mopafy!(TypedStorage);
+
 impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for Storage<A> {
+    fn any(&self) -> &dyn Any {
+        self
+    }
     fn update_asset(
         &mut self,
         loader_info: &dyn LoaderInfoProvider,

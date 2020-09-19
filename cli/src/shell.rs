@@ -98,10 +98,8 @@ impl<C> Shell<C> {
         if let Some(command) = command {
             if command.nargs() != args.len() {
                 println!("Invalid number of arguments\r");
-            } else {
-                if let Err(e) = command.run(&self.ctx, args).await {
-                    println!("Error: {}\r", e);
-                }
+            } else if let Err(e) = command.run(&self.ctx, args).await {
+                println!("Error: {}\r", e);
             }
         } else {
             match cmd_text {

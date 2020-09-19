@@ -6,7 +6,6 @@ edition = "2018"
 [dependencies]
 atelier-core = { path = "../core", features = ["serde-1"] }
 uuid = { version = "0.8", features = ["v4"] }
-mopa = "0.2"
 serde = "1.0"
 type-uuid = "0.1"
 erased-serde = "0.3"

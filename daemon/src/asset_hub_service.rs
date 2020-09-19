@@ -479,6 +479,7 @@ impl AssetHubSnapshotImpl {
     }
 }
 
+#[allow(clippy::unit_arg)]
 impl asset_hub::Server for AssetHubImpl {
     fn register_listener(
         &mut self,
@@ -607,6 +608,7 @@ impl AssetHubService {
     }
 }
 
+#[allow(clippy::unit_arg)]
 impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
     fn get_asset_metadata(
         &mut self,

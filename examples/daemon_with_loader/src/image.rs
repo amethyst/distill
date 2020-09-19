@@ -39,7 +39,7 @@ impl AsyncImporter for ImageImporter {
     fn import<'a>(
         &'a self,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
-        _options: Self::Options,
+        _options: &Self::Options,
         state: &'a mut Self::State,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
         Box::pin(async move {

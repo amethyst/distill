@@ -28,7 +28,6 @@ futures-channel = { version = "0.3", default-features = false }
 async-lock = { version = "2.1" }
 async-channel = { version = "1.4" }
 event-listener = { version = "2.4.0" }
-mopa = "0.2"
 serde = "1.0"
 serde_derive = "1.0"
 erased-serde = "0.3"

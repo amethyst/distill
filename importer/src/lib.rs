@@ -47,7 +47,7 @@ pub trait Importer: Send + 'static {
 
     /// Options can store settings that change importer behaviour.
     /// Will be automatically stored in .meta files and passed to [Importer::import].
-    type Options: Send + 'static;
+    type Options: Send + Sync + 'static;
 
     /// State is maintained by the asset pipeline to enable Importers to
     /// store state between calls to import().
@@ -59,7 +59,7 @@ pub trait Importer: Send + 'static {
     fn import(
         &self,
         source: &mut dyn Read,
-        options: Self::Options,
+        options: &Self::Options,
         state: &mut Self::State,
     ) -> Result<ImporterValue>;
 
@@ -67,7 +67,7 @@ pub trait Importer: Send + 'static {
     fn export(
         &self,
         _output: &mut dyn Write,
-        _options: Self::Options,
+        _options: &Self::Options,
         _state: &mut Self::State,
         _assets: Vec<ExportAsset>,
     ) -> Result<ImporterValue> {
@@ -90,7 +90,7 @@ pub trait AsyncImporter: Send + 'static {
 
     /// Options can store settings that change importer behaviour.
     /// Will be automatically stored in .meta files and passed to [Importer::import].
-    type Options: Send + 'static;
+    type Options: Send + Sync + 'static;
 
     /// State is maintained by the asset pipeline to enable Importers to
     /// store state between calls to import().
@@ -102,7 +102,7 @@ pub trait AsyncImporter: Send + 'static {
     fn import<'a>(
         &'a self,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
-        options: Self::Options,
+        options: &'a Self::Options,
         state: &'a mut Self::State,
     ) -> BoxFuture<'a, Result<ImporterValue>>;
 
@@ -110,7 +110,7 @@ pub trait AsyncImporter: Send + 'static {
     fn export<'a>(
         &'a self,
         _output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
-        _options: Self::Options,
+        _options: &'a Self::Options,
         _state: &'a mut Self::State,
         _assets: Vec<ExportAsset>,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
@@ -143,7 +143,7 @@ impl<T: Importer + Sync> AsyncImporter for T {
     fn import<'a>(
         &'a self,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
-        options: Self::Options,
+        options: &'a Self::Options,
         state: &'a mut Self::State,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
         Box::pin(async move {
@@ -159,7 +159,7 @@ impl<T: Importer + Sync> AsyncImporter for T {
     fn export<'a>(
         &'a self,
         output: &'a mut (dyn AsyncWrite + Unpin + Send + Sync),
-        options: Self::Options,
+        options: &'a Self::Options,
         state: &'a mut Self::State,
         assets: Vec<ExportAsset>,
     ) -> BoxFuture<'a, Result<ImporterValue>> {

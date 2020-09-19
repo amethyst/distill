@@ -23,7 +23,7 @@ pub enum ConnectionState<'a> {
     None,
     Connecting,
     Connected,
-    Error(&'a Box<dyn Error>),
+    Error(&'a dyn Error),
 }
 
 enum InternalConnectionState {
@@ -93,7 +93,7 @@ impl RpcState {
         match self.connection {
             InternalConnectionState::Connected(_) => ConnectionState::Connected,
             InternalConnectionState::Connecting(_) => ConnectionState::Connecting,
-            InternalConnectionState::Error(ref err) => ConnectionState::Error(err),
+            InternalConnectionState::Error(ref err) => ConnectionState::Error(err.as_ref()),
             InternalConnectionState::None => ConnectionState::None,
         }
     }

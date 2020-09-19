@@ -36,7 +36,7 @@ impl Importer for RonImporter {
     fn import(
         &self,
         source: &mut dyn Read,
-        _: Self::Options,
+        _: &Self::Options,
         state: &mut Self::State,
     ) -> Result<ImporterValue> {
         if state.id.is_none() {
@@ -103,10 +103,10 @@ mod tests {
             .unwrap()
             .asset_data;
 
-        let a_downcast = a_serde_obj.downcast::<A>();
+        let a_downcast = a_serde_obj.any().downcast_ref::<A>();
         match a_downcast {
-            Ok(a) => assert_eq!(a.x, 30),
-            Err(_serde_obj) => panic!("Expected serde_obj to be downcast to `A`."),
+            Some(a) => assert_eq!(a.x, 30),
+            None => panic!("Expected serde_obj to be downcast to `A`."),
         }
     }
 
@@ -142,16 +142,16 @@ mod tests {
             .nth(0)
             .unwrap()
             .asset_data;
-        let b_downcast = b_serde_obj.downcast::<B>();
+        let b_downcast = b_serde_obj.any().downcast_ref::<B>();
         match b_downcast {
-            Ok(b) => {
+            Some(b) => {
                 assert_eq!(b.s, "Ferris");
                 assert_eq!(b.a.x, 30);
                 assert_eq!(b.m["lorem"], "ipsum");
                 assert_eq!(b.m["dolor"], "sim");
                 assert_eq!(b.m.len(), 2);
             }
-            Err(_serde_obj) => panic!("Expected serde_obj to be downcast to `B`."),
+            None => panic!("Expected serde_obj to be downcast to `B`."),
         }
     }
 }

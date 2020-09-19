@@ -36,7 +36,7 @@ impl Importer for ImageImporter {
     fn import(
         &self,
         source: &mut dyn std::io::Read,
-        _options: Self::Options,
+        _options: &Self::Options,
         state: &mut Self::State,
     ) -> Result<ImporterValue> {
         let id = state
