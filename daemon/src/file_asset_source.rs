@@ -964,8 +964,8 @@ impl FileAssetSource {
                 }
             };
 
-            skip_ack_dirty |= check_file_state(&pair.source.as_ref().map(|f| f));
-            skip_ack_dirty |= check_file_state(&pair.meta.as_ref().map(|f| f));
+            skip_ack_dirty |= check_file_state(&pair.source.as_ref());
+            skip_ack_dirty |= check_file_state(&pair.meta.as_ref());
         }
         if !skip_ack_dirty {
             if pair.source.is_some() {

@@ -174,10 +174,7 @@ impl LoaderData {
     fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.load_states
             .get(&load)
-            .filter(|a| match a.state {
-                LoadState::Loaded(_) => true,
-                _ => false,
-            })
+            .filter(|a| matches!(a.state, LoadState::Loaded(_)))
             .and_then(|a| a.asset_type.map(|t| (t, load)))
     }
     fn remove_ref(load_states: &DashMap<LoadHandle, AssetLoad>, load: LoadHandle) {
@@ -631,13 +628,7 @@ fn process_metadata_requests(
         assets_to_request.extend(
             load_states
                 .iter_mut()
-                .filter(|entry| {
-                    if let LoadState::WaitingForMetadata = entry.value().state {
-                        true
-                    } else {
-                        false
-                    }
-                })
+                .filter(|entry| matches!(entry.value().state, LoadState::WaitingForMetadata))
                 .map(|mut entry| {
                     entry.value_mut().state = LoadState::RequestingMetadata;
                     (entry.value().asset_id, *entry.key())
@@ -796,11 +787,10 @@ fn process_load_states(
                                 | LoadState::LoadingAsset(asset_state) => {
                                     // Note that we accept assets to be uncommitted but loaded
                                     // This is to support atomically committing a set of changes when hot reloading
-                                    match asset_state {
-                                        AssetLoadState::Loaded
-                                        | AssetLoadState::LoadedUncommitted => true,
-                                        _ => false,
-                                    }
+                                    matches!(
+                                        asset_state,
+                                        AssetLoadState::Loaded | AssetLoadState::LoadedUncommitted
+                                    )
                                 }
                                 _ => false,
                             })
