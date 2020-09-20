@@ -1,7 +1,9 @@
 [package]
 name = "processing"
 version = "0.1.0"
+authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 uuid = { version = "0.8", features = ["v4"] }

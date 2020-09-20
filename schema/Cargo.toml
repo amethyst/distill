@@ -1,8 +1,10 @@
 [package]
 name = "atelier-schema"
 version = "0.1.0"
+authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 capnp = "0.13"
-atelier-core = { path = "../core" }
+atelier-core = { path = "../core", version = "0.1.0" }

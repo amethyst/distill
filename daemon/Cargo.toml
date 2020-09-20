@@ -1,13 +1,15 @@
 [package]
 name = "atelier-daemon"
 version = "0.1.0"
+authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
-atelier-core = { path = "../core" }
-atelier-schema = { path = "../schema" }
-atelier-importer = { path = "../importer" }
-atelier-loader = { path = "../loader" }
+atelier-core = { path = "../core", version = "0.1.0" }
+atelier-schema = { path = "../schema", version = "0.1.0" }
+atelier-importer = { path = "../importer", version = "0.1.0" }
+atelier-loader = { path = "../loader", version = "0.1.0" }
 dunce = "1.0"
 path-clean = "0.1"
 path-slash = "0.1.1"

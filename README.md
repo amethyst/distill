@@ -96,3 +96,5 @@ Licensed under either of
 * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
+
+PLEASE NOTE that some dependencies may be licensed under other terms. These are listed in [deny.toml](deny.toml) under licenses.exceptions on a best-effort basis, and are validated in every CI run using [cargo-deny](https://github.com/EmbarkStudios/cargo-deny).

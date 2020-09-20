@@ -18,8 +18,15 @@ jobs:
         exclude:
           - os: macos-10.15
             toolchain: nightly
+        checks:
+          - advisories
+          - bans licenses sources
+          
+    # Prevent sudden announcement of a new advisory from failing ci:
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+
     runs-on: ${{ matrix.os }}
-    needs: clean
+    needs: [clean, deny-check]
     steps:
       - uses: actions/checkout@v2
 
@@ -46,6 +53,15 @@ jobs:
         env:
           CARGO_INCREMENTAL: 0
           RUSTFLAGS: "-C debuginfo=0 -D warnings"
+
+
+  deny-check:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+      - uses: actions/checkout@v1
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check ${{ matrix.checks }}
 
   clean:
     runs-on: ubuntu-latest
