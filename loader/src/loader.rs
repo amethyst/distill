@@ -13,9 +13,9 @@ use std::{
 pub struct LoadHandle(pub u64);
 
 pub(crate) enum HandleOp {
-    Error(LoadHandle, Box<dyn Error + Send>),
-    Complete(LoadHandle),
-    Drop(LoadHandle),
+    Error(LoadHandle, u32, Box<dyn Error + Send>),
+    Complete(LoadHandle, u32),
+    Drop(LoadHandle, u32),
 }
 
 /// Type that allows the downstream asset storage implementation to signal that this asset is
@@ -23,13 +23,15 @@ pub(crate) enum HandleOp {
 pub struct AssetLoadOp {
     sender: Option<Arc<Sender<HandleOp>>>,
     handle: LoadHandle,
+    version: u32,
 }
 
 impl AssetLoadOp {
-    pub(crate) fn new(sender: Arc<Sender<HandleOp>>, handle: LoadHandle) -> Self {
+    pub(crate) fn new(sender: Arc<Sender<HandleOp>>, handle: LoadHandle, version: u32) -> Self {
         Self {
             sender: Some(sender),
             handle,
+            version,
         }
     }
 
@@ -44,17 +46,17 @@ impl AssetLoadOp {
             .sender
             .as_ref()
             .unwrap()
-            .send(HandleOp::Complete(self.handle));
+            .send(HandleOp::Complete(self.handle, self.version));
         self.sender = None;
     }
 
     /// Signals that this load operation has completed with an error.
     pub fn error<E: Error + 'static + Send>(mut self, error: E) {
-        let _ = self
-            .sender
-            .as_ref()
-            .unwrap()
-            .send(HandleOp::Error(self.handle, Box::new(error)));
+        let _ = self.sender.as_ref().unwrap().send(HandleOp::Error(
+            self.handle,
+            self.version,
+            Box::new(error),
+        ));
         self.sender = None;
     }
 }
@@ -62,7 +64,7 @@ impl AssetLoadOp {
 impl Drop for AssetLoadOp {
     fn drop(&mut self) {
         if let Some(ref sender) = self.sender {
-            let _ = sender.send(HandleOp::Drop(self.handle));
+            let _ = sender.send(HandleOp::Drop(self.handle, self.version));
         }
     }
 }

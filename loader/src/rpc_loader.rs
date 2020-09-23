@@ -44,37 +44,6 @@ enum LoadState {
     RequestDependencies,
     /// Waiting for dependencies to complete loading
     WaitingForDependencies,
-    /// Asset is loading. [AssetLoadState] describes the sub-state.
-    LoadingAsset(AssetLoadState),
-    /// Asset is loaded and available to use. [AssetLoadState] describes the sub-state.
-    Loaded(AssetLoadState),
-    /// Asset should be unloaded
-    UnloadRequested,
-    /// Asset is being unloaded by engine systems
-    Unloading,
-}
-
-impl LoadState {
-    fn map_asset_load_state<F>(self, f: F) -> LoadState
-    where
-        F: FnOnce(AssetLoadState) -> AssetLoadState,
-    {
-        match self {
-            LoadState::LoadingAsset(asset_state) => LoadState::LoadingAsset(f(asset_state)),
-            LoadState::Loaded(asset_state) => LoadState::Loaded(f(asset_state)),
-            load_state => panic!(
-                "map_asset_load_state expected AssetLoadState, LoadState was {:?}",
-                load_state
-            ),
-        }
-    }
-}
-
-/// Describes the state of loading an asset.
-/// This is separate to LoadState to support tracking load states
-/// even when an asset is already loaded, like for hot reload.
-#[derive(Copy, Clone, PartialEq, Debug)]
-enum AssetLoadState {
     /// Waiting for asset data to be fetched
     WaitingForData,
     /// Asset data is being fetched
@@ -82,22 +51,32 @@ enum AssetLoadState {
     /// Engine systems are loading asset
     LoadingAsset,
     /// Engine systems have loaded asset, but the asset is not committed.
-    /// This state is only reached when AssetLoad.auto_commit == false.
+    /// This state is only reached when AssetVersionLoad.auto_commit == false.
     LoadedUncommitted,
     /// Asset is loaded and ready to use
     Loaded,
+    /// Asset should be unloaded
+    UnloadRequested,
+    /// Asset is being unloaded by engine systems
+    Unloading,
 }
 
+#[derive(Debug, Clone)]
+struct AssetVersionLoad {
+    state: LoadState,
+    asset_type: Option<AssetTypeId>,
+    auto_commit: bool,
+    version: u32,
+}
 #[derive(Debug)]
 struct AssetLoad {
     asset_id: AssetUuid,
-    state: LoadState,
     last_state_change_instant: std::time::Instant,
     refs: AtomicUsize,
-    asset_type: Option<AssetTypeId>,
+    versions: Vec<AssetVersionLoad>,
     requested_version: Option<u32>,
     loaded_version: Option<u32>,
-    auto_commit: bool,
+    version_counter: u32,
     pending_reload: bool,
 }
 struct AssetMetadata {
@@ -122,14 +101,24 @@ struct LoaderData {
     pending_reloads: Vec<PendingReload>,
 }
 
-type PendingMetadataRequests = Vec<(
-    ResponsePromise<GetAssetMetadataWithDependenciesResults>,
-    Vec<(AssetUuid, LoadHandle)>,
-)>;
+struct PendingDataRequest {
+    handle: LoadHandle,
+    version: u32,
+}
+struct PendingMetadataDataRequest {
+    handle: LoadHandle,
+    version: u32,
+}
 
 struct RpcRequests {
-    pending_data_requests: Vec<(ResponsePromise<GetImportArtifactsResults>, LoadHandle)>,
-    pending_metadata_requests: PendingMetadataRequests,
+    pending_data_requests: Vec<(
+        ResponsePromise<GetImportArtifactsResults>,
+        PendingDataRequest,
+    )>,
+    pending_metadata_requests: Vec<(
+        ResponsePromise<GetAssetMetadataWithDependenciesResults>,
+        HashMap<AssetUuid, PendingMetadataDataRequest>,
+    )>,
 }
 
 unsafe impl Send for RpcRequests {}
@@ -154,13 +143,17 @@ impl LoaderData {
                 new_handle,
                 AssetLoad {
                     asset_id: id,
-                    state: LoadState::None,
+                    versions: vec![AssetVersionLoad {
+                        asset_type: None,
+                        auto_commit: true,
+                        state: LoadState::None,
+                        version: 1,
+                    }],
+                    version_counter: 1,
                     last_state_change_instant: std::time::Instant::now(),
                     refs: AtomicUsize::new(0),
-                    asset_type: None,
                     requested_version: None,
                     loaded_version: None,
-                    auto_commit: true,
                     pending_reload: false,
                 },
             );
@@ -174,8 +167,14 @@ impl LoaderData {
     fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
         self.load_states
             .get(&load)
-            .filter(|a| matches!(a.state, LoadState::Loaded(_)))
-            .and_then(|a| a.asset_type.map(|t| (t, load)))
+            .map(|load| {
+                load.versions
+                    .iter()
+                    .find(|version| matches!(version.state, LoadState::Loaded))
+                    .map(|version| version.asset_type.map(|t| (t, *load.key())))
+                    .unwrap_or(None)
+            })
+            .unwrap_or(None)
     }
     fn remove_ref(load_states: &DashMap<LoadHandle, AssetLoad>, load: LoadHandle) {
         load_states
@@ -204,27 +203,26 @@ impl Loader for RpcLoader {
         })
     }
     fn get_load_status(&self, load: LoadHandle) -> LoadStatus {
-        use LoadState::*;
-        self.data
-            .load_states
-            .get(&load)
-            .map(|s| match s.state {
-                None => LoadStatus::NotRequested,
-                WaitingForMetadata
-                | RequestingMetadata
-                | RequestDependencies
-                | WaitingForDependencies
-                | LoadingAsset(_) => LoadStatus::Loading,
-                Loaded(_) => {
-                    if s.loaded_version.is_some() {
-                        LoadStatus::Loaded
-                    } else {
-                        LoadStatus::Loading
-                    }
-                }
-                UnloadRequested | Unloading => LoadStatus::Unloading,
-            })
-            .unwrap_or(LoadStatus::NotRequested)
+        if let Some(load) = self.data.load_states.get(&load) {
+            let version = if let Some(loaded_version) = load.loaded_version {
+                load.versions
+                    .iter()
+                    .find(|v| v.version == loaded_version)
+                    .map(|v| v.state)
+            } else {
+                load.versions.first().map(|v| v.state)
+            };
+            version
+                .map(|state| match state {
+                    LoadState::None => LoadStatus::NotRequested,
+                    LoadState::Loaded => LoadStatus::Loaded,
+                    LoadState::UnloadRequested | LoadState::Unloading => LoadStatus::Unloading,
+                    _ => LoadStatus::Loading,
+                })
+                .unwrap_or(LoadStatus::NotRequested)
+        } else {
+            LoadStatus::NotRequested
+        }
     }
     fn add_ref(&self, id: AssetUuid) -> LoadHandle {
         LoaderData::add_ref(
@@ -372,44 +370,31 @@ fn load_data(
     loader_info: &dyn LoaderInfoProvider,
     chan: &Arc<Sender<HandleOp>>,
     handle: LoadHandle,
-    state: &AssetLoad,
+    state: &AssetVersionLoad,
     reader: &artifact::Reader<'_>,
     storage: &dyn AssetStorage,
 ) -> Result<AssetLoadResult, Box<dyn Error>> {
-    match state.state {
-        LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
-            assert!(
-                AssetLoadState::RequestingData == asset_state,
-                "load_data expected AssetLoadState::RequestingData, was {:?}",
-                asset_state
-            );
-        }
-        load_state => panic!(
-            "load_data expected AssetLoadState, LoadState was {:?}",
-            load_state
-        ),
-    }
+    assert!(
+        LoadState::RequestingData == state.state,
+        "load_data expected AssetLoadState::RequestingData, was {:?}",
+        state.state
+    );
     let asset_type: AssetTypeId = make_array(reader.get_metadata()?.get_type_id()?);
     if let Some(prev_type) = state.asset_type {
         // TODO handle asset type changing?
         assert!(prev_type == asset_type);
     }
-    let new_version = state.requested_version.unwrap_or(0) + 1;
+    let new_version = state.version;
     storage.update_asset(
         loader_info,
         &asset_type,
         &reader.get_data()?,
         handle,
-        AssetLoadOp::new(chan.clone(), handle),
+        AssetLoadOp::new(chan.clone(), handle, state.version),
         new_version,
     )?;
-    let new_state = if state.loaded_version.is_none() {
-        LoadState::LoadingAsset(AssetLoadState::LoadingAsset)
-    } else {
-        LoadState::Loaded(AssetLoadState::LoadingAsset)
-    };
     Ok(AssetLoadResult {
-        new_state,
+        new_state: LoadState::LoadingAsset,
         new_version: Some(new_version),
         asset_type: Some(asset_type),
     })
@@ -464,14 +449,22 @@ fn process_data_requests(
     rpc: &mut RpcState,
 ) -> Result<(), Box<dyn Error>> {
     let op_channel = &data.op_tx;
-    process_pending_requests(&mut requests.pending_data_requests, |result, handle| {
+    process_pending_requests(&mut requests.pending_data_requests, |result, request| {
+        // We don't want to be holding a lock to the load while calling AssetStorage::update_asset in `load_data`,
+        // so we save the state transition as a return value.
         let load_result = {
             let load = data
                 .load_states
-                .get(handle)
+                .get(&request.handle)
                 .expect("load did not exist when data request completed");
             match result {
                 Ok(reader) => {
+                    let version_load = load
+                        .versions
+                        .iter()
+                        .find(|v| v.version == request.version)
+                        .expect("load version did not exist when data request completed");
+
                     log::trace!("asset data request succeeded for asset {:?}", load.asset_id);
                     let reader = reader.get()?;
                     let artifacts = reader.get_artifacts()?;
@@ -480,10 +473,7 @@ fn process_data_requests(
                             "asset data request did not return any data for asset {:?}",
                             load.asset_id
                         );
-                        AssetLoadResult::from_state(
-                            load.state
-                                .map_asset_load_state(|_| AssetLoadState::WaitingForData),
-                        )
+                        AssetLoadResult::from_state(LoadState::WaitingForData)
                     } else {
                         load_data(
                             &(
@@ -492,8 +482,8 @@ fn process_data_requests(
                                 &*data.handle_allocator,
                             ),
                             op_channel,
-                            *handle,
-                            &load,
+                            request.handle,
+                            &version_load,
                             &artifacts.get(0),
                             storage,
                         )?
@@ -504,48 +494,47 @@ fn process_data_requests(
                         "asset data request failed for asset {:?}: {}",
                         load.asset_id, err
                     );
-                    AssetLoadResult::from_state(
-                        load.state
-                            .map_asset_load_state(|_| AssetLoadState::WaitingForData),
-                    )
+                    AssetLoadResult::from_state(LoadState::WaitingForData)
                 }
             }
         };
 
         let mut load = data
             .load_states
-            .get_mut(handle)
+            .get_mut(&request.handle)
             .expect("load did not exist when data request completed");
-        load.state = load_result.new_state;
+
+        let version_load = load
+            .versions
+            .iter_mut()
+            .find(|v| v.version == request.version)
+            .expect("load version did not exist when data request completed");
+        version_load.state = load_result.new_state;
+        if let Some(asset_type) = load_result.asset_type {
+            version_load.asset_type = Some(asset_type);
+        }
         if let Some(version) = load_result.new_version {
             load.requested_version = Some(version);
-        }
-        if let Some(asset_type) = load_result.asset_type {
-            load.asset_type = Some(asset_type);
         }
         Ok(())
     });
     if let ConnectionState::Connected = rpc.connection_state() {
         let mut assets_to_request = Vec::new();
-        assets_to_request.extend(
-            data.load_states
+        for mut load in data.load_states.iter_mut() {
+            let handle = *load.key();
+            let load = load.value_mut();
+
+            if let Some(version_load) = load
+                .versions
                 .iter_mut()
-                .filter(|entry| match entry.value().state {
-                    LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
-                        AssetLoadState::WaitingForData == asset_state
-                    }
-                    _ => false,
-                })
-                .map(|mut entry| {
-                    entry.value_mut().state = entry
-                        .value()
-                        .state
-                        .map_asset_load_state(|_| AssetLoadState::RequestingData);
-                    (entry.value().asset_id, *entry.key())
-                }),
-        );
+                .find(|v| matches!(v.state, LoadState::WaitingForData))
+            {
+                version_load.state = LoadState::RequestingData;
+                assets_to_request.push((load.asset_id, handle, version_load.version));
+            }
+        }
         if !assets_to_request.is_empty() {
-            for (asset, handle) in assets_to_request {
+            for (asset, handle, version) in assets_to_request {
                 log::trace!(
                     "Queue request for asset import artifact {:?} {:?}",
                     asset,
@@ -556,7 +545,7 @@ fn process_data_requests(
                     let mut assets = request.get().init_assets(1);
                     assets.reborrow().get(0).set_id(&asset.0);
                     log::trace!("Building get_import_artifacts_request for {:?}", asset);
-                    (request, handle)
+                    (request, PendingDataRequest { handle, version })
                 });
                 requests.pending_data_requests.push(response);
             }
@@ -584,38 +573,57 @@ fn process_metadata_requests(
                         let asset_uuid: AssetUuid = make_array(asset.get_id()?.get_id()?);
                         update_asset_metadata(metadata, &asset_uuid, &asset)?;
                         if let Some(load_handle) = uuid_to_load.get(&asset_uuid) {
-                            let mut state = load_states
+                            let mut load = load_states
                                 .get_mut(&*load_handle)
                                 .expect("uuid in uuid_to_load but not in load_states");
                             log::trace!(
                                 "received metadata for {:?} after {} secs",
                                 asset_uuid,
                                 std::time::Instant::now()
-                                    .duration_since(state.last_state_change_instant)
+                                    .duration_since(load.last_state_change_instant)
                                     .as_secs_f32()
                             );
-                            if let LoadState::RequestingMetadata = state.state {
-                                state.state = LoadState::RequestDependencies
+                            let load_version = requested_assets
+                                .get(&asset_uuid)
+                                .map(|request| request.version);
+
+                            let version_load = load.versions.iter_mut().find(|v| {
+                                load_version.is_none() || v.version == load_version.unwrap()
+                            });
+                            if let Some(version_load) = version_load {
+                                if let LoadState::RequestingMetadata = version_load.state {
+                                    version_load.state = LoadState::RequestDependencies
+                                }
                             }
                         }
                     }
-                    for (_, load_handle) in requested_assets {
-                        let mut state = load_states
-                            .get_mut(load_handle)
+                    for request in requested_assets.values() {
+                        let mut load = load_states
+                            .get_mut(&request.handle)
                             .expect("uuid in uuid_to_load but not in load_states");
-                        if let LoadState::RequestingMetadata = state.state {
-                            state.state = LoadState::WaitingForMetadata
+                        let version_load = load
+                            .versions
+                            .iter_mut()
+                            .find(|v| v.version == request.version)
+                            .expect("load in requested_assets but not in load.versions");
+                        if let LoadState::RequestingMetadata = version_load.state {
+                            version_load.state = LoadState::WaitingForMetadata
                         }
                     }
                 }
                 Err(err) => {
                     error!("metadata request failed: {}", err);
-                    for (_, load_handle) in requested_assets {
-                        let mut state = load_states
-                            .get_mut(load_handle)
+                    for request in requested_assets.values() {
+                        let mut load = load_states
+                            .get_mut(&request.handle)
                             .expect("uuid in uuid_to_load but not in load_states");
-                        if let LoadState::RequestingMetadata = state.state {
-                            state.state = LoadState::WaitingForMetadata
+                        let version_load = load
+                            .versions
+                            .iter_mut()
+                            .find(|v| v.version == request.version)
+                            .expect("load in requested_assets but not in load.versions");
+                        if let LoadState::RequestingMetadata = version_load.state {
+                            version_load.state = LoadState::WaitingForMetadata
                         }
                     }
                 }
@@ -624,19 +632,30 @@ fn process_metadata_requests(
         },
     );
     if let ConnectionState::Connected = rpc.connection_state() {
-        let mut assets_to_request = Vec::new();
-        assets_to_request.extend(
-            load_states
-                .iter_mut()
-                .filter(|entry| matches!(entry.value().state, LoadState::WaitingForMetadata))
-                .map(|mut entry| {
-                    entry.value_mut().state = LoadState::RequestingMetadata;
-                    (entry.value().asset_id, *entry.key())
-                }),
-        );
+        let mut assets_to_request = HashMap::new();
+        for mut entry in load_states.iter_mut() {
+            let handle = *entry.key();
+            let load = entry.value_mut();
+            for version_load in &mut load.versions {
+                if let LoadState::WaitingForMetadata = version_load.state {
+                    version_load.state = LoadState::RequestingMetadata;
+                    assets_to_request.insert(
+                        load.asset_id,
+                        PendingMetadataDataRequest {
+                            handle,
+                            version: version_load.version,
+                        },
+                    );
+                }
+            }
+        }
         if !assets_to_request.is_empty() {
-            for (asset, handle) in &assets_to_request {
-                log::trace!("Queue request for asset metadata {:?} {:?}", asset, handle);
+            for (asset, request) in &assets_to_request {
+                log::trace!(
+                    "Queue request for asset metadata {:?} {:?}",
+                    asset,
+                    request.handle
+                );
             }
             let response = rpc.request(move |_conn, snapshot| {
                 let mut request = snapshot.get_asset_metadata_with_dependencies_request();
@@ -656,25 +675,32 @@ fn process_metadata_requests(
     Ok(())
 }
 
-fn commit_asset(handle: LoadHandle, load: &mut AssetLoad, asset_storage: &dyn AssetStorage) {
-    match load.state {
-        LoadState::LoadingAsset(asset_state) | LoadState::Loaded(asset_state) => {
-            assert!(
-                AssetLoadState::LoadingAsset == asset_state
-                    || AssetLoadState::LoadedUncommitted == asset_state
-            );
-            let asset_type = load
-                .asset_type
-                .as_ref()
-                .expect("in LoadingAsset state but asset_type is None");
-            asset_storage.commit_asset_version(asset_type, handle, load.requested_version.unwrap());
-            load.loaded_version = load.requested_version;
-            load.state = LoadState::Loaded(AssetLoadState::Loaded);
+fn commit_asset(
+    handle: LoadHandle,
+    load: &mut AssetLoad,
+    version: u32,
+    asset_storage: &dyn AssetStorage,
+) {
+    let version_load = load
+        .versions
+        .iter_mut()
+        .find(|v| v.version == version)
+        .expect("expected version in load when committing asset");
+    assert!(
+        LoadState::LoadingAsset == version_load.state
+            || LoadState::LoadedUncommitted == version_load.state
+    );
+    let asset_type = version_load
+        .asset_type
+        .as_ref()
+        .expect("in LoadingAsset state but asset_type is None");
+    asset_storage.commit_asset_version(asset_type, handle, version_load.version);
+    version_load.state = LoadState::Loaded;
+    for version_load in load.versions.iter_mut() {
+        if version_load.version != version {
+            assert!(LoadState::Loaded == version_load.state);
+            version_load.state = LoadState::UnloadRequested;
         }
-        _ => panic!(
-            "attempting to commit asset but load state is {:?}",
-            load.state
-        ),
     }
 }
 
@@ -685,24 +711,28 @@ fn process_load_ops(
 ) {
     while let Ok(op) = op_rx.try_recv() {
         match op {
-            HandleOp::Error(_handle, err) => {
+            HandleOp::Error(_handle, _version, err) => {
                 panic!("load error {}", err);
             }
-            HandleOp::Complete(handle) => {
+            HandleOp::Complete(handle, version) => {
                 let mut load = load_states
                     .get_mut(&handle)
                     .expect("load op completed but load state does not exist");
-                if load.auto_commit {
-                    commit_asset(handle, &mut load, asset_storage);
+                let load_version = load
+                    .versions
+                    .iter_mut()
+                    .find(|v| v.version == version)
+                    .expect("loade op completed but version not found in load");
+                if load_version.auto_commit {
+                    commit_asset(handle, load.value_mut(), version, asset_storage);
+                    load.loaded_version = Some(version);
                 } else {
-                    load.state = load
-                        .state
-                        .map_asset_load_state(|_| AssetLoadState::LoadedUncommitted)
+                    load_version.state = LoadState::LoadedUncommitted;
                 }
             }
-            HandleOp::Drop(handle) => panic!(
-                "load op dropped without calling complete/error, handle {:?}",
-                handle
+            HandleOp::Drop(handle, version) => panic!(
+                "load op dropped without calling complete/error, handle {:?} version {}",
+                handle, version
             ),
         }
     }
@@ -716,200 +746,238 @@ fn process_load_states(
     metadata: &HashMap<AssetUuid, AssetMetadata>,
 ) {
     let mut to_remove = Vec::new();
-
     let keys: Vec<_> = load_states.iter().map(|x| *x.key()).collect();
 
     for key in keys {
-        let (asset_id, state, has_refs) = {
-            let entry = load_states.get(&key).unwrap();
-            let value = entry.value();
-            (
-                value.asset_id,
-                value.state,
-                value.refs.load(Ordering::Relaxed) > 0,
-            )
-        };
-
-        let new_state = match state {
-            LoadState::None if has_refs => {
-                if metadata.contains_key(&asset_id) {
-                    LoadState::RequestDependencies
-                } else {
-                    LoadState::WaitingForMetadata
-                }
-            }
-            LoadState::None => {
-                // no refs, inactive load
-                LoadState::UnloadRequested
-            }
-            LoadState::WaitingForMetadata => {
-                if metadata.contains_key(&asset_id) {
-                    LoadState::RequestDependencies
-                } else {
-                    LoadState::WaitingForMetadata
-                }
-            }
-            LoadState::RequestingMetadata => LoadState::RequestingMetadata,
-            LoadState::RequestDependencies => {
-                // Add ref to each of the dependent assets.
-                let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
-                    panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
-                });
-                asset_metadata
-                    .load_deps
-                    .iter()
-                    .for_each(|dependency_asset_id| {
-                        LoaderData::add_ref(
-                            uuid_to_load,
-                            handle_allocator,
-                            load_states,
-                            *dependency_asset_id,
-                        );
-                    });
-
-                LoadState::WaitingForDependencies
-            }
-            LoadState::WaitingForDependencies => {
-                let asset_id = asset_id;
-                let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
-                    panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
-                });
-
-                // Ensure dependencies are loaded by engine before continuing to load this asset.
-                let asset_dependencies_committed =
-                    asset_metadata.load_deps.iter().all(|dependency_asset_id| {
-                        uuid_to_load
-                            .get(dependency_asset_id)
-                            .as_ref()
-                            .and_then(|dep_load_handle| load_states.get(dep_load_handle))
-                            .map(|dep_load| match dep_load.state {
-                                LoadState::Loaded(asset_state)
-                                | LoadState::LoadingAsset(asset_state) => {
-                                    // Note that we accept assets to be uncommitted but loaded
-                                    // This is to support atomically committing a set of changes when hot reloading
-                                    matches!(
-                                        asset_state,
-                                        AssetLoadState::Loaded | AssetLoadState::LoadedUncommitted
-                                    )
-                                }
-                                _ => false,
-                            })
-                            .unwrap_or(false)
-                    });
-
-                if asset_dependencies_committed {
-                    LoadState::LoadingAsset(AssetLoadState::WaitingForData)
-                } else {
-                    LoadState::WaitingForDependencies
-                }
-            }
-            LoadState::LoadingAsset(asset_state) => LoadState::LoadingAsset(asset_state),
-            LoadState::Loaded(asset_state) => {
-                match asset_state {
-                    AssetLoadState::Loaded => {
-                        let mut entry = load_states.get_mut(&key).unwrap();
-                        let value = entry.value_mut();
-
-                        if value.refs.load(Ordering::Relaxed) == 0 {
-                            LoadState::UnloadRequested
-                        } else if value.pending_reload {
-                            // turn off auto_commit for hot reloads
-                            value.auto_commit = false;
-                            value.pending_reload = false;
-                            LoadState::Loaded(AssetLoadState::WaitingForData)
-                        } else {
-                            LoadState::Loaded(AssetLoadState::Loaded)
-                        }
-                    }
-                    _ => LoadState::Loaded(asset_state),
-                }
-            }
-            LoadState::UnloadRequested => {
-                let asset_id = {
-                    let mut entry = load_states.get_mut(&key).unwrap();
-                    let (key, value) = entry.pair_mut();
-                    if let Some(asset_type) = value.asset_type.take() {
-                        asset_storage.free(&asset_type, *key);
-                        value.requested_version = None;
-                        value.loaded_version = None;
-                    }
-
-                    // Remove reference from asset dependencies.
-                    value.asset_id
-                };
-
-                let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
-                    panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
-                });
-                asset_metadata
-                    .load_deps
-                    .iter()
-                    .for_each(|dependency_asset_id| {
-                        if let Some(dependency_load_handle) =
-                            uuid_to_load.get(dependency_asset_id).as_ref()
-                        {
-                            log::debug!("Removing ref from `{:?}`", *dependency_asset_id);
-                            LoaderData::remove_ref(load_states, **dependency_load_handle)
-                        } else {
-                            panic!(
-                                "Expected load handle to exist for asset `{:?}`.",
-                                dependency_asset_id
-                            );
-                        }
-                    });
-
-                LoadState::Unloading
-            }
-            LoadState::Unloading => {
-                let entry = load_states.get(&key).unwrap();
-                let (key, value) = entry.pair();
-
-                if value.refs.load(Ordering::Relaxed) == 0 {
-                    to_remove.push(*key);
-                }
-                LoadState::None
-            }
-        };
+        let mut versions_to_remove = Vec::new();
 
         let mut entry = load_states.get_mut(&key).unwrap();
-        let (key, value) = entry.pair_mut();
-        if value.state != new_state {
-            let time_in_state = std::time::Instant::now()
-                .duration_since(value.last_state_change_instant)
-                .as_secs_f32();
-            log::debug!("process_load_states asset load state changed, Key: {:?} Old state: {:?} New state: {:?} Time in state: {}", key, value.state, new_state, time_in_state);
-            value.last_state_change_instant = std::time::Instant::now();
-        } else if log::log_enabled!(log::Level::Trace) {
-            let time_in_state = std::time::Instant::now()
-                .duration_since(value.last_state_change_instant)
-                .as_secs_f32();
-            log::trace!(
-                "process_load_states Key: {:?} Old state: {:?} Time in state: {}",
-                key,
-                value.state,
-                time_in_state
-            );
-        }
+        let load = entry.value_mut();
 
-        value.state = new_state;
-    }
+        let has_refs = load.refs.load(Ordering::Relaxed) > 0;
+        if !has_refs && load.versions.is_empty() {
+            to_remove.push(key);
+        } else if has_refs && load.pending_reload {
+            // Make sure we are not already loading something before starting a load of a new version
+            if load
+                .versions
+                .iter()
+                .all(|v| matches!(v.state, LoadState::Loaded))
+            {
+                load.version_counter += 1;
+                let new_version = load.version_counter;
+                load.versions.push(AssetVersionLoad {
+                    asset_type: None,
+                    // The assets are not auto_commit for reloads to ensure all assets in a
+                    // changeset are made visible together, atomically
+                    auto_commit: false,
+                    state: LoadState::None,
+                    version: new_version,
+                });
+            }
+        } else {
+            let last_state_change_instant = load.last_state_change_instant;
+            let mut versions = load.versions.clone();
+            let asset_id = load.asset_id;
+            // make sure we drop the lock before we start processing the state
+            drop(entry);
+            let mut state_change = false;
+            let mut log_old_state = None;
+            let mut log_new_state = None;
+            for version_load in &mut versions {
+                let new_state = match version_load.state {
+                    LoadState::None if has_refs => {
+                        if metadata.contains_key(&asset_id) {
+                            LoadState::RequestDependencies
+                        } else {
+                            LoadState::WaitingForMetadata
+                        }
+                    }
+                    LoadState::None => {
+                        // no refs, inactive load
+                        LoadState::UnloadRequested
+                    }
+                    LoadState::WaitingForMetadata => {
+                        if metadata.contains_key(&asset_id) {
+                            LoadState::RequestDependencies
+                        } else {
+                            LoadState::WaitingForMetadata
+                        }
+                    }
+                    LoadState::RequestingMetadata => LoadState::RequestingMetadata,
+                    LoadState::RequestDependencies => {
+                        // Add ref to each of the dependent assets.
+                        let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
+                            panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
+                        });
+                        asset_metadata
+                            .load_deps
+                            .iter()
+                            .for_each(|dependency_asset_id| {
+                                LoaderData::add_ref(
+                                    uuid_to_load,
+                                    handle_allocator,
+                                    load_states,
+                                    *dependency_asset_id,
+                                );
+                            });
 
-    // Uncomment for recursive logging of dependency's load states
-    /*
-    if log::log_enabled!(log::Level::Trace) {
-        for entry in load_states.iter() {
-            if entry.value().state == LoadState::WaitingForDependencies {
-                dump_dependencies(&value.asset_id, load_states, uuid_to_load, metadata, 0);
+                        LoadState::WaitingForDependencies
+                    }
+                    LoadState::WaitingForDependencies => {
+                        let asset_id = asset_id;
+                        let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
+                            panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
+                        });
+
+                        // Ensure dependencies are loaded by engine before continuing to load this asset.
+                        let asset_dependencies_committed =
+                            asset_metadata.load_deps.iter().all(|dependency_asset_id| {
+                                uuid_to_load
+                                    .get(dependency_asset_id)
+                                    .as_ref()
+                                    .and_then(|dep_load_handle| load_states.get(dep_load_handle))
+                                    .map(|dep_load| {
+                                        // Note that we accept assets to be uncommitted but loaded
+                                        // This is to support atomically committing a set of changes when hot reloading
+
+                                        // TODO: Properly check that all dependencies have loaded their *new* version
+                                        dep_load.versions.iter().all(|v| {
+                                            matches!(
+                                                v.state,
+                                                LoadState::Loaded | LoadState::LoadedUncommitted
+                                            )
+                                        })
+                                    })
+                                    .unwrap_or(false)
+                            });
+
+                        if asset_dependencies_committed {
+                            LoadState::WaitingForData
+                        } else {
+                            LoadState::WaitingForDependencies
+                        }
+                    }
+                    LoadState::WaitingForData => LoadState::WaitingForData,
+                    LoadState::RequestingData => LoadState::RequestingData,
+                    LoadState::LoadingAsset => LoadState::LoadingAsset,
+                    LoadState::LoadedUncommitted => LoadState::LoadedUncommitted,
+                    LoadState::Loaded => {
+                        if !has_refs {
+                            LoadState::UnloadRequested
+                        } else {
+                            LoadState::Loaded
+                        }
+                    }
+                    LoadState::UnloadRequested => {
+                        let asset_id = {
+                            let mut entry = load_states.get_mut(&key).unwrap();
+                            let (key, value) = entry.pair_mut();
+                            if let Some(asset_type) = version_load.asset_type.take() {
+                                asset_storage.free(&asset_type, *key);
+                                let version = version_load.version;
+                                if value.requested_version == Some(version) {
+                                    value.requested_version = None;
+                                }
+                                if value.loaded_version == Some(version) {
+                                    value.loaded_version = None;
+                                }
+                            }
+
+                            // Remove reference from asset dependencies.
+                            value.asset_id
+                        };
+
+                        let asset_metadata = metadata.get(&asset_id).unwrap_or_else(|| {
+                            panic!("Expected metadata for asset `{:?}` to exist.", asset_id)
+                        });
+                        asset_metadata
+                            .load_deps
+                            .iter()
+                            .for_each(|dependency_asset_id| {
+                                if let Some(dependency_load_handle) =
+                                    uuid_to_load.get(dependency_asset_id).as_ref()
+                                {
+                                    log::debug!("Removing ref from `{:?}`", *dependency_asset_id);
+                                    LoaderData::remove_ref(load_states, **dependency_load_handle)
+                                } else {
+                                    panic!(
+                                        "Expected load handle to exist for asset `{:?}`.",
+                                        dependency_asset_id
+                                    );
+                                }
+                            });
+
+                        LoadState::Unloading
+                    }
+                    LoadState::Unloading => {
+                        let entry = load_states.get(&key).unwrap();
+
+                        if entry.value().refs.load(Ordering::Relaxed) == 0 {
+                            versions_to_remove.push(version_load.version);
+                        }
+                        LoadState::None
+                    }
+                };
+                if version_load.state != new_state {
+                    state_change = true;
+                    log_new_state = Some(new_state);
+                    log_old_state = Some(version_load.state);
+                    version_load.state = new_state;
+                }
+            }
+            let mut entry = load_states.get_mut(&key).unwrap();
+
+            for version in versions_to_remove {
+                versions.retain(|v| v.version != version);
+            }
+
+            entry.value_mut().versions = versions;
+            if state_change {
+                let time_in_state = std::time::Instant::now()
+                    .duration_since(last_state_change_instant)
+                    .as_secs_f32();
+                log::debug!("process_load_states asset load state changed, Key: {:?} Old state: {:?} New state: {:?} Time in state: {}", key, log_old_state.unwrap(), log_new_state.unwrap(), time_in_state);
+
+                entry.value_mut().last_state_change_instant = std::time::Instant::now();
+            } else {
+                let time_in_state = std::time::Instant::now()
+                    .duration_since(last_state_change_instant)
+                    .as_secs_f32();
+                log::trace!(
+                    "process_load_states Key: {:?} Old state: {:?} Time in state: {}",
+                    key,
+                    entry
+                        .value()
+                        .versions
+                        .iter()
+                        .map(|v| format!("{:?}", v.state))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    time_in_state
+                );
             }
         }
-    }
-    */
 
-    for i in to_remove {
-        let load_state = load_states.remove(&i);
-        if let Some((_, load_state)) = load_state {
-            uuid_to_load.remove(&load_state.asset_id);
+        // Uncomment for recursive logging of dependency's load states
+        /*
+        if log::log_enabled!(log::Level::Trace) {
+            for entry in load_states.iter() {
+                if entry.value().state == LoadState::WaitingForDependencies {
+                    dump_dependencies(&value.asset_id, load_states, uuid_to_load, metadata, 0);
+                }
+            }
         }
+        */
+    }
+    for _i in to_remove {
+        // TODO: This will reset the version counter because it's stored in the AssetLoad.
+        // Is this a problem? Should we guarantee that users never see the same version twice, ever?
+        // Should we store version counters separately?
+        //     let load_state = load_states.remove(&i);
+        //     if let Some((_, load_state)) = load_state {
+        //         uuid_to_load.remove(&load_state.asset_id);
+        //     }
     }
 }
 
@@ -1009,18 +1077,13 @@ fn process_asset_changes(
                 .get(&reload.asset_id)
                 .as_ref()
                 .and_then(|load_handle| data.load_states.get(load_handle))
-                .map(|load| match load.state {
-                    LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
-                        match asset_state {
-                            // The reload is finished if we have a loaded asset with a version
-                            // that is higher than the version observed when the reload was requested
-                            AssetLoadState::Loaded | AssetLoadState::LoadedUncommitted => {
-                                load.requested_version.unwrap() > reload.version_before
-                            }
-                            _ => false,
-                        }
-                    }
-                    _ => false,
+                .map(|load| {
+                    // The reload is considered finished if we have a loaded asset with a version
+                    // that is higher than the version observed when the reload was requested
+                    load.versions.iter().any(|v| {
+                        matches!(v.state, LoadState::Loaded)
+                            && load.requested_version.unwrap() > reload.version_before
+                    })
                 })
                 // A pending reload for something that is not supposed to be loaded is considered finished.
                 // The asset could have been unloaded by being unreferenced.
@@ -1038,17 +1101,21 @@ fn process_asset_changes(
                             .map(|load| (load_handle, load))
                     })
                 {
-                    match load.state {
-                        LoadState::Loaded(asset_state) | LoadState::LoadingAsset(asset_state) => {
-                            if asset_state == AssetLoadState::LoadedUncommitted {
-                                // Commit reloaded asset and turn auto_commit back on
-                                // The assets are not auto_commit for reloads to ensure all assets in a
-                                // changeset are made visible together, atomically
-                                commit_asset(**load_handle, &mut load, asset_storage);
-                                load.auto_commit = true;
-                            }
-                        }
-                        _ => {}
+                    if let Some(version_to_commit) = load
+                        .versions
+                        .iter()
+                        .find(|v| {
+                            matches!(v.state, LoadState::Loaded | LoadState::LoadedUncommitted)
+                        })
+                        .map(|v| v.version)
+                    {
+                        // Commit reloaded asset
+                        commit_asset(
+                            **load_handle,
+                            load.value_mut(),
+                            version_to_commit,
+                            asset_storage,
+                        );
                     }
                 }
             });
@@ -1233,7 +1300,11 @@ mod tests {
         storage: &Storage,
     ) {
         loop {
-            println!("state {:?}", loader.get_load_status(handle));
+            println!(
+                "state {:?} expecting {:?}",
+                loader.get_load_status(handle),
+                status
+            );
             if std::mem::discriminant(&status)
                 == std::mem::discriminant(&loader.get_load_status(handle))
             {
