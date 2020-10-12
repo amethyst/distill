@@ -50,6 +50,10 @@ pub struct CustomAsset {
 
 </p></details>
 
+
+<details><summary><b>Import Caching</b></summary><p>Assets imported from a source file can be cached by a hash of their source file content and its ID, avoiding expensive parsing and disk operations across your whole team.</p></details>
+<details><summary><b>Build Artifact Caching</b></summary><p>Assets are built using the provided build parameters only when requested. An asset's build artifact can be cached by a hash of its build dependencies, build parameters and source file content.</p></details>
+
 ## Loader
 The Loader module provides a `Loader` trait for loading assets and an `AssetStorage` trait for storing assets. Game engines usually only need to implement the `AssetStorage` trait, as an optional RpcLoader implementation that loads assets from the Daemon is provided.
 <details><summary>&check; <b>Hot Reloading</b> </summary><p>The built-in `RpcLoader` talks to the `Daemon` and automatically reloads assets in the running engine when an asset has changed.</p></details>
@@ -59,11 +63,8 @@ The Loader module provides a `Loader` trait for loading assets and an `AssetStor
 
 
 ## TODO
-<details><summary><b>Import Caching</b></summary><p>Assets imported from a source file can be cached by a hash of their source file content and its ID, avoiding expensive parsing and disk operations across your whole team.</p></details>
-<details><summary><b>Build Artifact Caching</b></summary><p>Assets are built using the provided build parameters only when requested. An asset's build artifact can be cached by a hash of its build dependencies, build parameters and source file content.</p></details>
 <details><summary><b>Networked artifact caching</b></summary><p>Results of imports and builds can be re-used across your whole team using a networked cache server.</p></details>
 <details><summary><b>Platform-specific builds</b></summary><p>Provide customized build parameters when building an asset and tailor the build artifact for a specific platform.</p></details>
-<details><summary><b>User-defined Asset Build Graphs</b></summary><p>Users can define execution graphs for asset pre-processing  that are run when preparing an asset for loading.</p></details>
 <details><summary><b>Scalable build pipeline</b></summary><p>Once assets are imported from sources, the build system aims to be completely pure in the functional programming sense. Inputs to asset builds are all known and declared in the import step. This design enables parallelizable and even distributed builds.</p></details>
 <details><summary><b>Searching</b></summary><p>Search tags can be produced at import and are automatically indexed by <a href="https://github.com/tantivy-search/tantivy">tantivy</a> which enables <a href="https://tantivy-search.github.io/bench/">super fast text search</a>. The search index is incrementally maintained by subscribing to the Asset Change Log.</p></details>
 <details><summary><b>Packing for distribution</b></summary><p>To distribute your game, you will want to pack assets into files with enough metadata to load them quickly. With the asset dependency graph known, it is possible implement custom asset packing schemes by applying knowledge about your game's usage pattern to optimize for sequential access.</p></details>
