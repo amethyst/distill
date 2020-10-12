@@ -104,7 +104,7 @@ impl<'a, T> Stream for Scope<'a, T> {
 }
 
 #[pinned_drop]
-impl<T> PinnedDrop for Scope<T> {
+impl<'a, T> PinnedDrop for Scope<'a, T> {
     fn drop(mut self: Pin<&mut Self>) {
         if !self.done {
             futures_executor::block_on(async {
