@@ -637,7 +637,7 @@ pub trait AssetHandle {
     /// # Parameters
     ///
     /// * `storage`: Asset storage.
-    fn asset_version<'a, T, S: TypedAssetStorage<T>>(&self, storage: &'a S) -> Option<u32>
+    fn asset_version<T, S: TypedAssetStorage<T>>(&self, storage: &S) -> Option<u32>
     where
         Self: Sized,
     {
