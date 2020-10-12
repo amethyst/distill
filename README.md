@@ -1,4 +1,4 @@
-[![Rust](https://github.com/bevyengine/bevy/workflows/CI/badge.svg)](https://github.com/bevyengine/bevy/actions)
+[![Rust](https://github.com/amethyst/atelier-assets/workflows/CI/badge.svg)](https://github.com/amethyst/atelier-assets/actions)
 
 # Atelier Assets
 An asset management & processing framework for game engines.
