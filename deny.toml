@@ -109,6 +109,7 @@ exceptions = [
     { allow = ["CC0-1.0"], name = "notify", version = "*" },
     { allow = ["BSD-3-Clause"], name = "fuchsia-zircon", version = "*" },
     { allow = ["BSD-3-Clause"], name = "fuchsia-zircon-sys", version = "*" },
+    { allow = ["BSD-3-Clause"], name = "instant", version = "*" },
     { allow = ["CC0-1.0"], name = "dunce", version = "*" },
 ]
 
