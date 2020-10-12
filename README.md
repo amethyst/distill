@@ -13,10 +13,11 @@ To create a solid open-source default alternative for asset management, processi
 The project contains a number of different components, and some can be used independently of others. Checkmarks indicate feature support - some features are planned but not implemented.
 
 ## Daemon 
-The Daemon watches for filesystem events, imports source files, manages metadata and serves asset load requests. It is primarily intended for use during development, but can also be used in a distributed game if appropriate. The Daemon uses less than 10MB RAM and only does work when either a file changes or work is requested.
+The Daemon watches for filesystem events, imports source files to produce assets, manages metadata and serves asset load requests. It is primarily intended for use during development, but can also be used in a distributed game if appropriate. The Daemon uses less than 10MB RAM and only does work when either a file changes or work is requested.
 
 <details><summary>&check; <b>Asset UUIDs & Dependency Graphs</b></summary><p>Every asset is identified by a 16-byte UUID that is generated when a source file is imported for the first time. Importers also produce an asset's build and load dependencies in terms of UUIDs which can be used to efficiently traverse the dependency graph of an asset without touching the filesystem. </p></details>
 <details><summary>&check; <b>Source file change detection</b></summary><p>The daemon watches for filesystem changes and ensures source files are only imported when they change. Metadata and hashes are indexed locally in LMDB and version controlled in .meta files. Filesystem modification time and hashes are used to reduce redundant imports across your whole team to the greatest extent possible.</p></details>
+<details><summary><b>Import Caching</b></summary><p>Assets imported from a source file are cached by a hash of their source file content and its ID, avoiding expensive parsing and disk operations.</p></details>
 <details><summary>&check; <b>Asset Change Log</b></summary><p>Asset metadata is maintained in LMDB, a transactional database. The database's consistency guarantees and snapshot support provides a way to synchronize external data stores with the current state of the asset metadata using the Asset Change Log of asset changes.</p></details>
 <details><summary>&check; <b>Metadata Tracking & Caching</b></summary><p>When assets are imported from source files, metadata is generated and stored in `.meta` files together with source file, as well as cached in a database. Commit these to version control along with your source files.</p></details>
 <details><summary>&check; <b>Move & Rename Source Files Confidently</b></summary><p>Since metadata is stored with the source file and UUIDs are used to identify individual assets, users can move, rename and share source files with others without breaking references between assets.</p></details>
@@ -51,8 +52,6 @@ pub struct CustomAsset {
 </p></details>
 
 
-<details><summary><b>Import Caching</b></summary><p>Assets imported from a source file can be cached by a hash of their source file content and its ID, avoiding expensive parsing and disk operations across your whole team.</p></details>
-<details><summary><b>Build Artifact Caching</b></summary><p>Assets are built using the provided build parameters only when requested. An asset's build artifact can be cached by a hash of its build dependencies, build parameters and source file content.</p></details>
 
 ## Loader
 The Loader module provides a `Loader` trait for loading assets and an `AssetStorage` trait for storing assets. Game engines usually only need to implement the `AssetStorage` trait, as an optional RpcLoader implementation that loads assets from the Daemon is provided.
@@ -68,6 +67,7 @@ The Loader module provides a `Loader` trait for loading assets and an `AssetStor
 <details><summary><b>Scalable build pipeline</b></summary><p>Once assets are imported from sources, the build system aims to be completely pure in the functional programming sense. Inputs to asset builds are all known and declared in the import step. This design enables parallelizable and even distributed builds.</p></details>
 <details><summary><b>Searching</b></summary><p>Search tags can be produced at import and are automatically indexed by <a href="https://github.com/tantivy-search/tantivy">tantivy</a> which enables <a href="https://tantivy-search.github.io/bench/">super fast text search</a>. The search index is incrementally maintained by subscribing to the Asset Change Log.</p></details>
 <details><summary><b>Packing for distribution</b></summary><p>To distribute your game, you will want to pack assets into files with enough metadata to load them quickly. With the asset dependency graph known, it is possible implement custom asset packing schemes by applying knowledge about your game's usage pattern to optimize for sequential access.</p></details>
+<details><summary><b>Build Artifact Caching</b></summary><p>Assets are built using the provided build parameters only when requested. An asset's build artifact can be cached by a hash of its build dependencies, build parameters and source file content.</p></details>
 
 # Examples
 To run:
