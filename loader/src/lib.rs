@@ -4,11 +4,11 @@
 pub mod handle;
 mod loader;
 #[cfg(feature = "rpc_loader")]
-mod rpc_state;
+mod rpc_io;
 mod storage;
 
 pub use crate::loader::{Loader, LoaderIO, LoaderState};
-pub use crate::rpc_state::RpcIO;
+pub use crate::rpc_io::RpcIO;
 pub use crate::storage::{
     AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, LoadHandle, LoadInfo,
     LoadStatus, LoaderInfoProvider,
