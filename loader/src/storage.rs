@@ -116,7 +116,7 @@ pub trait AssetStorage {
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>>;
+    ) -> Result<(), Box<dyn Error + Send + 'static>>;
 
     /// Commits the specified asset version as loaded and ready to use.
     ///

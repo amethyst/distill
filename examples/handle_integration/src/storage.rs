@@ -133,7 +133,7 @@ pub trait TypedStorage: Any {
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>>;
+    ) -> Result<(), Box<dyn Error + Send + 'static>>;
     fn commit_asset_version(&mut self, handle: LoadHandle, version: u32);
     fn free(&mut self, handle: LoadHandle);
 }
@@ -149,13 +149,14 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + 'static>> {
         // To enable automatic serde of Handle, we need to set up a SerdeContext with a RefOp sender
         let asset = futures_executor::block_on(atelier_loader::handle::SerdeContext::with(
             loader_info,
             (*self.refop_sender).clone(),
             async { bincode::deserialize::<A>(data) },
-        ))?;
+        ))
+        .expect("failed to deserialize asset");
         self.uncommitted
             .insert(load_handle, AssetState { asset, version });
         log::info!("{} bytes loaded for {:?}", data.len(), load_handle);
@@ -193,7 +194,7 @@ impl AssetStorage for GenericAssetStorage {
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + 'static>> {
         self.storage
             .borrow_mut()
             .get_mut(asset_type_id)

@@ -1281,7 +1281,7 @@ mod tests {
             loader_handle: LoadHandle,
             load_op: AssetLoadOp,
             version: u32,
-        ) -> Result<(), Box<dyn Error>> {
+        ) -> Result<()> {
             println!(
                 "update asset {:?} data size {}",
                 loader_handle,
@@ -1324,7 +1324,7 @@ mod tests {
     #[uuid = "346e6a3e-3278-4c53-b21c-99b4350662db"]
     pub struct TxtFormat;
     impl TxtFormat {
-        fn from_utf8(&self, vec: Vec<u8>) -> Result<String, FromUtf8Error> {
+        fn from_utf8(&self, vec: Vec<u8>) -> std::result::Result<String, FromUtf8Error> {
             String::from_utf8(vec).map(|data| {
                 let processed = data
                     .lines()

@@ -54,12 +54,12 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + 'static>> {
         let mut uncommitted = self.uncommitted.borrow_mut();
         uncommitted.insert(
             load_handle,
             AssetState {
-                asset: bincode::deserialize::<A>(data)?,
+                asset: bincode::deserialize::<A>(data).expect("failed to deserialize asset"),
                 version,
             },
         );
@@ -109,7 +109,7 @@ impl AssetStorage for Game {
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + 'static>> {
         self.storage
             .get(asset_type_id)
             .expect("unknown asset type")
