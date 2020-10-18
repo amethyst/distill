@@ -1,13 +1,16 @@
-use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
+use atelier_core::{AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
 use std::{
     error::Error,
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
+
+use crate::loader::IndirectIdentifier;
 
 /// Loading ID allocated by `atelier-assets` to track loading of a particular asset.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -23,6 +26,10 @@ impl LoadHandle {
     /// whole lifetime.
     pub fn is_indirect(&self) -> bool {
         (self.0 & (1 << 63)) == 1 << 63
+    }
+
+    pub(crate) fn set_indirect(self) -> LoadHandle {
+        LoadHandle(self.0 | (1 << 63))
     }
 }
 
@@ -134,6 +141,8 @@ pub trait AssetStorage {
 pub enum LoadStatus {
     /// There is no request for the asset to be loaded.
     NotRequested,
+    /// The asset is an indirect reference which has not been resolved yet.
+    Unresolved,
     /// The asset is being loaded.
     Loading,
     /// The asset is loaded.
@@ -214,8 +223,40 @@ impl HandleAllocator for &'static AtomicHandleAllocator {
     fn free(&self, _handle: LoadHandle) {}
 }
 
-trait IndirectionResolver {}
+pub trait IndirectionResolver {
+    fn resolve(
+        &self,
+        id: &IndirectIdentifier,
+        candidates: Vec<(PathBuf, Vec<AssetMetadata>)>,
+    ) -> Option<AssetUuid>;
+}
+
+pub struct DefaultIndirectionResolver;
+impl IndirectionResolver for DefaultIndirectionResolver {
+    fn resolve(
+        &self,
+        id: &IndirectIdentifier,
+        candidates: Vec<(PathBuf, Vec<AssetMetadata>)>,
+    ) -> Option<AssetUuid> {
+        let id_type = id.type_id();
+        for candidate in candidates {
+            for asset in candidate.1 {
+                if let Some(artifact) = asset.artifact {
+                    if id_type.is_none() || *id_type.unwrap() == artifact.type_id {
+                        return Some(asset.id);
+                    }
+                }
+            }
+        }
+        None
+    }
+}
 
 /// Resolves indirect [`LoadHandle`]s. See [`LoadHandle::is_indirect`] for details.
 #[derive(Clone)]
 pub struct IndirectionTable(pub(crate) Arc<DashMap<LoadHandle, LoadHandle>>);
+impl IndirectionTable {
+    pub fn resolve(&self, indirect_handle: LoadHandle) -> Option<LoadHandle> {
+        self.0.get(&indirect_handle).map(|l| *l)
+    }
+}

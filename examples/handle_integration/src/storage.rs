@@ -1,20 +1,23 @@
 use atelier_loader::{
     crossbeam_channel::Sender,
     handle::{AssetHandle, RefOp, TypedAssetStorage},
-    AssetLoadOp, AssetStorage, AssetTypeId, LoadHandle, LoaderInfoProvider, TypeUuid,
+    AssetLoadOp, AssetStorage, AssetTypeId, IndirectionTable, LoadHandle, LoaderInfoProvider,
+    TypeUuid,
 };
 use std::{any::Any, cell::RefCell, collections::HashMap, error::Error, sync::Arc};
 
 pub struct GenericAssetStorage {
     storage: RefCell<HashMap<AssetTypeId, Box<dyn TypedStorage>>>,
     refop_sender: Arc<Sender<RefOp>>,
+    indirection_table: IndirectionTable,
 }
 
 impl GenericAssetStorage {
-    pub fn new(refop_sender: Arc<Sender<RefOp>>) -> Self {
+    pub fn new(refop_sender: Arc<Sender<RefOp>>, indirection_table: IndirectionTable) -> Self {
         Self {
             storage: RefCell::new(HashMap::new()),
             refop_sender,
+            indirection_table,
         }
     }
 
@@ -22,7 +25,10 @@ impl GenericAssetStorage {
         let mut storages = self.storage.borrow_mut();
         storages.insert(
             AssetTypeId(T::UUID),
-            Box::new(Storage::<T>::new(self.refop_sender.clone())),
+            Box::new(Storage::<T>::new(
+                self.refop_sender.clone(),
+                self.indirection_table.clone(),
+            )),
         );
     }
 }
@@ -35,25 +41,40 @@ pub struct Storage<A: TypeUuid> {
     refop_sender: Arc<Sender<RefOp>>,
     assets: HashMap<LoadHandle, AssetState<A>>,
     uncommitted: HashMap<LoadHandle, AssetState<A>>,
+    indirection_table: IndirectionTable,
 }
 impl<A: TypeUuid> Storage<A> {
-    fn new(sender: Arc<Sender<RefOp>>) -> Self {
+    fn new(sender: Arc<Sender<RefOp>>, indirection_table: IndirectionTable) -> Self {
         Self {
             refop_sender: sender,
             assets: HashMap::new(),
             uncommitted: HashMap::new(),
+            indirection_table,
         }
     }
     fn get<T: AssetHandle>(&self, handle: &T) -> Option<&A> {
-        self.assets.get(&handle.load_handle()).map(|a| &a.asset)
+        let handle = if handle.load_handle().is_indirect() {
+            self.indirection_table.resolve(handle.load_handle())?
+        } else {
+            handle.load_handle()
+        };
+        self.assets.get(&handle).map(|a| &a.asset)
     }
     fn get_version<T: AssetHandle>(&self, handle: &T) -> Option<u32> {
-        self.assets.get(&handle.load_handle()).map(|a| a.version)
+        let handle = if handle.load_handle().is_indirect() {
+            self.indirection_table.resolve(handle.load_handle())?
+        } else {
+            handle.load_handle()
+        };
+        self.assets.get(&handle).map(|a| a.version)
     }
     fn get_asset_with_version<T: AssetHandle>(&self, handle: &T) -> Option<(&A, u32)> {
-        self.assets
-            .get(&handle.load_handle())
-            .map(|a| (&a.asset, a.version))
+        let handle = if handle.load_handle().is_indirect() {
+            self.indirection_table.resolve(handle.load_handle())?
+        } else {
+            handle.load_handle()
+        };
+        self.assets.get(&handle).map(|a| (&a.asset, a.version))
     }
 }
 impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A>

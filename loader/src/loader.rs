@@ -2,7 +2,8 @@ use crate::{
     handle::{RefOp, SerdeContext},
     storage::{
         AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, HandleOp,
-        IndirectionTable, LoadHandle, LoadInfo, LoadStatus, LoaderInfoProvider,
+        IndirectionResolver, IndirectionTable, LoadHandle, LoadInfo, LoadStatus,
+        LoaderInfoProvider,
     },
 };
 use atelier_core::{ArtifactId, ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
@@ -12,6 +13,7 @@ use log::error;
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
+    path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -67,13 +69,31 @@ enum IndirectHandleState {
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub enum IndirectIdentifier {
+    PathWithTagAndType(String, String, AssetTypeId),
+    PathWithType(String, AssetTypeId),
     Path(String),
+}
+impl IndirectIdentifier {
+    pub fn path(&self) -> &str {
+        match self {
+            IndirectIdentifier::PathWithTagAndType(path, _, _) => path.as_str(),
+            IndirectIdentifier::PathWithType(path, _) => path.as_str(),
+            IndirectIdentifier::Path(path) => path.as_str(),
+        }
+    }
+    pub fn type_id(&self) -> Option<&AssetTypeId> {
+        match self {
+            IndirectIdentifier::PathWithTagAndType(_, _, ty) => Some(ty),
+            IndirectIdentifier::PathWithType(_, ty) => Some(ty),
+            IndirectIdentifier::Path(_) => None,
+        }
+    }
 }
 
 struct IndirectLoad {
     id: IndirectIdentifier,
     state: IndirectHandleState,
-    resolved_handle: Option<LoadHandle>,
+    resolved_uuid: Option<AssetUuid>,
     refs: AtomicUsize,
     pending_reresolve: bool,
 }
@@ -115,7 +135,8 @@ pub struct LoaderState {
     invalidate_tx: Sender<AssetUuid>,
     invalidate_rx: Receiver<AssetUuid>,
     pending_reloads: Vec<PendingReload>,
-    indirect_loads: DashMap<IndirectIdentifier, IndirectLoad>,
+    indirect_states: DashMap<LoadHandle, IndirectLoad>,
+    indirect_to_load: DashMap<IndirectIdentifier, LoadHandle>,
     indirect_table: IndirectionTable,
     responses: IORequestChannels,
 }
@@ -132,12 +153,14 @@ struct IORequestChannels {
         HashMap<AssetUuid, (LoadHandle, u32)>,
     )>,
     resolve_rx: Receiver<(
-        Result<Vec<AssetMetadata>, Box<dyn Error + Send>>,
+        Result<Vec<(PathBuf, Vec<AssetMetadata>)>, Box<dyn Error + Send>>,
         IndirectIdentifier,
+        LoadHandle,
     )>,
     resolve_tx: Sender<(
-        Result<Vec<AssetMetadata>, Box<dyn Error + Send>>,
+        Result<Vec<(PathBuf, Vec<AssetMetadata>)>, Box<dyn Error + Send>>,
         IndirectIdentifier,
+        LoadHandle,
     )>,
 }
 
@@ -158,34 +181,41 @@ impl AssetLoadResult {
 }
 
 pub struct MetadataRequest {
-    metadata_tx: Sender<(
+    tx: Sender<(
         Result<Vec<ArtifactMetadata>, Box<dyn Error + Send>>,
         HashMap<AssetUuid, (LoadHandle, u32)>,
     )>,
-    requests: HashMap<AssetUuid, (LoadHandle, u32)>,
-    consumed: bool,
+    requests: Option<HashMap<AssetUuid, (LoadHandle, u32)>>,
 }
 impl MetadataRequest {
     pub fn requested_assets(&self) -> impl Iterator<Item = &AssetUuid> {
-        self.requests.keys()
+        self.requests.as_ref().unwrap().keys()
     }
     pub fn error<T: Error + Send + 'static>(mut self, err: T) {
-        self.consumed = true;
-        let _ = self.metadata_tx.send((Err(Box::new(err)), self.requests));
+        if let Some(requests) = self.requests.take() {
+            let _ = self.tx.send((Err(Box::new(err)), requests));
+        }
     }
     pub fn complete(mut self, metadata: Vec<ArtifactMetadata>) {
-        self.consumed = true;
-        let _ = self.metadata_tx.send((Ok(metadata), self.requests));
+        if let Some(requests) = self.requests.take() {
+            let _ = self.tx.send((Ok(metadata), requests));
+        }
+    }
+}
+
+impl Drop for MetadataRequest {
+    fn drop(&mut self) {
+        if let Some(requests) = self.requests.take() {
+            let _ = self.tx.send((Err(Box::new(RequestDropError)), requests));
+        }
     }
 }
 
 pub struct DataRequest {
-    data_tx: Sender<(Result<Vec<u8>, Box<dyn Error + Send>>, LoadHandle, u32)>,
+    tx: Sender<(Result<Vec<u8>, Box<dyn Error + Send>>, LoadHandle, u32)>,
     asset_id: AssetUuid,
     artifact_id: ArtifactId,
-    handle: LoadHandle,
-    version: u32,
-    consumed: bool,
+    request_data: Option<(LoadHandle, u32)>,
 }
 impl DataRequest {
     pub fn asset_id(&self) -> AssetUuid {
@@ -195,31 +225,96 @@ impl DataRequest {
         self.artifact_id
     }
     pub fn error<T: Error + Send + 'static>(mut self, err: T) {
-        self.consumed = true;
-        let _ = self
-            .data_tx
-            .send((Err(Box::new(err)), self.handle, self.version));
+        if let Some(request_data) = self.request_data.take() {
+            let _ = self
+                .tx
+                .send((Err(Box::new(err)), request_data.0, request_data.1));
+        }
     }
     pub fn complete(mut self, data: Vec<u8>) {
-        self.consumed = true;
-        let _ = self.data_tx.send((Ok(data), self.handle, self.version));
+        if let Some(request_data) = self.request_data.take() {
+            let _ = self.tx.send((Ok(data), request_data.0, request_data.1));
+        }
     }
 }
-
+impl Drop for DataRequest {
+    fn drop(&mut self) {
+        if let Some(request_data) = self.request_data.take() {
+            let _ = self.tx.send((
+                Err(Box::new(RequestDropError)),
+                request_data.0,
+                request_data.1,
+            ));
+        }
+    }
+}
 pub struct ResolveRequest {
-    resolve_tx: Sender<(
-        Result<Vec<AssetMetadata>, Box<dyn Error + Send>>,
+    tx: Sender<(
+        Result<Vec<(PathBuf, Vec<AssetMetadata>)>, Box<dyn Error + Send>>,
         IndirectIdentifier,
+        LoadHandle,
     )>,
-    id: IndirectIdentifier,
+    id: Option<(IndirectIdentifier, LoadHandle)>,
 }
 impl ResolveRequest {
     pub fn identifier(&self) -> &IndirectIdentifier {
-        &self.id
+        self.id.as_ref().map(|v| &v.0).unwrap()
+    }
+    pub fn error<T: Error + Send + 'static>(mut self, err: T) {
+        if let Some(id) = self.id.take() {
+            let _ = self.tx.send((Err(Box::new(err)), id.0, id.1));
+        }
+    }
+    pub fn complete(mut self, data: Vec<(PathBuf, Vec<AssetMetadata>)>) {
+        if let Some(id) = self.id.take() {
+            let _ = self.tx.send((Ok(data), id.0, id.1));
+        }
     }
 }
+impl Drop for ResolveRequest {
+    fn drop(&mut self) {
+        if let Some(id) = self.id.take() {
+            let _ = self.tx.send((Err(Box::new(RequestDropError)), id.0, id.1));
+        }
+    }
+}
+#[derive(Debug)]
+struct RequestDropError;
+impl std::fmt::Display for RequestDropError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("request dropped")
+    }
+}
+impl Error for RequestDropError {}
 
 impl LoaderState {
+    fn get_or_insert_indirect(&self, id: IndirectIdentifier) -> LoadHandle {
+        if let Some(handle) = self.indirect_to_load.get(&id) {
+            *handle
+        } else {
+            let new_handle = self.handle_allocator.alloc();
+            let new_handle = new_handle.set_indirect();
+            log::trace!(
+                "Inserting indirect load for {:?} load handle {:?}",
+                id,
+                new_handle
+            );
+
+            self.indirect_states.insert(
+                new_handle,
+                IndirectLoad {
+                    id: id.clone(),
+                    state: IndirectHandleState::None,
+                    resolved_uuid: None,
+                    refs: AtomicUsize::new(0),
+                    pending_reresolve: false,
+                },
+            );
+            self.indirect_to_load.insert(id, new_handle);
+            new_handle
+        }
+    }
+
     fn get_or_insert(&self, id: AssetUuid) -> LoadHandle {
         let handle = *self.uuid_to_load.entry(id).or_insert_with(|| {
             let new_handle = self.handle_allocator.alloc();
@@ -253,30 +348,57 @@ impl LoaderState {
         });
         handle
     }
-    fn add_ref(&self, id: AssetUuid) -> LoadHandle {
+    fn add_refs(&self, id: AssetUuid, num_refs: usize) -> LoadHandle {
         let handle = self.get_or_insert(id);
         self.load_states
             .get(&handle)
-            .map(|h| h.refs.fetch_add(1, Ordering::Relaxed));
+            .map(|h| h.refs.fetch_add(num_refs, Ordering::Relaxed));
         handle
     }
-    fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
+    fn get_asset(&self, load: LoadHandle) -> Option<AssetTypeId> {
+        let load = if load.is_indirect() {
+            self.indirect_table.resolve(load)?
+        } else {
+            load
+        };
         self.load_states
             .get(&load)
             .map(|load| {
                 load.versions
                     .iter()
                     .find(|version| matches!(version.state, LoadState::Loaded))
-                    .map(|version| version.asset_type.map(|t| (t, *load.key())))
+                    .map(|version| version.asset_type)
                     .unwrap_or(None)
             })
             .unwrap_or(None)
     }
-    fn remove_ref(&self, load: LoadHandle) {
-        self.load_states
-            .get(&load)
-            .map(|h| h.refs.fetch_sub(1, Ordering::Relaxed));
+
+    fn remove_refs(&self, load: LoadHandle, num_refs: usize) {
+        if load.is_indirect() {
+            if let Some(state) = self.indirect_states.get(&load) {
+                if let Some(uuid) = state.resolved_uuid {
+                    let uuid_handle = self.get_or_insert(uuid);
+                    self.remove_refs(uuid_handle, 1);
+                }
+                state.refs.fetch_sub(num_refs, Ordering::Relaxed);
+            }
+        } else {
+            self.load_states
+                .get(&load)
+                .map(|h| h.refs.fetch_sub(num_refs, Ordering::Relaxed));
+        }
     }
+
+    pub fn add_ref_indirect(&self, id: IndirectIdentifier) -> LoadHandle {
+        let handle = self.get_or_insert_indirect(id);
+        let state = self.indirect_states.get(&handle).unwrap();
+        if let Some(uuid) = state.resolved_uuid {
+            self.add_refs(uuid, 1);
+        }
+        state.refs.fetch_add(1, Ordering::Relaxed);
+        handle
+    }
+
     fn process_load_states(&self, asset_storage: &dyn AssetStorage) {
         let mut to_remove = Vec::new();
         let keys: Vec<_> = self.load_states.iter().map(|x| *x.key()).collect();
@@ -348,7 +470,7 @@ impl LoaderState {
                             if let Some(artifact) = version_load.metadata.as_ref() {
                                 for dependency_asset_id in &artifact.load_deps {
                                     if let AssetRef::Uuid(uuid) = dependency_asset_id {
-                                        self.add_ref(*uuid);
+                                        self.add_refs(*uuid, 1);
                                     }
                                 }
                             }
@@ -432,7 +554,7 @@ impl LoaderState {
                                             });
                                         log::debug!("Removing ref from `{:?}`", uuid);
                                         // Remove reference from asset dependency.
-                                        self.remove_ref(*dependency_load_handle)
+                                        self.remove_refs(*dependency_load_handle, 1)
                                     });
                             }
 
@@ -504,7 +626,7 @@ impl LoaderState {
             //     }
         }
     }
-    fn process_metadata_requests(&self, io: &mut dyn LoaderIO) -> Result<(), capnp::Error> {
+    fn process_metadata_requests(&self, io: &mut dyn LoaderIO) {
         while let Ok(mut response) = self.responses.metadata_rx.try_recv() {
             let request_data = &mut response.1;
             match response.0 {
@@ -584,19 +706,13 @@ impl LoaderState {
         }
         if !assets_to_request.is_empty() {
             io.get_asset_metadata_with_dependencies(MetadataRequest {
-                metadata_tx: self.responses.metadata_tx.clone(),
-                requests: assets_to_request,
-                consumed: false,
+                tx: self.responses.metadata_tx.clone(),
+                requests: Some(assets_to_request),
             })
         }
-        Ok(())
     }
 
-    fn process_data_requests(
-        &self,
-        storage: &dyn AssetStorage,
-        io: &mut dyn LoaderIO,
-    ) -> Result<(), Box<dyn Error>> {
+    fn process_data_requests(&self, storage: &dyn AssetStorage, io: &mut dyn LoaderIO) {
         while let Ok(response) = self.responses.data_rx.try_recv() {
             let result = response.0;
             let handle = response.1;
@@ -679,19 +795,16 @@ impl LoaderState {
                 version_load.state = LoadState::RequestingData;
                 let artifact_id = version_load.metadata.as_ref().unwrap().id;
                 assets_to_request.push(DataRequest {
-                    data_tx: self.responses.data_tx.clone(),
+                    tx: self.responses.data_tx.clone(),
                     asset_id: load.asset_id,
                     artifact_id,
-                    handle,
-                    version: version_load.version,
-                    consumed: false,
+                    request_data: Some((handle, version_load.version)),
                 });
             }
         }
         if !assets_to_request.is_empty() {
             io.get_artifacts(assets_to_request);
         }
-        Ok(())
     }
     fn process_load_ops(&self, asset_storage: &dyn AssetStorage) {
         while let Ok(op) = self.op_rx.try_recv() {
@@ -724,10 +837,7 @@ impl LoaderState {
         }
     }
     /// Checks for changed assets that need to be reloaded or unloaded
-    fn process_asset_changes(
-        &mut self,
-        asset_storage: &dyn AssetStorage,
-    ) -> Result<(), Box<dyn Error>> {
+    fn process_asset_changes(&mut self, asset_storage: &dyn AssetStorage) {
         if self.pending_reloads.is_empty() {
             // if we have no pending hot reloads, poll for new changes
             let mut changes = HashSet::new();
@@ -814,21 +924,69 @@ impl LoaderState {
                 self.pending_reloads.clear();
             }
         }
-        Ok(())
     }
 
-    fn process_resolve_requests(
-        requests: &mut IORequestChannels,
-        data: &mut LoaderState,
-        rpc: &mut dyn LoaderIO,
-    ) -> Result<(), capnp::Error> {
-        while let Ok(response) = requests.resolve_rx.try_recv() {
-            match response.0 {
-                Ok(candidates) => {}
-                Err(e) => {}
+    fn process_indirect_states(&self) {
+        for mut entry in self.indirect_states.iter_mut() {
+            let has_refs = entry.refs.load(Ordering::Relaxed) > 0;
+            let new_state = match entry.state {
+                IndirectHandleState::None if has_refs => IndirectHandleState::WaitingForMetadata,
+                IndirectHandleState::Resolved if entry.pending_reresolve => {
+                    entry.pending_reresolve = false;
+                    IndirectHandleState::WaitingForMetadata
+                }
+                state => state,
+            };
+            entry.state = new_state;
+        }
+    }
+
+    fn process_resolve_requests(&self, io: &mut dyn LoaderIO, resolver: &dyn IndirectionResolver) {
+        while let Ok(response) = self.responses.resolve_rx.try_recv() {
+            let result = response.0;
+            let id = response.1;
+            let load_handle = response.2;
+            let mut state = self
+                .indirect_states
+                .get_mut(&load_handle)
+                .expect("indirect state did not exist when resolve request completed");
+            match result {
+                Ok(candidates) => {
+                    let num_refs = state.refs.load(Ordering::Relaxed);
+                    let new_uuid = resolver.resolve(&id, candidates);
+                    if let Some(existing_uuid) = state.resolved_uuid {
+                        let uuid_handle = self.get_or_insert(existing_uuid);
+                        self.remove_refs(uuid_handle, num_refs);
+                    }
+                    if let Some(new_uuid) = new_uuid {
+                        let uuid_handle = self.get_or_insert(new_uuid);
+                        self.add_refs(new_uuid, num_refs);
+                        self.indirect_table.0.insert(load_handle, uuid_handle);
+                    } else {
+                        self.indirect_table.0.remove(&load_handle);
+                    }
+                    state.resolved_uuid = new_uuid;
+                    state.state = IndirectHandleState::Resolved;
+                }
+                Err(err) => {
+                    error!("resolve request failed for id {:?}: {}", id, err);
+                    state.state = IndirectHandleState::None;
+                }
             }
         }
-        Ok(())
+        let mut assets_to_request = Vec::new();
+        for mut load in self.indirect_states.iter_mut() {
+            if let IndirectHandleState::WaitingForMetadata = load.state {
+                load.state = IndirectHandleState::RequestingMetadata;
+                assets_to_request.push(ResolveRequest {
+                    tx: self.responses.resolve_tx.clone(),
+                    id: Some((load.id.clone(), *load.key())),
+                });
+            }
+        }
+        if !assets_to_request.is_empty() {
+            io.get_asset_candidates(assets_to_request);
+        }
     }
 
     pub fn invalidate_assets(&self, assets: &[AssetUuid]) {
@@ -875,7 +1033,8 @@ impl Loader {
                 invalidate_rx,
                 invalidate_tx,
                 pending_reloads: Vec::new(),
-                indirect_loads: DashMap::new(),
+                indirect_states: DashMap::new(),
+                indirect_to_load: DashMap::new(),
                 indirect_table: IndirectionTable(Arc::new(DashMap::new())),
                 responses: IORequestChannels {
                     metadata_rx,
@@ -918,6 +1077,11 @@ impl Loader {
     ///
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
     pub fn get_load_info(&self, load: LoadHandle) -> Option<LoadInfo> {
+        let load = if load.is_indirect() {
+            self.data.indirect_table.resolve(load)?
+        } else {
+            load
+        };
         self.data.load_states.get(&load).map(|s| LoadInfo {
             asset_id: s.asset_id,
             refs: s.refs.load(Ordering::Relaxed) as u32,
@@ -928,8 +1092,17 @@ impl Loader {
     ///
     /// # Parameters
     ///
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
+    /// * `load`: ID allocated by `atelier-assets` to track loading of the asset.
     pub fn get_load_status(&self, load: LoadHandle) -> LoadStatus {
+        let load = if load.is_indirect() {
+            if let Some(load) = self.data.indirect_table.resolve(load) {
+                load
+            } else {
+                return LoadStatus::Unresolved;
+            }
+        } else {
+            load
+        };
         if let Some(load) = self.data.load_states.get(&load) {
             let version = if let Some(loaded_version) = load.loaded_version {
                 load.versions.iter().find(|v| v.version == loaded_version)
@@ -954,6 +1127,7 @@ impl Loader {
             LoadStatus::NotRequested
         }
     }
+
     /// Adds a reference to an asset and returns its [`LoadHandle`].
     ///
     /// If the asset is already loaded, this returns the existing [`LoadHandle`]. If it is not
@@ -963,14 +1137,24 @@ impl Loader {
     ///
     /// * `id`: UUID of the asset.
     pub fn add_ref(&self, id: AssetUuid) -> LoadHandle {
-        self.data.add_ref(id)
+        self.data.add_refs(id, 1)
     }
-    /// Returns the `AssetType` UUID and load handle if the asset is loaded.
+
+    /// Adds a reference to an indirect reference and returns its [`LoadHandle`] with [`LoadHandle::is_indirect`] set to `true`.
     ///
     /// # Parameters
     ///
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    pub fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)> {
+    /// * `id`: IndirectIdentifier for the load.
+    pub fn add_ref_indirect(&self, id: IndirectIdentifier) -> LoadHandle {
+        self.data.add_ref_indirect(id)
+    }
+
+    /// Returns the `AssetTypeId` for the currently loaded asset of the provided load handle.
+    ///
+    /// # Parameters
+    ///
+    /// * `load`: ID allocated by `atelier-assets` to track loading of the asset.
+    pub fn get_asset_type(&self, load: LoadHandle) -> Option<AssetTypeId> {
         self.data.get_asset(load)
     }
     /// Removes a reference to an asset.
@@ -979,7 +1163,7 @@ impl Loader {
     ///
     /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
     pub fn remove_ref(&self, load: LoadHandle) {
-        self.data.remove_ref(load);
+        self.data.remove_refs(load, 1);
     }
 
     /// Processes pending load operations.
@@ -994,14 +1178,21 @@ impl Loader {
     /// # Parameters
     ///
     /// * `asset_storage`: Storage for all assets of all asset types.
-    pub fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>> {
+    pub fn process(
+        &mut self,
+        asset_storage: &dyn AssetStorage,
+        resolver: &dyn IndirectionResolver,
+    ) -> Result<(), Box<dyn Error>> {
         self.io.tick(&mut self.data);
-        self.data.process_asset_changes(asset_storage)?;
+        self.data.process_asset_changes(asset_storage);
         self.data.process_load_ops(asset_storage);
         self.data.process_load_states(asset_storage);
-        self.data.process_metadata_requests(self.io.as_mut())?;
+        self.data.process_indirect_states();
+        self.data.process_metadata_requests(self.io.as_mut());
         self.data
-            .process_data_requests(asset_storage, self.io.as_mut())?;
+            .process_resolve_requests(self.io.as_mut(), resolver);
+        self.data
+            .process_data_requests(asset_storage, self.io.as_mut());
         Ok(())
     }
 

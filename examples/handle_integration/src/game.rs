@@ -3,7 +3,7 @@ use atelier_loader::{
     asset_uuid,
     crossbeam_channel::Receiver,
     handle::{AssetHandle, Handle, RefOp, WeakHandle},
-    LoadStatus, Loader, RpcIO,
+    DefaultIndirectionResolver, IndirectIdentifier, LoadStatus, Loader, RpcIO,
 };
 use std::sync::Arc;
 
@@ -14,23 +14,24 @@ struct Game {
 fn process(loader: &mut Loader, game: &Game, chan: &Receiver<RefOp>) {
     atelier_loader::handle::process_ref_ops(loader, chan);
     loader
-        .process(&game.storage)
+        .process(&game.storage, &DefaultIndirectionResolver)
         .expect("failed to process loader");
 }
 
 pub fn run() {
     let (tx, rx) = atelier_loader::crossbeam_channel::unbounded();
     let tx = Arc::new(tx);
+
+    let mut loader = Loader::new(Box::new(RpcIO::default()));
     let game = Game {
-        storage: GenericAssetStorage::new(tx.clone()),
+        storage: GenericAssetStorage::new(tx.clone(), loader.indirection_table()),
     };
     game.storage.add_storage::<Image>();
     game.storage.add_storage::<BigPerf>();
-
-    let mut loader = Loader::new(Box::new(RpcIO::default()));
     let weak_handle = {
         // add_ref begins loading of the asset
-        let handle = loader.add_ref(asset_uuid!("0977fd59-e52d-4910-85e0-d61ae8affa8c"));
+        // let handle = loader.add_ref(asset_uuid!("0977fd59-e52d-4910-85e0-d61ae8affa8c"));
+        let handle = loader.add_ref_indirect(IndirectIdentifier::Path("custom_asset.ron".into()));
         // From the returned LoadHandle, create a typed, internally refcounted Handle.
         // This requires a channel to send increase/decrease over to be able to implement
         // Clone and Drop. In a real implementation, you would probably create nicer wrappers for this.

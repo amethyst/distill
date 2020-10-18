@@ -1,6 +1,7 @@
 mod game;
 mod image;
 use atelier_daemon::AssetDaemon;
+pub use game::Storage;
 use std::path::PathBuf;
 
 fn main() {

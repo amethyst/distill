@@ -7,11 +7,11 @@ mod loader;
 mod rpc_io;
 mod storage;
 
-pub use crate::loader::{Loader, LoaderIO, LoaderState};
+pub use crate::loader::{IndirectIdentifier, Loader, LoaderIO, LoaderState};
 pub use crate::rpc_io::RpcIO;
 pub use crate::storage::{
-    AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, LoadHandle, LoadInfo,
-    LoadStatus, LoaderInfoProvider,
+    AssetLoadOp, AssetStorage, AtomicHandleAllocator, DefaultIndirectionResolver, HandleAllocator,
+    IndirectionResolver, LoadHandle, LoadInfo, LoadStatus, LoaderInfoProvider, IndirectionTable,
 };
 #[cfg(feature = "asset_uuid_macro")]
 pub use atelier_core::asset_uuid;

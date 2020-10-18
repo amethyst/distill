@@ -1,9 +1,13 @@
 use crate::image::Image;
 use atelier_loader::{
-    asset_uuid, AssetLoadOp, AssetStorage, AssetTypeId, LoadHandle, LoadStatus, Loader,
-    LoaderInfoProvider, RpcIO, TypeUuid,
+    asset_uuid, AssetLoadOp, AssetStorage, AssetTypeId, DefaultIndirectionResolver,
+    IndirectionTable, LoadHandle, LoadStatus, Loader, LoaderInfoProvider, RpcIO, TypeUuid,
 };
-use std::{cell::RefCell, collections::HashMap, error::Error};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+    error::Error,
+};
 
 #[allow(dead_code)]
 struct AssetState<A> {
@@ -13,12 +17,30 @@ struct AssetState<A> {
 pub struct Storage<A> {
     assets: RefCell<HashMap<LoadHandle, AssetState<A>>>,
     uncommitted: RefCell<HashMap<LoadHandle, AssetState<A>>>,
+    indirection_table: IndirectionTable,
 }
 impl<A> Storage<A> {
-    fn new() -> Self {
+    fn new(indirection_table: IndirectionTable) -> Self {
         Self {
             assets: RefCell::new(HashMap::new()),
             uncommitted: RefCell::new(HashMap::new()),
+            indirection_table,
+        }
+    }
+    pub fn get_asset(&self, handle: LoadHandle) -> Option<Ref<'_, A>> {
+        let handle = if handle.is_indirect() {
+            self.indirection_table.resolve(handle)?
+        } else {
+            handle
+        };
+        let borrow = self.assets.borrow();
+        let asset = borrow.get(&handle);
+        if asset.is_some() {
+            Some(Ref::map(borrow, |a| {
+                &a.get(&handle).as_ref().unwrap().asset
+            }))
+        } else {
+            None
         }
     }
 }
@@ -123,14 +145,18 @@ pub fn run() {
     let mut game = Game {
         storage: HashMap::new(),
     };
-    // Create storage for Image type
-    game.storage
-        .insert(AssetTypeId(Image::UUID), Box::new(Storage::<Image>::new()));
-
     let mut loader = Loader::new(Box::new(RpcIO::default()));
+    // Create storage for Image type
+    game.storage.insert(
+        AssetTypeId(Image::UUID),
+        Box::new(Storage::<Image>::new(loader.indirection_table())),
+    );
+
     let handle = loader.add_ref(asset_uuid!("6c5ae1ad-ae30-471b-985b-7d017265f19f"));
     loop {
-        loader.process(&game).expect("failed to process loader");
+        loader
+            .process(&game, &DefaultIndirectionResolver)
+            .expect("failed to process loader");
         if let LoadStatus::Loaded = loader.get_load_status(handle) {
             break;
         }
@@ -139,7 +165,9 @@ pub fn run() {
     // Integrate with atelier_loader::handle for automatic reference counting!
     loader.remove_ref(handle);
     loop {
-        loader.process(&game).expect("failed to process loader");
+        loader
+            .process(&game, &DefaultIndirectionResolver)
+            .expect("failed to process loader");
         if let LoadStatus::NotRequested = loader.get_load_status(handle) {
             break;
         }

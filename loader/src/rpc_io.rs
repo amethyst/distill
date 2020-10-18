@@ -1,12 +1,12 @@
-use atelier_core::{utils, ArtifactMetadata, AssetUuid};
+use atelier_core::{utils, ArtifactMetadata, AssetMetadata, AssetUuid};
 use atelier_schema::{data::asset_change_event, parse_db_metadata, service::asset_hub};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures_channel::oneshot;
 use futures_util::AsyncReadExt;
-use std::error::Error;
 use std::sync::Mutex;
+use std::{error::Error, path::PathBuf};
 use tokio::runtime::{Builder, Runtime};
 
 use crate::loader::{DataRequest, LoaderIO, LoaderState, MetadataRequest, ResolveRequest};
@@ -199,6 +199,38 @@ async fn do_import_artifact_request(
     Ok(Vec::from(artifact.get_data()?))
 }
 
+async fn do_resolve_request(
+    resolve: &ResolveRequest,
+    snapshot: &asset_hub::snapshot::Client,
+) -> Result<Vec<(PathBuf, Vec<AssetMetadata>)>, capnp::Error> {
+    let path = resolve.identifier().path();
+    // get asset IDs at path
+    let mut request = snapshot.get_assets_for_paths_request();
+    let mut paths = request.get().init_paths(1);
+    paths.reborrow().set(0, path.as_bytes());
+    let response = request.send().promise.await?;
+    let reader = response.get()?;
+    let mut results = Vec::new();
+    for reader in reader.get_assets()? {
+        let path = PathBuf::from(std::str::from_utf8(reader.get_path()?)?);
+        let asset_ids = reader.get_assets()?;
+        // get metadata for the assetIDs
+        let mut request = snapshot.get_asset_metadata_request();
+        request.get().set_assets(asset_ids)?;
+        let response = request.send().promise.await?;
+        let reader = response.get()?;
+        results.push((
+            path,
+            reader
+                .get_assets()?
+                .into_iter()
+                .map(|a| parse_db_metadata(&a))
+                .collect::<Vec<_>>(),
+        ));
+    }
+    Ok(results)
+}
+
 fn process_requests(runtime: &mut RpcRuntime, requests: &mut QueuedRequests) {
     if let InternalConnectionState::Connected(connection) = &runtime.connection {
         let len = requests.data_requests.len();
@@ -221,6 +253,21 @@ fn process_requests(runtime: &mut RpcRuntime, requests: &mut QueuedRequests) {
             let snapshot = connection.snapshot.clone();
             runtime.local.spawn_local(async move {
                 match do_metadata_request(&m, &snapshot).await {
+                    Ok(data) => {
+                        m.complete(data);
+                    }
+                    Err(e) => {
+                        m.error(e);
+                    }
+                }
+            });
+        }
+
+        let len = requests.resolve_requests.len();
+        for m in requests.resolve_requests.drain(0..len) {
+            let snapshot = connection.snapshot.clone();
+            runtime.local.spawn_local(async move {
+                match do_resolve_request(&m, &snapshot).await {
                     Ok(data) => {
                         m.complete(data);
                     }
