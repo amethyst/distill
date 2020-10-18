@@ -20,6 +20,8 @@ use std::{
     },
 };
 
+type Result<T> = std::result::Result<T, Box<dyn Error + Send + 'static>>;
+
 pub trait LoaderIO {
     fn get_asset_metadata_with_dependencies(&mut self, request: MetadataRequest);
     fn get_asset_candidates(&mut self, requests: Vec<ResolveRequest>);
@@ -141,24 +143,25 @@ pub struct LoaderState {
     responses: IORequestChannels,
 }
 
+#[allow(clippy::type_complexity)]
 struct IORequestChannels {
-    data_rx: Receiver<(Result<Vec<u8>, Box<dyn Error + Send>>, LoadHandle, u32)>,
-    data_tx: Sender<(Result<Vec<u8>, Box<dyn Error + Send>>, LoadHandle, u32)>,
+    data_rx: Receiver<(Result<Vec<u8>>, LoadHandle, u32)>,
+    data_tx: Sender<(Result<Vec<u8>>, LoadHandle, u32)>,
     metadata_rx: Receiver<(
-        Result<Vec<ArtifactMetadata>, Box<dyn Error + Send>>,
+        Result<Vec<ArtifactMetadata>>,
         HashMap<AssetUuid, (LoadHandle, u32)>,
     )>,
     metadata_tx: Sender<(
-        Result<Vec<ArtifactMetadata>, Box<dyn Error + Send>>,
+        Result<Vec<ArtifactMetadata>>,
         HashMap<AssetUuid, (LoadHandle, u32)>,
     )>,
     resolve_rx: Receiver<(
-        Result<Vec<(PathBuf, Vec<AssetMetadata>)>, Box<dyn Error + Send>>,
+        Result<Vec<(PathBuf, Vec<AssetMetadata>)>>,
         IndirectIdentifier,
         LoadHandle,
     )>,
     resolve_tx: Sender<(
-        Result<Vec<(PathBuf, Vec<AssetMetadata>)>, Box<dyn Error + Send>>,
+        Result<Vec<(PathBuf, Vec<AssetMetadata>)>>,
         IndirectIdentifier,
         LoadHandle,
     )>,
@@ -180,9 +183,10 @@ impl AssetLoadResult {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub struct MetadataRequest {
     tx: Sender<(
-        Result<Vec<ArtifactMetadata>, Box<dyn Error + Send>>,
+        Result<Vec<ArtifactMetadata>>,
         HashMap<AssetUuid, (LoadHandle, u32)>,
     )>,
     requests: Option<HashMap<AssetUuid, (LoadHandle, u32)>>,
@@ -212,7 +216,7 @@ impl Drop for MetadataRequest {
 }
 
 pub struct DataRequest {
-    tx: Sender<(Result<Vec<u8>, Box<dyn Error + Send>>, LoadHandle, u32)>,
+    tx: Sender<(Result<Vec<u8>>, LoadHandle, u32)>,
     asset_id: AssetUuid,
     artifact_id: ArtifactId,
     request_data: Option<(LoadHandle, u32)>,
@@ -248,9 +252,11 @@ impl Drop for DataRequest {
         }
     }
 }
+
+#[allow(clippy::type_complexity)]
 pub struct ResolveRequest {
     tx: Sender<(
-        Result<Vec<(PathBuf, Vec<AssetMetadata>)>, Box<dyn Error + Send>>,
+        Result<Vec<(PathBuf, Vec<AssetMetadata>)>>,
         IndirectIdentifier,
         LoadHandle,
     )>,
@@ -678,7 +684,7 @@ impl LoaderState {
                     error!("metadata request failed: {}", err);
                 }
             }
-            for (_, (handle, version)) in request_data {
+            for (handle, version) in request_data.values() {
                 let mut load = self
                     .load_states
                     .get_mut(&handle)
@@ -1182,7 +1188,7 @@ impl Loader {
         &mut self,
         asset_storage: &dyn AssetStorage,
         resolver: &dyn IndirectionResolver,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<()> {
         self.io.tick(&mut self.data);
         self.data.process_asset_changes(asset_storage);
         self.data.process_load_ops(asset_storage);
@@ -1239,7 +1245,7 @@ fn commit_asset(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{rpc_state::RpcIO, TypeUuid};
+    use crate::{rpc_io::RpcIO, DefaultIndirectionResolver, TypeUuid};
     use atelier_core::AssetUuid;
     use atelier_daemon::{init_logging, AssetDaemon};
     use atelier_importer::{AsyncImporter, ImportedAsset, ImporterValue, Result as ImportResult};
@@ -1412,7 +1418,7 @@ mod tests {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
-            if let Err(e) = loader.process(storage) {
+            if let Err(e) = loader.process(storage, &DefaultIndirectionResolver) {
                 println!("err {:?}", e);
             }
         }

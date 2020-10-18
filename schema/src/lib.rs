@@ -92,7 +92,7 @@ pub fn parse_artifact_metadata(artifact: &data::artifact_metadata::Reader<'_>) -
         Some(uncompressed_size)
     };
     ArtifactMetadata {
-        asset_id: asset_id,
+        asset_id,
         id: ArtifactId(u64::from_le_bytes(make_array(
             artifact.get_hash().expect("capnp: failed to read hash"),
         ))),

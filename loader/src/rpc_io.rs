@@ -14,7 +14,7 @@ use crate::loader::{DataRequest, LoaderIO, LoaderState, MetadataRequest, Resolve
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 
 struct RpcConnection {
-    asset_hub: asset_hub::Client,
+    _asset_hub: asset_hub::Client,
     snapshot: asset_hub::snapshot::Client,
     snapshot_rx: Receiver<SnapshotChange>,
 }
@@ -150,7 +150,7 @@ impl RpcRuntime {
                     .promise
                     .await
                     .map(|_| RpcConnection {
-                        asset_hub: hub,
+                        _asset_hub: hub,
                         snapshot,
                         snapshot_rx,
                     })
