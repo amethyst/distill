@@ -1113,7 +1113,7 @@ impl Loader {
             let version = if let Some(loaded_version) = load.loaded_version {
                 load.versions.iter().find(|v| v.version == loaded_version)
             } else {
-                load.versions.first().map(|v| v)
+                load.versions.first()
             };
             version
                 .map(|v| match v.state {
