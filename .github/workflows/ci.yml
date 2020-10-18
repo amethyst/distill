@@ -1,10 +1,6 @@
 name: CI
 
-on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+on: [push, pull_request]
 
 env:
   CARGO_TERM_COLOR: always
@@ -71,19 +67,17 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           components: rustfmt, clippy
           override: true
 
       - name: Check the format
-        run: cargo +nightly fmt --all -- --check
+        run: cargo +stable fmt --all -- --check
 
-      # type complexity must be ignored because we use huge templates for queries
       - name: Run clippy
         run: >
-          cargo +nightly clippy
+          cargo +stable clippy
           --all-targets
           --all-features
           --
           -D warnings
-          -A clippy::type_complexity
