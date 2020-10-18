@@ -3,16 +3,16 @@
 #[cfg(feature = "handle")]
 pub mod handle;
 mod loader;
-mod rpc_loader;
 #[cfg(feature = "rpc_loader")]
 mod rpc_state;
+mod storage;
 
-pub use crate::loader::{
+pub use crate::loader::{Loader, LoaderIO, LoaderState};
+pub use crate::rpc_state::RpcIO;
+pub use crate::storage::{
     AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, LoadHandle, LoadInfo,
     LoadStatus, LoaderInfoProvider,
 };
-pub use crate::rpc_loader::{Loader, LoaderIO, LoaderState};
-pub use crate::rpc_state::{RpcIO};
 #[cfg(feature = "asset_uuid_macro")]
 pub use atelier_core::asset_uuid;
 pub use atelier_core::{AssetRef, AssetTypeId, AssetUuid};

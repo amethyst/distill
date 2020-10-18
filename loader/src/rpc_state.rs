@@ -9,11 +9,9 @@ use std::error::Error;
 use std::sync::Mutex;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::rpc_loader::{DataRequest, LoaderIO, LoaderState, MetadataRequest, ResolveRequest};
+use crate::loader::{DataRequest, LoaderIO, LoaderState, MetadataRequest, ResolveRequest};
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
-type Response<T> =
-    capnp::message::TypedReader<capnp::message::Builder<capnp::message::HeapAllocator>, T>;
 
 struct RpcConnection {
     asset_hub: asset_hub::Client,
