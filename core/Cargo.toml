@@ -13,7 +13,7 @@ asset_uuid_macro = ["asset-uuid"]
 uuid = { version = "0.8", features = [ "v4" ] }
 asset-uuid = { path = "./asset-uuid", version = "0.1.0", optional = true }
 serde = { version = "1.0", optional = true, features = ["derive"] }
-futures-core = { version = "0.3", default-features = false }
+futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 serde_json = "1.0"
