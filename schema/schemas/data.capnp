@@ -32,10 +32,6 @@ enum FileState {
   deleted @1;
 }
 
-enum AssetSource {
-  file @0;
-}
-
 struct DirtyFileInfo {
   state @0 :FileState;
   sourceInfo @1 :SourceFileInfo;
@@ -52,11 +48,21 @@ struct RenameFileEvent {
   dst @1 :Data;
 }
 
+# Type of Asset Source. An Asset Source is something that produces assets and registers metadata about the 
+# assets with the asset hub, as well as notifying the asset hub about changed assets.
+# Currently we only have File Asset Source, but in the future could perhaps have 
+# remote-sourced asset sources like a GitHub repository.
+enum AssetSource {
+  file @0;
+}
+
+
 struct AssetUuidPair {
   key @0 :AssetUuid;
   value @1 :AssetUuid;
 }
 
+# Metadata associated with a source file
 struct SourceMetadata {
   assets @0 :List(AssetMetadata);
   importerVersion @1 :UInt32;
