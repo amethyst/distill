@@ -25,7 +25,7 @@ pub enum RefOp {
     IncreaseUuid(AssetUuid),
 }
 
-pub fn process_ref_ops<T: Loader>(loader: &T, rx: &Receiver<RefOp>) {
+pub fn process_ref_ops(loader: &Loader, rx: &Receiver<RefOp>) {
     loop {
         match rx.try_recv() {
             Err(_) => break,
@@ -616,7 +616,7 @@ pub trait AssetHandle {
     /// # Type Parameters
     ///
     /// * `L`: Asset loader type.
-    fn load_status<L: Loader>(&self, loader: &L) -> LoadStatus {
+    fn load_status(&self, loader: &Loader) -> LoadStatus {
         loader.get_load_status(self.load_handle())
     }
 

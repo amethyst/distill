@@ -7,11 +7,15 @@ use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use atelier_core::{utils, AssetRef, AssetUuid, CompressionType};
+use atelier_core::{utils, ArtifactId, AssetRef, AssetUuid, CompressionType};
 use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
 };
-use atelier_schema::data::{self, path_refs, source_metadata};
+use atelier_schema::{
+    build_asset_metadata,
+    data::{self, path_refs, source_metadata},
+    parse_db_metadata,
+};
 use bincode::config::Options;
 use futures_channel::mpsc::unbounded;
 use futures_util::lock::Mutex;
@@ -298,7 +302,7 @@ impl FileAssetSource {
 
             for (idx, asset) in metadata.assets.iter().enumerate() {
                 let mut builder = assets.reborrow().get(idx as u32);
-                asset_hub::build_asset_metadata(asset, &mut builder, data::AssetSource::File);
+                build_asset_metadata(asset, &mut builder, data::AssetSource::File);
             }
 
             let assets_with_pipelines: Vec<&AssetMetadata> = metadata
@@ -846,14 +850,14 @@ impl FileAssetSource {
                             .collect();
                         a.load_deps.sort_unstable();
                         a.build_deps.sort_unstable();
-                        a.hash = utils::calc_import_artifact_hash(
+                        a.id = ArtifactId(utils::calc_import_artifact_hash(
                             &asset,
                             import_hash,
                             a.load_deps
                                 .iter()
                                 .chain(a.build_deps.iter())
                                 .map(|dep| dep.expect_uuid()),
-                        )
+                        ))
                     }
 
                     self.hub
@@ -921,7 +925,7 @@ impl FileAssetSource {
                                         .filter(|x| x.is_uuid())
                                         .cloned()
                                         .collect();
-                                    artifact.hash = utils::calc_import_artifact_hash(
+                                    artifact.id = ArtifactId(utils::calc_import_artifact_hash(
                                         &asset.metadata.id,
                                         import_hash,
                                         artifact
@@ -929,7 +933,7 @@ impl FileAssetSource {
                                             .iter()
                                             .chain(artifact.build_deps.iter())
                                             .map(|dep| dep.expect_uuid()),
-                                    );
+                                    ));
                                     self.hub
                                         .update_asset(
                                             txn,
@@ -1200,8 +1204,8 @@ impl FileAssetSource {
                                         if let Some(serialized_asset) =
                                             asset.serialized_asset.as_mut()
                                         {
-                                            serialized_asset.metadata.hash = utils::calc_import_artifact_hash(&asset.metadata.id, import.import_hash().unwrap(), serialized_asset.metadata.load_deps.iter().chain(serialized_asset.metadata.build_deps.iter()).map(|dep| dep.expect_uuid()));
-                                            log::trace!("caching asset {:?} from file {:?} with hash {}", asset.metadata.id, p.source, serialized_asset.metadata.hash );
+                                            serialized_asset.metadata.id = ArtifactId(utils::calc_import_artifact_hash(&asset.metadata.id, import.import_hash().unwrap(), serialized_asset.metadata.load_deps.iter().chain(serialized_asset.metadata.build_deps.iter()).map(|dep| dep.expect_uuid())));
+                                            log::trace!("caching asset {:?} from file {:?} with hash {:?}", asset.metadata.id, p.source, serialized_asset.metadata.id );
                                             self.artifact_cache.insert(&mut txn, serialized_asset);
                                         } else {
                                             log::trace!("asset {:?} from file {:?} did not return serialized asset: cannot cache", asset.metadata.id, p.source );
@@ -1405,7 +1409,7 @@ impl FileAssetSource {
         let new_asset_metadata: Vec<AssetMetadata> = asset_ids
             .into_iter()
             .map(|a| {
-                asset_hub::parse_db_metadata(
+                parse_db_metadata(
                     &self
                         .hub
                         .get_metadata(&txn, &a)
@@ -1485,7 +1489,7 @@ where
             metadata.assets = saved_metadata
                 .get_assets()?
                 .iter()
-                .map(|a| asset_hub::parse_db_metadata(&a))
+                .map(|a| parse_db_metadata(&a))
                 .collect();
         }
         Ok(())

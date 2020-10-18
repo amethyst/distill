@@ -1,7 +1,7 @@
 use crate::image::Image;
 use atelier_loader::{
-    asset_uuid, rpc_loader::RpcLoader, AssetLoadOp, AssetStorage, AssetTypeId, LoadHandle,
-    LoadStatus, Loader, LoaderInfoProvider, TypeUuid,
+    asset_uuid, AssetLoadOp, AssetStorage, AssetTypeId, LoadHandle, LoadStatus, Loader,
+    LoaderInfoProvider, RpcIO, TypeUuid,
 };
 use std::{cell::RefCell, collections::HashMap, error::Error};
 
@@ -127,7 +127,7 @@ pub fn run() {
     game.storage
         .insert(AssetTypeId(Image::UUID), Box::new(Storage::<Image>::new()));
 
-    let mut loader = RpcLoader::default();
+    let mut loader = Loader::new(Box::new(RpcIO::default()));
     let handle = loader.add_ref(asset_uuid!("6c5ae1ad-ae30-471b-985b-7d017265f19f"));
     loop {
         loader.process(&game).expect("failed to process loader");

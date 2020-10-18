@@ -3,8 +3,7 @@ use atelier_loader::{
     asset_uuid,
     crossbeam_channel::Receiver,
     handle::{AssetHandle, Handle, RefOp, WeakHandle},
-    rpc_loader::RpcLoader,
-    LoadStatus, Loader,
+    LoadStatus, Loader, RpcIO,
 };
 use std::sync::Arc;
 
@@ -12,7 +11,7 @@ struct Game {
     storage: GenericAssetStorage,
 }
 
-fn process(loader: &mut RpcLoader, game: &Game, chan: &Receiver<RefOp>) {
+fn process(loader: &mut Loader, game: &Game, chan: &Receiver<RefOp>) {
     atelier_loader::handle::process_ref_ops(loader, chan);
     loader
         .process(&game.storage)
@@ -28,7 +27,7 @@ pub fn run() {
     game.storage.add_storage::<Image>();
     game.storage.add_storage::<BigPerf>();
 
-    let mut loader = RpcLoader::default();
+    let mut loader = Loader::new(Box::new(RpcIO::default()));
     let weak_handle = {
         // add_ref begins loading of the asset
         let handle = loader.add_ref(asset_uuid!("0977fd59-e52d-4910-85e0-d61ae8affa8c"));

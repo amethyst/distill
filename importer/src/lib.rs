@@ -24,13 +24,14 @@ pub use self::error::{Error, Result};
 #[cfg(feature = "serde_importers")]
 pub use crate::serde_obj::SerdeImportable;
 pub use crate::{
-    boxed_importer::{
-        ArtifactMetadata, AssetMetadata, BoxedImporter, SourceMetadata, SOURCEMETADATA_VERSION,
-    },
+    boxed_importer::{BoxedImporter, SourceMetadata, SOURCEMETADATA_VERSION},
     serde_obj::{IntoSerdeObj, SerdeObj},
     serialized_asset::SerializedAsset,
 };
-pub use atelier_core::importer_context::{ImporterContext, ImporterContextHandle};
+pub use atelier_core::{
+    importer_context::{ImporterContext, ImporterContextHandle},
+    ArtifactMetadata, AssetMetadata,
+};
 
 /// Importers parse file formats and produce assets.
 pub trait Importer: Send + 'static {

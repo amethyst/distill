@@ -1,5 +1,6 @@
 use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
 use crossbeam_channel::Sender;
+use dashmap::DashMap;
 use std::{
     error::Error,
     sync::{
@@ -12,6 +13,19 @@ use std::{
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct LoadHandle(pub u64);
 
+impl LoadHandle {
+    /// Returns true if the handle needs to be resolved through the [`IndirectionTable`] before use.
+    /// An "indirect" LoadHandle represents a load operation for an identifier that is late-bound,
+    /// meaning the identifier may change which [`AssetUuid`] it resolves to.
+    /// An example of an indirect LoadHandle would be one that loads by filesystem path.
+    /// The specific asset at a path may change as files change, move or are deleted, while a direct
+    /// LoadHandle (one that addresses by AssetUuid) is guaranteed to refer to an AssetUuid for its
+    /// whole lifetime.
+    pub fn is_indirect(&self) -> bool {
+        (self.0 & (1 << 63)) == 1 << 63
+    }
+}
+
 pub(crate) enum HandleOp {
     Error(LoadHandle, u32, Box<dyn Error + Send>),
     Complete(LoadHandle, u32),
@@ -21,13 +35,13 @@ pub(crate) enum HandleOp {
 /// Type that allows the downstream asset storage implementation to signal that this asset is
 /// loaded.
 pub struct AssetLoadOp {
-    sender: Option<Arc<Sender<HandleOp>>>,
+    sender: Option<Sender<HandleOp>>,
     handle: LoadHandle,
     version: u32,
 }
 
 impl AssetLoadOp {
-    pub(crate) fn new(sender: Arc<Sender<HandleOp>>, handle: LoadHandle, version: u32) -> Self {
+    pub(crate) fn new(sender: Sender<HandleOp>, handle: LoadHandle, version: u32) -> Self {
         Self {
             sender: Some(sender),
             handle,
@@ -143,77 +157,6 @@ pub struct LoadInfo {
     pub refs: u32,
 }
 
-/// Tracks asset loading, allocating a load handle for each asset.
-///
-/// This is implemented by the `atelier-assets` [`RpcLoader`]. Consumers of `atelier-assets` should
-/// delegate to `T: atelier_assets::Loader` for the asset loading implementation instead of
-/// implementing this trait themselves.
-pub trait Loader {
-    /// Adds a reference to an asset and returns its [`LoadHandle`].
-    ///
-    /// If the asset is already loaded, this returns the existing [`LoadHandle`]. If it is not
-    /// loaded, this allocates a new [`LoadHandle`] and returns that.
-    ///
-    /// # Parameters
-    ///
-    /// * `id`: UUID of the asset.
-    fn add_ref(&self, id: AssetUuid) -> LoadHandle;
-
-    /// Removes a reference to an asset.
-    ///
-    /// # Parameters
-    ///
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn remove_ref(&self, load_handle: LoadHandle);
-
-    /// Returns the `AssetType` UUID and load handle if the asset is loaded.
-    ///
-    /// # Parameters
-    ///
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn get_asset(&self, load: LoadHandle) -> Option<(AssetTypeId, LoadHandle)>;
-
-    /// Returns the load handle for the asset with the given UUID, if present.
-    ///
-    /// This will only return `Some(..)` if there has been a previous call to [`Loader::add_ref`].
-    ///
-    /// # Parameters
-    ///
-    /// * `id`: UUID of the asset.
-    fn get_load(&self, id: AssetUuid) -> Option<LoadHandle>;
-
-    /// Returns the number of references to an asset.
-    ///
-    /// **Note:** The information is true at the time the `LoadInfo` is retrieved. The actual number
-    /// of references may change.
-    ///
-    /// # Parameters
-    ///
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn get_load_info(&self, load: LoadHandle) -> Option<LoadInfo>;
-
-    /// Returns the asset load status.
-    ///
-    /// # Parameters
-    ///
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
-    fn get_load_status(&self, load: LoadHandle) -> LoadStatus;
-
-    /// Processes pending load operations.
-    ///
-    /// Load operations include:
-    ///
-    /// * Requesting asset metadata.
-    /// * Requesting asset data.
-    /// * Committing completed [`AssetLoadOp`]s.
-    /// * Updating the [`LoadStatus`]es of assets.
-    ///
-    /// # Parameters
-    ///
-    /// * `asset_storage`: Storage for all assets of all asset types.
-    fn process(&mut self, asset_storage: &dyn AssetStorage) -> Result<(), Box<dyn Error>>;
-}
-
 /// Provides information about mappings between `AssetUuid` and `LoadHandle`.
 /// Intended to be used for `Handle` serde.
 pub trait LoaderInfoProvider: Send + Sync {
@@ -234,10 +177,18 @@ pub trait LoaderInfoProvider: Send + Sync {
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid>;
 }
 
+/// Allocates LoadHandles for [`Loader`] implementations.
 pub trait HandleAllocator: Send + Sync + 'static {
+    /// Allocates a [`LoadHandle`] for use by a [`Loader`].
+    /// The same LoadHandle must not be returned by this function until it has been passed to `free`.
+    /// NOTE: The most significant bit of the u64 in the LoadHandle returned MUST be unset,
+    /// as it is reserved for indicating whether the handle is indirect or not.
     fn alloc(&self) -> LoadHandle;
+    /// Frees a [`LoadHandle`], allowing the handle to be returned by a future `alloc` call.
     fn free(&self, handle: LoadHandle);
 }
+
+/// An implementation of [`HandleAllocator`] which uses an incrementing AtomicU64 internally to allocate LoadHandle IDs.
 pub struct AtomicHandleAllocator(AtomicU64);
 impl AtomicHandleAllocator {
     pub const fn new(starting_value: u64) -> Self {
@@ -262,3 +213,9 @@ impl HandleAllocator for &'static AtomicHandleAllocator {
     }
     fn free(&self, _handle: LoadHandle) {}
 }
+
+trait IndirectionResolver {}
+
+/// Resolves indirect [`LoadHandle`]s. See [`LoadHandle::is_indirect`] for details.
+#[derive(Clone)]
+pub struct IndirectionTable(pub(crate) Arc<DashMap<LoadHandle, LoadHandle>>);

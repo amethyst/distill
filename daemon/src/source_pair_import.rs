@@ -2,7 +2,7 @@ use crate::daemon::ImporterMap;
 use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
 use crate::watcher::file_metadata;
-use atelier_core::{utils, AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use atelier_core::{utils, ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportedAsset, ImporterContext,
     ImporterContextHandle, SerdeObj, SerializedAsset, SourceMetadata as ImporterSourceMetadata,
@@ -419,8 +419,8 @@ impl<'a> SourcePairImport<'a> {
                     id: asset.id,
                     search_tags: asset.search_tags,
                     artifact: Some(ArtifactMetadata {
-                        id: asset.id,
-                        hash: utils::calc_import_artifact_hash(
+                        asset_id: asset.id,
+                        id: ArtifactId(utils::calc_import_artifact_hash(
                             &asset.id,
                             import_hash,
                             asset
@@ -434,7 +434,7 @@ impl<'a> SourcePairImport<'a> {
                                         None
                                     }
                                 }),
-                        ),
+                        )),
                         load_deps: asset.load_deps.clone(),
                         build_deps: asset.build_deps.clone(),
                         compression: serialized_asset.metadata.compression,

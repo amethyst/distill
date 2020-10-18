@@ -9,11 +9,13 @@ use crate::{
 use atelier_core::utils;
 use atelier_importer::SerializedAsset;
 use atelier_schema::{
+    build_artifact_metadata,
     data::{
         artifact, asset_change_log_entry,
         asset_metadata::{self, latest_artifact},
         AssetSource,
     },
+    parse_artifact_metadata, parse_db_asset_ref,
     service::asset_hub,
 };
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
@@ -84,7 +86,7 @@ fn build_artifact_message<T: AsRef<[u8]>>(
     {
         let mut m = value_builder.init_root::<artifact::Builder<'_>>();
         let mut metadata = m.reborrow().init_metadata();
-        crate::asset_hub::build_artifact_metadata(&artifact.metadata, &mut metadata);
+        build_artifact_metadata(&artifact.metadata, &mut metadata);
         let slice: &[u8] = artifact.data.as_ref();
         m.reborrow().set_data(slice);
     }
@@ -94,7 +96,7 @@ fn build_artifact_message<T: AsRef<[u8]>>(
 fn artifact_to_serialized_asset<'a>(
     artifact: &artifact::Reader<'a>,
 ) -> Result<SerializedAsset<&'a [u8]>> {
-    let metadata = crate::asset_hub::parse_artifact_metadata(&artifact.get_metadata()?);
+    let metadata = parse_artifact_metadata(&artifact.get_metadata()?);
     Ok(SerializedAsset {
         metadata,
         data: artifact.get_data()?,
@@ -156,7 +158,7 @@ impl AssetHubSnapshotImpl {
                 metadata.get()?.get_latest_artifact().which()?
             {
                 for dep in artifact.get_load_deps()? {
-                    let dep = *crate::asset_hub::parse_db_asset_ref(&dep).expect_uuid();
+                    let dep = *parse_db_asset_ref(&dep).expect_uuid();
                     if !metadatas.contains_key(&dep) {
                         missing_metadata.insert(dep);
                     }
@@ -416,7 +418,7 @@ impl AssetHubSnapshotImpl {
         let ctx = &snapshot.ctx;
         // TODO move the below parts into FileAssetSource
         let new_artifact = artifact_to_serialized_asset(&params.get_asset()?)?.to_vec();
-        let asset_uuid = new_artifact.metadata.id;
+        let asset_uuid = new_artifact.metadata.asset_id;
         let asset_metadata = ctx.hub.get_metadata(txn, &asset_uuid);
         let mut scratch_buf = Vec::new();
         if let Some(asset_metadata) = asset_metadata {
@@ -452,7 +454,7 @@ impl AssetHubSnapshotImpl {
                         if let Some(metadata) = updated_asset_metadata {
                             if let Some(artifact) = &metadata.artifact {
                                 let mut results_builder = results.get();
-                                results_builder.set_new_import_hash(&artifact.hash.to_le_bytes());
+                                results_builder.set_new_import_hash(&artifact.id.0.to_le_bytes());
                                 Ok(())
                             } else {
                                 Err(Error::Custom(

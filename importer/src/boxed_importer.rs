@@ -1,46 +1,11 @@
 use crate::{error::Result, AsyncImporter, ExportAsset, ImporterValue, SerdeObj};
-use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use atelier_core::{AssetMetadata, AssetTypeId};
 use erased_serde::Deserializer;
 use futures_core::future::BoxFuture;
 use futures_io::{AsyncRead, AsyncWrite};
 use serde::{Deserialize, Serialize};
 use type_uuid::{TypeUuid, TypeUuidDynamic};
 
-/// Serializable metadata for an asset.
-/// Stored in .meta files and metadata DB.
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, Default)]
-pub struct AssetMetadata {
-    /// UUID for the asset to uniquely identify it
-    pub id: AssetUuid,
-    /// Search tags are used by asset tooling to search for the imported asset
-    pub search_tags: Vec<(String, Option<String>)>,
-    /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset
-    pub build_pipeline: Option<AssetUuid>,
-    /// The latest artifact produced when importing this asset
-    pub artifact: Option<ArtifactMetadata>,
-}
-
-/// Serializable metadata for an artifact.
-/// Stored in .meta files and metadata DB.
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, Default)]
-pub struct ArtifactMetadata {
-    /// Hash that identifies this artifact
-    pub hash: u64,
-    /// UUID for this artifact's asset
-    pub id: AssetUuid,
-    /// Build dependencies will be included in the Builder arguments when building an asset
-    pub build_deps: Vec<AssetRef>,
-    /// Load dependencies are guaranteed to load before this asset by the Loader
-    pub load_deps: Vec<AssetRef>,
-    /// Type of compression used to compress this artifact
-    pub compression: CompressionType,
-    /// Size of this artifact in bytes when compressed
-    pub compressed_size: Option<u64>,
-    /// Size of this artifact in bytes when serialized and uncompressed
-    pub uncompressed_size: Option<u64>,
-    /// The UUID of the artifact's Rust type
-    pub type_id: AssetTypeId,
-}
 /// Version of the SourceMetadata struct.
 /// Used for forward compatibility to enable changing the .meta file format
 pub const SOURCEMETADATA_VERSION: u32 = 1;
@@ -52,22 +17,22 @@ pub struct SourceMetadata<Options: 'static, State: 'static> {
     pub version: u32,
     /// Hash of the source file + importer options + importer state when last importing source file.
     pub import_hash: Option<u64>,
-    /// The [Importer::version] used to import the source file.
+    /// The [`crate::Importer::version`] used to import the source file.
     pub importer_version: u32,
-    /// The [type_uuid::TypeUuid::UUID] used to import the source file.
+    /// The [`type_uuid::TypeUuid::UUID`] used to import the source file.
     #[serde(default)]
     pub importer_type: AssetTypeId,
-    /// The [Importer::Options] used to import the source file.
+    /// The [`crate::Importer::Options`] used to import the source file.
     pub importer_options: Options,
-    /// The [Importer::State] generated when importing the source file.
+    /// The [`crate::Importer::State`] generated when importing the source file.
     pub importer_state: State,
     /// Metadata for assets generated when importing the source file.
     pub assets: Vec<AssetMetadata>,
 }
 
-/// Trait object wrapper for [Importer] implementations.
+/// Trait object wrapper for [`crate::Importer`] implementations.
 /// Enables using Importers without knowing the concrete type.
-/// See [Importer] for documentation on fields.
+/// See [`crate::Importer`] for documentation on fields.
 pub trait BoxedImporter: TypeUuidDynamic + Send + Sync + 'static {
     fn import_boxed<'a>(
         &'a self,
