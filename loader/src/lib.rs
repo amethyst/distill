@@ -11,7 +11,7 @@ pub use crate::loader::{IndirectIdentifier, Loader, LoaderIO, LoaderState};
 pub use crate::rpc_io::RpcIO;
 pub use crate::storage::{
     AssetLoadOp, AssetStorage, AtomicHandleAllocator, DefaultIndirectionResolver, HandleAllocator,
-    IndirectionResolver, LoadHandle, LoadInfo, LoadStatus, LoaderInfoProvider, IndirectionTable,
+    IndirectionResolver, IndirectionTable, LoadHandle, LoadInfo, LoadStatus, LoaderInfoProvider,
 };
 #[cfg(feature = "asset_uuid_macro")]
 pub use atelier_core::asset_uuid;
