@@ -1,6 +1,5 @@
 use crate::{custom_asset::BigPerf, image::Image, storage::GenericAssetStorage};
 use atelier_loader::{
-    asset_uuid,
     crossbeam_channel::Receiver,
     handle::{AssetHandle, Handle, RefOp, WeakHandle},
     DefaultIndirectionResolver, IndirectIdentifier, LoadStatus, Loader, RpcIO,
