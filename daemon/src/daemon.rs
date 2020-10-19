@@ -54,7 +54,7 @@ pub struct AssetDaemon {
 
 fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
     vec![atelier_loader::if_handle_enabled!(Box::new(
-        atelier_loader::HandleSerdeContextProvider
+        atelier_loader::handle::HandleSerdeContextProvider
     ))]
 }
 

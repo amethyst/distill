@@ -1,4 +1,7 @@
-use crate::{AssetRef, AssetUuid, LoadHandle, LoadStatus, Loader, LoaderInfoProvider};
+use crate::{
+    storage::{LoadStatus, LoaderInfoProvider},
+    AssetRef, AssetUuid, LoadHandle, Loader,
+};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures_core::future::{BoxFuture, Future};
 use serde::{
@@ -404,7 +407,7 @@ impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeCon
     }
 }
 
-// Register this context with atelier-assets' Daemon to add serde support for Handle.
+/// Register this context with AssetDaemon to add serde support for Handle.
 pub struct HandleSerdeContextProvider;
 impl atelier_core::importer_context::ImporterContext for HandleSerdeContextProvider {
     fn handle(&self) -> Box<dyn atelier_core::importer_context::ImporterContextHandle> {
@@ -565,6 +568,8 @@ impl<'de> Visitor<'de> for AssetRefVisitor {
     }
 }
 
+/// Implementors of [`crate::storage::AssetStorage`] can implement this trait to enable convenience
+/// functions on the common [`AssetHandle`] trait, which is implemented by all handle types.
 pub trait TypedAssetStorage<A> {
     /// Returns the asset for the given handle, or `None` if has not completed loading.
     ///

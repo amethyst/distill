@@ -10,9 +10,8 @@ use std::{
     },
 };
 
-use crate::loader::IndirectIdentifier;
-
-/// Loading ID allocated by `atelier-assets` to track loading of a particular asset.
+/// Loading ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset
+/// or an indirect reference to an asset.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct LoadHandle(pub u64);
 
@@ -39,8 +38,8 @@ pub(crate) enum HandleOp {
     Drop(LoadHandle, u32),
 }
 
-/// Type that allows the downstream asset storage implementation to signal that this asset is
-/// loaded.
+/// Type that allows the downstream asset storage implementation to signal that an asset update
+/// operation has completed. See [`AssetStorage::update_asset`].
 pub struct AssetLoadOp {
     sender: Option<Sender<HandleOp>>,
     handle: LoadHandle,
@@ -93,7 +92,7 @@ impl Drop for AssetLoadOp {
 /// Storage for all assets of all asset types.
 ///
 /// Consumers are expected to provide the implementation for this, as this is the bridge between
-/// `atelier-assets` and the application.
+/// [`Loader`](crate::loader::Loader) and the application.
 pub trait AssetStorage {
     /// Updates the backing data of an asset.
     ///
@@ -105,14 +104,14 @@ pub trait AssetStorage {
     /// * `loader`: Loader implementation calling this function.
     /// * `asset_type_id`: UUID of the asset type.
     /// * `data`: The updated asset byte data.
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of a particular asset.
+    /// * `load_handle`: ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset.
     /// * `load_op`: Allows the loading implementation to signal when loading is done / errors.
     /// * `version`: Runtime load version of this asset, increments each time the asset is updated.
     fn update_asset(
         &self,
         loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
@@ -123,7 +122,7 @@ pub trait AssetStorage {
     /// # Parameters
     ///
     /// * `asset_type_id`: UUID of the asset type.
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of a particular asset.
+    /// * `load_handle`: ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset.
     /// * `version`: Runtime load version of this asset, increments each time the asset is updated.
     fn commit_asset_version(&self, asset_type: &AssetTypeId, load_handle: LoadHandle, version: u32);
 
@@ -132,7 +131,7 @@ pub trait AssetStorage {
     /// # Parameters
     ///
     /// * `asset_type_id`: UUID of the asset type.
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of a particular asset.
+    /// * `load_handle`: ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset.
     fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle);
 }
 
@@ -171,7 +170,7 @@ pub struct LoadInfo {
 pub trait LoaderInfoProvider: Send + Sync {
     /// Returns the load handle for the asset with the given UUID, if present.
     ///
-    /// This will only return `Some(..)` if there has been a previous call to [`Loader::add_ref`].
+    /// This will only return `Some(..)` if there has been a previous call to [`crate::loader::Loader::add_ref`].
     ///
     /// # Parameters
     ///
@@ -182,13 +181,13 @@ pub trait LoaderInfoProvider: Send + Sync {
     ///
     /// # Parameters
     ///
-    /// * `load_handle`: ID allocated by `atelier-assets` to track loading of the asset.
+    /// * `load_handle`: ID allocated by [`Loader`](crate::loader::Loader) to track loading of the asset.
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid>;
 }
 
-/// Allocates LoadHandles for [`Loader`] implementations.
+/// Allocates LoadHandles for [`Loader`](crate::loader::Loader) implementations.
 pub trait HandleAllocator: Send + Sync + 'static {
-    /// Allocates a [`LoadHandle`] for use by a [`Loader`].
+    /// Allocates a [`LoadHandle`] for use by a [`crate::loader::Loader`].
     /// The same LoadHandle must not be returned by this function until it has been passed to `free`.
     /// NOTE: The most significant bit of the u64 in the LoadHandle returned MUST be unset,
     /// as it is reserved for indicating whether the handle is indirect or not.
@@ -223,6 +222,30 @@ impl HandleAllocator for &'static AtomicHandleAllocator {
     fn free(&self, _handle: LoadHandle) {}
 }
 
+/// An indirect identifier that can be resolved to a specific [`AssetUuid`] by an [`IndirectionResolver`] impl.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub enum IndirectIdentifier {
+    PathWithTagAndType(String, String, AssetTypeId),
+    PathWithType(String, AssetTypeId),
+    Path(String),
+}
+impl IndirectIdentifier {
+    pub fn path(&self) -> &str {
+        match self {
+            IndirectIdentifier::PathWithTagAndType(path, _, _) => path.as_str(),
+            IndirectIdentifier::PathWithType(path, _) => path.as_str(),
+            IndirectIdentifier::Path(path) => path.as_str(),
+        }
+    }
+    pub fn type_id(&self) -> Option<&AssetTypeId> {
+        match self {
+            IndirectIdentifier::PathWithTagAndType(_, _, ty) => Some(ty),
+            IndirectIdentifier::PathWithType(_, ty) => Some(ty),
+            IndirectIdentifier::Path(_) => None,
+        }
+    }
+}
+/// Resolves ambiguous [`IndirectIdentifier`]s to a single asset ID given a set of candidates.
 pub trait IndirectionResolver {
     fn resolve(
         &self,
@@ -231,6 +254,8 @@ pub trait IndirectionResolver {
     ) -> Option<AssetUuid>;
 }
 
+/// Default implementation of [`IndirectionResolver`] which resolves to the first asset in the list of candidates
+/// of the appropriate type.
 pub struct DefaultIndirectionResolver;
 impl IndirectionResolver for DefaultIndirectionResolver {
     fn resolve(

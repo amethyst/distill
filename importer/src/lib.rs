@@ -10,9 +10,10 @@ pub use crate::ron_importer::{RonImporter, RonImporterOptions, RonImporterState}
 #[doc(hidden)]
 #[cfg(feature = "serde_importers")]
 pub use crate::serde_obj::typetag;
+#[cfg(feature = "serde_importers")]
+pub use serde_importable_derive::*;
 
 pub use serde;
-pub use type_uuid;
 
 use atelier_core::{AssetRef, AssetUuid};
 use futures_core::future::BoxFuture;

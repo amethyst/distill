@@ -1,8 +1,9 @@
 use crate::{custom_asset::BigPerf, image::Image, storage::GenericAssetStorage};
-use atelier_loader::{
-    crossbeam_channel::Receiver,
-    handle::{AssetHandle, Handle, RefOp, WeakHandle},
-    DefaultIndirectionResolver, IndirectIdentifier, LoadStatus, Loader, RpcIO,
+use atelier_assets::loader::{
+    crossbeam_channel::{unbounded, Receiver},
+    handle::{self, AssetHandle, Handle, RefOp, WeakHandle},
+    storage::{DefaultIndirectionResolver, IndirectIdentifier, LoadStatus},
+    Loader, RpcIO,
 };
 use std::sync::Arc;
 
@@ -11,14 +12,14 @@ struct Game {
 }
 
 fn process(loader: &mut Loader, game: &Game, chan: &Receiver<RefOp>) {
-    atelier_loader::handle::process_ref_ops(loader, chan);
+    handle::process_ref_ops(loader, chan);
     loader
         .process(&game.storage, &DefaultIndirectionResolver)
         .expect("failed to process loader");
 }
 
 pub fn run() {
-    let (tx, rx) = atelier_loader::crossbeam_channel::unbounded();
+    let (tx, rx) = unbounded();
     let tx = Arc::new(tx);
 
     let mut loader = Loader::new(Box::new(RpcIO::default()));

@@ -1,13 +1,21 @@
 use crate::image::Image;
-use atelier_loader::{
-    asset_uuid, AssetLoadOp, AssetStorage, AssetTypeId, DefaultIndirectionResolver,
-    IndirectionTable, LoadHandle, LoadStatus, Loader, LoaderInfoProvider, RpcIO, TypeUuid,
+use atelier_assets::{
+    core::{self as atelier_core, asset_uuid},
+    loader::{
+        loader::Loader,
+        storage::{
+            AssetLoadOp, AssetStorage, DefaultIndirectionResolver, IndirectionTable, LoadHandle,
+            LoadStatus, LoaderInfoProvider,
+        },
+        AssetTypeId, RpcIO,
+    },
 };
 use std::{
     cell::{Ref, RefCell},
     collections::HashMap,
     error::Error,
 };
+use type_uuid::TypeUuid;
 
 #[allow(dead_code)]
 struct AssetState<A> {
@@ -50,7 +58,7 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         &self,
         _loader_info: &dyn LoaderInfoProvider,
         _asset_type_id: &AssetTypeId,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
@@ -59,7 +67,7 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         uncommitted.insert(
             load_handle,
             AssetState {
-                asset: bincode::deserialize::<A>(data).expect("failed to deserialize asset"),
+                asset: bincode::deserialize::<A>(&data).expect("failed to deserialize asset"),
                 version,
             },
         );
@@ -105,7 +113,7 @@ impl AssetStorage for Game {
         &self,
         loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,

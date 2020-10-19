@@ -1,10 +1,11 @@
-use atelier_loader::{
+use atelier_assets::loader::{
     crossbeam_channel::Sender,
     handle::{AssetHandle, RefOp, TypedAssetStorage},
-    AssetLoadOp, AssetStorage, AssetTypeId, IndirectionTable, LoadHandle, LoaderInfoProvider,
-    TypeUuid,
+    storage::{AssetLoadOp, AssetStorage, IndirectionTable, LoadHandle, LoaderInfoProvider},
+    AssetTypeId,
 };
 use std::{any::Any, cell::RefCell, collections::HashMap, error::Error, sync::Arc};
+use type_uuid::TypeUuid;
 
 pub struct GenericAssetStorage {
     storage: RefCell<HashMap<AssetTypeId, Box<dyn TypedStorage>>>,
@@ -129,7 +130,7 @@ pub trait TypedStorage: Any {
     fn update_asset(
         &mut self,
         loader_info: &dyn LoaderInfoProvider,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
@@ -145,16 +146,16 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
     fn update_asset(
         &mut self,
         loader_info: &dyn LoaderInfoProvider,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
     ) -> Result<(), Box<dyn Error + Send + 'static>> {
         // To enable automatic serde of Handle, we need to set up a SerdeContext with a RefOp sender
-        let asset = futures_executor::block_on(atelier_loader::handle::SerdeContext::with(
+        let asset = futures_executor::block_on(atelier_assets::loader::handle::SerdeContext::with(
             loader_info,
             (*self.refop_sender).clone(),
-            async { bincode::deserialize::<A>(data) },
+            async { bincode::deserialize::<A>(&data) },
         ))
         .expect("failed to deserialize asset");
         self.uncommitted
@@ -190,7 +191,7 @@ impl AssetStorage for GenericAssetStorage {
         &self,
         loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,

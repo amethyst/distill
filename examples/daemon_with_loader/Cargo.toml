@@ -7,11 +7,7 @@ readme = "README.md"
 license = "MIT/Apache-2.0"
 
 [dependencies]
-atelier-core = { version = "0.1", path = "../../core" }
-atelier-daemon = { version = "0.1", path = "../../daemon" }
-atelier-importer = { version = "0.1", path = "../../importer" }
-atelier-loader = { version = "0.1", path = "../../loader", features = [ "asset_uuid_macro"] }
-
+atelier-assets = { version = "0.1", path = "../../", features = ["asset_uuid_macro", "type_uuid"] }
 type-uuid = "0.1"
 image2 = { version = "0.11", features = [ "ser" ] }
 log = { version = "0.4", features = ["serde"] }

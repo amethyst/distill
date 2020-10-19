@@ -9,7 +9,8 @@ use std::sync::Mutex;
 use std::{error::Error, path::PathBuf};
 use tokio::runtime::{Builder, Runtime};
 
-use crate::loader::{DataRequest, LoaderIO, LoaderState, MetadataRequest, ResolveRequest};
+use crate::io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest};
+use crate::loader::LoaderState;
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 

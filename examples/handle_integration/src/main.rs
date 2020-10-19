@@ -3,11 +3,11 @@ mod game;
 mod image;
 mod storage;
 
-use atelier_daemon::AssetDaemon;
+use atelier_assets::daemon::{init_logging, AssetDaemon};
 use std::path::PathBuf;
 
 fn main() {
-    atelier_daemon::init_logging().expect("failed to init logging");
+    init_logging().expect("failed to init logging");
     std::thread::spawn(move || {
         AssetDaemon::default()
             .with_importer("png", crate::image::ImageImporter)

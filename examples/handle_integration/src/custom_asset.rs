@@ -1,5 +1,7 @@
-use atelier_importer::{typetag, SerdeImportable};
-use atelier_loader::handle::Handle;
+use atelier_assets::{
+    importer::{self as atelier_importer, typetag, SerdeImportable},
+    loader::handle::Handle,
+};
 use serde::{Deserialize, Serialize};
 use type_uuid::TypeUuid;
 

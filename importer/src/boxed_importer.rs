@@ -1,10 +1,9 @@
 use crate::{error::Result, AsyncImporter, ExportAsset, ImporterValue, SerdeObj};
-use atelier_core::{AssetMetadata, AssetTypeId};
+use atelier_core::{AssetMetadata, AssetTypeId, TypeUuidDynamic};
 use erased_serde::Deserializer;
 use futures_core::future::BoxFuture;
 use futures_io::{AsyncRead, AsyncWrite};
 use serde::{Deserialize, Serialize};
-use type_uuid::{TypeUuid, TypeUuidDynamic};
 
 /// Version of the SourceMetadata struct.
 /// Used for forward compatibility to enable changing the .meta file format
@@ -19,7 +18,7 @@ pub struct SourceMetadata<Options: 'static, State: 'static> {
     pub import_hash: Option<u64>,
     /// The [`crate::Importer::version`] used to import the source file.
     pub importer_version: u32,
-    /// The [`type_uuid::TypeUuid::UUID`] used to import the source file.
+    /// The [`TypeUuidDynamic::uuid`] used to import the source file.
     #[serde(default)]
     pub importer_type: AssetTypeId,
     /// The [`crate::Importer::Options`] used to import the source file.
@@ -84,7 +83,7 @@ impl<S, O, T> BoxedImporter for T
 where
     O: SerdeObj + Serialize + Default + Send + Sync + Clone + for<'a> Deserialize<'a>,
     S: SerdeObj + Serialize + Default + Send + Sync + for<'a> Deserialize<'a>,
-    T: AsyncImporter<State = S, Options = O> + TypeUuid + Send + Sync,
+    T: AsyncImporter<State = S, Options = O> + TypeUuidDynamic + Send + Sync,
 {
     fn import_boxed<'a>(
         &'a self,

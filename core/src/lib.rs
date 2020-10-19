@@ -14,8 +14,8 @@ pub mod importer_context;
 pub mod utils;
 
 /// A universally unique identifier for an asset.
-/// An asset can be an instance of any Rust type that implements
-/// [`type_uuid::TypeUuid`] + [serde::Serialize] + [Send].
+/// An asset can be a value of any Rust type that implements
+/// [`TypeUuidDynamic`] + [serde::Serialize] + [Send].
 ///
 /// If using a human-readable format, serializes to a hyphenated UUID format and deserializes from
 /// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
@@ -88,7 +88,7 @@ impl<'de> Deserialize<'de> for AssetUuid {
     }
 }
 
-/// UUID of an asset's Rust type. Produced by [`type_uuid::TypeUuid::UUID`].
+/// UUID of an asset's Rust type. Produced by [`TypeUuidDynamic::uuid`].
 ///
 /// If using a human-readable format, serializes to a hyphenated UUID format and deserializes from
 /// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
@@ -230,3 +230,17 @@ pub struct ArtifactMetadata {
     /// The UUID of the artifact's Rust type
     pub type_id: AssetTypeId,
 }
+
+/// Provides a unique 16-byte ID for a value's type.
+pub trait TypeUuidDynamic {
+    fn uuid(&self) -> [u8; 16];
+}
+
+#[cfg(feature = "type_uuid")]
+impl<T: type_uuid::TypeUuidDynamic> TypeUuidDynamic for T {
+    fn uuid(&self) -> [u8; 16] {
+        <Self as type_uuid::TypeUuidDynamic>::uuid(self)
+    }
+}
+#[cfg(feature = "type_uuid")]
+pub use type_uuid;
