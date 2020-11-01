@@ -16,7 +16,7 @@ mod source_pair_import;
 mod watcher;
 
 pub use crate::{
-    daemon::{default_importer_contexts, AssetDaemon, ImporterMap},
+    daemon::{default_importer_contexts, default_importers, AssetDaemon, ImporterMap},
     error::{Error, Result},
 };
 
