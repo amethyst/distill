@@ -14,7 +14,7 @@ use std::{
 };
 
 #[derive(Default)]
-pub(crate) struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
+pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
     pub fn insert(&mut self, ext: &str, importer: Box<dyn BoxedImporter>) {
@@ -52,7 +52,7 @@ pub struct AssetDaemon {
     asset_dirs: Vec<PathBuf>,
 }
 
-fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
+pub fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
     vec![atelier_loader::if_handle_enabled!(Box::new(
         atelier_loader::handle::HandleSerdeContextProvider
     ))]
