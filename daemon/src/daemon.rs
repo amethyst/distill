@@ -45,11 +45,11 @@ impl AssetDaemonTables {
 
 const DAEMON_VERSION: u32 = 2;
 pub struct AssetDaemon {
-    db_dir: PathBuf,
-    address: SocketAddr,
-    importers: ImporterMap,
-    importer_contexts: Vec<Box<dyn ImporterContext>>,
-    asset_dirs: Vec<PathBuf>,
+    pub db_dir: PathBuf,
+    pub address: SocketAddr,
+    pub importers: ImporterMap,
+    pub importer_contexts: Vec<Box<dyn ImporterContext>>,
+    pub asset_dirs: Vec<PathBuf>,
 }
 
 pub fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
