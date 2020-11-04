@@ -132,7 +132,7 @@ pub trait AssetStorage {
     ///
     /// * `asset_type_id`: UUID of the asset type.
     /// * `load_handle`: ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset.
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle);
+    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32);
 }
 
 /// Asset loading status.

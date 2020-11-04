@@ -136,7 +136,7 @@ pub trait TypedStorage: Any {
         version: u32,
     ) -> Result<(), Box<dyn Error + Send + 'static>>;
     fn commit_asset_version(&mut self, handle: LoadHandle, version: u32);
-    fn free(&mut self, handle: LoadHandle);
+    fn free(&mut self, handle: LoadHandle, version: u32);
 }
 
 impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for Storage<A> {
@@ -179,8 +179,17 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         );
         log::info!("Commit {:?}", load_handle);
     }
-    fn free(&mut self, load_handle: LoadHandle) {
-        self.assets.remove(&load_handle);
+    fn free(&mut self, load_handle: LoadHandle, version: u32) {
+        if let Some(asset) = self.uncommitted.get(&load_handle) {
+            if asset.version == version {
+                self.uncommitted.remove(&load_handle);
+            }
+        }
+        if let Some(asset) = self.assets.get(&load_handle) {
+            if asset.version == version {
+                self.assets.remove(&load_handle);
+            }
+        }
         log::info!("Free {:?}", load_handle);
     }
 }
@@ -214,11 +223,11 @@ impl AssetStorage for GenericAssetStorage {
             .expect("unknown asset type")
             .commit_asset_version(load_handle, version)
     }
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
+    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
         self.storage
             .borrow_mut()
             .get_mut(asset_type_id)
             .expect("unknown asset type")
-            .free(load_handle)
+            .free(load_handle, version)
     }
 }

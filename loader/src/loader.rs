@@ -85,8 +85,6 @@ struct AssetLoad {
     last_state_change_instant: std::time::Instant,
     refs: AtomicUsize,
     versions: Vec<AssetVersionLoad>,
-    requested_version: Option<u32>,
-    loaded_version: Option<u32>,
     version_counter: u32,
     pending_reload: bool,
 }
@@ -140,7 +138,6 @@ struct IORequestChannels {
 
 struct AssetLoadResult {
     new_state: LoadState,
-    new_version: Option<u32>,
     asset_type: Option<AssetTypeId>,
 }
 
@@ -148,7 +145,6 @@ impl AssetLoadResult {
     pub fn from_state(new_state: LoadState) -> Self {
         Self {
             new_state,
-            new_version: None,
             asset_type: None,
         }
     }
@@ -206,8 +202,6 @@ impl LoaderState {
                     version_counter: 1,
                     last_state_change_instant: std::time::Instant::now(),
                     refs: AtomicUsize::new(0),
-                    requested_version: None,
-                    loaded_version: None,
                     pending_reload: false,
                 },
             );
@@ -279,26 +273,28 @@ impl LoaderState {
             let has_refs = load.refs.load(Ordering::Relaxed) > 0;
             if !has_refs && load.versions.is_empty() {
                 to_remove.push(key);
-            } else if has_refs && load.pending_reload {
-                // Make sure we are not already loading something before starting a load of a new version
-                if load
-                    .versions
-                    .iter()
-                    .all(|v| matches!(v.state, LoadState::Loaded))
-                {
-                    load.version_counter += 1;
-                    let new_version = load.version_counter;
-                    load.versions.push(AssetVersionLoad {
-                        asset_type: None,
-                        metadata: None,
-                        // The assets are not auto_commit for reloads to ensure all assets in a
-                        // changeset are made visible together, atomically
-                        auto_commit: false,
-                        state: LoadState::None,
-                        version: new_version,
-                    });
-                }
             } else {
+                if has_refs && load.pending_reload {
+                    // Make sure we are not already loading something before starting a load of a new version
+                    if load
+                        .versions
+                        .iter()
+                        .all(|v| matches!(v.state, LoadState::Loaded))
+                    {
+                        load.version_counter += 1;
+                        let new_version = load.version_counter;
+                        load.versions.push(AssetVersionLoad {
+                            asset_type: None,
+                            metadata: None,
+                            // The assets are not auto_commit for reloads to ensure all assets in a
+                            // changeset are made visible together, atomically
+                            auto_commit: false,
+                            state: LoadState::None,
+                            version: new_version,
+                        });
+                        load.pending_reload = false;
+                    }
+                }
                 let last_state_change_instant = load.last_state_change_instant;
                 let mut versions = load.versions.clone();
                 // make sure we drop the lock before we start processing the state
@@ -306,20 +302,24 @@ impl LoaderState {
                 let mut state_change = false;
                 let mut log_old_state = None;
                 let mut log_new_state = None;
-                let num_versions = versions.len();
+                let newest_version = versions.iter().map(|v| v.version).max().unwrap_or(0);
                 for version_load in &mut versions {
                     let new_state = match version_load.state {
                         LoadState::None if has_refs => {
-                            if version_load.metadata.is_some() {
+                            // Remove the version if there's a newer one loading or loaded.
+                            if newest_version > version_load.version {
+                                versions_to_remove.push(version_load.version);
+                                LoadState::None
+                            } else if version_load.metadata.is_some() {
                                 LoadState::RequestDependencies
                             } else {
                                 LoadState::WaitingForMetadata
                             }
                         }
                         LoadState::None => {
-                            // Remove the version only if it's not the only one.
+                            // Remove the version only if there's a newer one.
                             // TODO: reason about the lifetime of metadata in version loads for dependencies, weak handles
-                            if num_versions > 1 {
+                            if newest_version > version_load.version {
                                 versions_to_remove.push(version_load.version);
                             }
                             LoadState::None
@@ -390,19 +390,8 @@ impl LoaderState {
                             }
                         }
                         LoadState::UnloadRequested => {
-                            {
-                                let mut entry = self.load_states.get_mut(&key).unwrap();
-                                let (key, value) = entry.pair_mut();
-                                if let Some(asset_type) = version_load.asset_type.take() {
-                                    asset_storage.free(&asset_type, *key);
-                                    let version = version_load.version;
-                                    if value.requested_version == Some(version) {
-                                        value.requested_version = None;
-                                    }
-                                    if value.loaded_version == Some(version) {
-                                        value.loaded_version = None;
-                                    }
-                                }
+                            if let Some(asset_type) = version_load.asset_type.take() {
+                                asset_storage.free(&asset_type, key, version_load.version);
                             }
 
                             if let Some(asset_metadata) = version_load.metadata.as_ref() {
@@ -458,7 +447,7 @@ impl LoaderState {
                         .duration_since(last_state_change_instant)
                         .as_secs_f32();
                     log::trace!(
-                        "process_load_states Key: {:?} Old state: {:?} Time in state: {}",
+                        "process_load_states Key: {:?} State: {:?} Time in state: {}",
                         key,
                         entry
                             .value()
@@ -620,7 +609,6 @@ impl LoaderState {
                         AssetLoadResult {
                             asset_type: Some(artifact_type),
                             new_state: LoadState::LoadingAsset,
-                            new_version: Some(response.2),
                         }
                     }
                 }
@@ -644,9 +632,6 @@ impl LoaderState {
             version_load.state = load_result.new_state;
             if let Some(asset_type) = load_result.asset_type {
                 version_load.asset_type = Some(asset_type);
-            }
-            if let Some(version) = load_result.new_version {
-                load.requested_version = Some(version);
             }
         }
         let mut assets_to_request = Vec::new();
@@ -691,7 +676,6 @@ impl LoaderState {
                         .expect("loade op completed but version not found in load");
                     if load_version.auto_commit {
                         commit_asset(handle, load.value_mut(), version, asset_storage);
-                        load.loaded_version = Some(version);
                     } else {
                         load_version.state = LoadState::LoadedUncommitted;
                     }
@@ -724,10 +708,9 @@ impl LoaderState {
                                 .map(|load| (load_handle, load))
                         })
                         .map(|(load_handle, load)| {
-                            load.requested_version.map(|version| (load_handle, version))
-                        })
-                        .unwrap_or(None);
-                    if let Some((handle, current_version)) = current_version {
+                            (load_handle, load.versions.iter().map(|v| v.version).max())
+                        });
+                    if let Some((handle, Some(current_version))) = current_version {
                         let mut load = self
                             .load_states
                             .get_mut(&handle)
@@ -750,19 +733,20 @@ impl LoaderState {
                         // The reload is considered finished if we have a loaded asset with a version
                         // that is higher than the version observed when the reload was requested
                         load.versions.iter().any(|v| {
-                            matches!(v.state, LoadState::Loaded)
-                                && load.requested_version.unwrap() > reload.version_before
+                            matches!(v.state, LoadState::Loaded | LoadState::LoadedUncommitted)
+                                && v.version > reload.version_before
                         })
                     })
                     // A pending reload for something that is not supposed to be loaded is considered finished.
                     // The asset could have been unloaded by being unreferenced.
                     .unwrap_or(true)
             });
+            log::trace!("reload unfinished");
             if is_finished {
-                self.pending_reloads.iter().for_each(|reload| {
+                for reload in &self.pending_reloads {
                     if let Some((load_handle, mut load)) = self
                         .uuid_to_load
-                        .get(&reload.asset_id)
+                        .get_mut(&reload.asset_id)
                         .as_ref()
                         .and_then(|load_handle| {
                             self.load_states
@@ -773,11 +757,10 @@ impl LoaderState {
                         if let Some(version_to_commit) = load
                             .versions
                             .iter()
-                            .find(|v| {
-                                matches!(v.state, LoadState::Loaded | LoadState::LoadedUncommitted)
-                            })
+                            .find(|v| matches!(v.state, LoadState::LoadedUncommitted))
                             .map(|v| v.version)
                         {
+                            log::trace!("committing version");
                             // Commit reloaded asset
                             commit_asset(
                                 **load_handle,
@@ -787,7 +770,7 @@ impl LoaderState {
                             );
                         }
                     }
-                });
+                }
                 self.pending_reloads.clear();
             }
         }
@@ -972,11 +955,7 @@ impl Loader {
             load
         };
         if let Some(load) = self.data.load_states.get(&load) {
-            let version = if let Some(loaded_version) = load.loaded_version {
-                load.versions.iter().find(|v| v.version == loaded_version)
-            } else {
-                load.versions.first()
-            };
+            let version = load.versions.iter().max_by_key(|v| v.version);
             version
                 .map(|v| match v.state {
                     LoadState::None => {
@@ -1180,7 +1159,7 @@ mod tests {
             state.commit_version = Some(version);
             state.load_version = None;
         }
-        fn free(&self, _asset_type: &AssetTypeId, loader_handle: LoadHandle) {
+        fn free(&self, _asset_type: &AssetTypeId, loader_handle: LoadHandle, _version: u32) {
             println!("free asset {:?}", loader_handle);
             self.map.write().unwrap().remove(&loader_handle);
         }

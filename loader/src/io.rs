@@ -7,26 +7,11 @@ use crate::{loader::LoaderState, storage::IndirectIdentifier, LoadHandle, Result
 
 /// Provides [`Loader`](crate::loader::Loader) with data.
 pub trait LoaderIO: Send + Sync {
-    fn get_asset_metadata_with_dependencies(
-        &mut self,
-        request: MetadataRequest,
-    );
-    fn get_asset_candidates(
-        &mut self,
-        requests: Vec<ResolveRequest>,
-    );
-    fn get_artifacts(
-        &mut self,
-        requests: Vec<DataRequest>,
-    );
-    fn tick(
-        &mut self,
-        loader: &mut LoaderState,
-    );
-    fn with_runtime(
-        &self,
-        f: &mut dyn FnMut(&mut tokio::runtime::Runtime),
-    );
+    fn get_asset_metadata_with_dependencies(&mut self, request: MetadataRequest);
+    fn get_asset_candidates(&mut self, requests: Vec<ResolveRequest>);
+    fn get_artifacts(&mut self, requests: Vec<DataRequest>);
+    fn tick(&mut self, loader: &mut LoaderState);
+    fn with_runtime(&self, f: &mut dyn FnMut(&mut tokio::runtime::Runtime));
 }
 
 /// A request for an asset artifact's data.
@@ -43,20 +28,14 @@ impl DataRequest {
     pub fn artifact_id(&self) -> ArtifactId {
         self.artifact_id
     }
-    pub fn error<T: std::error::Error + Send + 'static>(
-        mut self,
-        err: T,
-    ) {
+    pub fn error<T: std::error::Error + Send + 'static>(mut self, err: T) {
         if let Some(request_data) = self.request_data.take() {
             let _ = self
                 .tx
                 .send((Err(Box::new(err)), request_data.0, request_data.1));
         }
     }
-    pub fn complete(
-        mut self,
-        data: Vec<u8>,
-    ) {
+    pub fn complete(mut self, data: Vec<u8>) {
         if let Some(request_data) = self.request_data.take() {
             let _ = self.tx.send((Ok(data), request_data.0, request_data.1));
         }
@@ -88,18 +67,12 @@ impl ResolveRequest {
     pub fn identifier(&self) -> &IndirectIdentifier {
         self.id.as_ref().map(|v| &v.0).unwrap()
     }
-    pub fn error<T: std::error::Error + Send + 'static>(
-        mut self,
-        err: T,
-    ) {
+    pub fn error<T: std::error::Error + Send + 'static>(mut self, err: T) {
         if let Some(id) = self.id.take() {
             let _ = self.tx.send((Err(Box::new(err)), id.0, id.1));
         }
     }
-    pub fn complete(
-        mut self,
-        data: Vec<(PathBuf, Vec<AssetMetadata>)>,
-    ) {
+    pub fn complete(mut self, data: Vec<(PathBuf, Vec<AssetMetadata>)>) {
         if let Some(id) = self.id.take() {
             let _ = self.tx.send((Ok(data), id.0, id.1));
         }
@@ -115,10 +88,7 @@ impl Drop for ResolveRequest {
 #[derive(Debug)]
 struct RequestDropError;
 impl std::fmt::Display for RequestDropError {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("request dropped")
     }
 }
@@ -137,18 +107,12 @@ impl MetadataRequest {
     pub fn requested_assets(&self) -> impl Iterator<Item = &AssetUuid> {
         self.requests.as_ref().unwrap().keys()
     }
-    pub fn error<T: std::error::Error + Send + 'static>(
-        mut self,
-        err: T,
-    ) {
+    pub fn error<T: std::error::Error + Send + 'static>(mut self, err: T) {
         if let Some(requests) = self.requests.take() {
             let _ = self.tx.send((Err(Box::new(err)), requests));
         }
     }
-    pub fn complete(
-        mut self,
-        metadata: Vec<ArtifactMetadata>,
-    ) {
+    pub fn complete(mut self, metadata: Vec<ArtifactMetadata>) {
         if let Some(requests) = self.requests.take() {
             let _ = self.tx.send((Ok(metadata), requests));
         }
