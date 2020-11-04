@@ -693,6 +693,7 @@ impl LoaderState {
             // if we have no pending hot reloads, poll for new changes
             let mut changes = HashSet::new();
             while let Ok(asset) = self.invalidate_rx.try_recv() {
+                log::trace!("process_asset_changes invalidate_rx asset: {:?}", asset);
                 changes.insert(asset);
             }
             if !changes.is_empty() {
