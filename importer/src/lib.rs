@@ -217,3 +217,8 @@ macro_rules! if_serde_importers {
 macro_rules! if_serde_importers {
     ($($tt:tt)*) => {};
 }
+
+/// Convenience function for reporting an error in an `Importer`
+pub fn import_error<T: Into<String>>(text: String) -> Box<dyn std::error::Error + Send + 'static>{
+    Box::new(Error::Custom(text))
+}
