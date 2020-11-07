@@ -193,7 +193,8 @@ impl Default for CompressionType {
 
 /// Serializable metadata for an asset.
 /// Stored in .meta files and metadata DB.
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, Default)]
+#[derive(Debug, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AssetMetadata {
     /// UUID for the asset to uniquely identify it
     pub id: AssetUuid,
@@ -206,12 +207,14 @@ pub struct AssetMetadata {
 }
 
 /// 64-bit hash of the inputs that would produce a given asset artifact
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Default)]
+#[derive(Debug, Copy, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ArtifactId(pub u64);
 
 /// Serializable metadata for an artifact.
 /// Stored in .meta files and metadata DB.
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, Default)]
+#[derive(Debug, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ArtifactMetadata {
     /// Hash that identifies this artifact
     pub id: ArtifactId,
