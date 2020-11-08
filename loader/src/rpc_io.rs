@@ -348,9 +348,9 @@ impl LoaderIO for RpcIO {
         runtime.check_asset_changes(loader);
     }
 
-    fn with_runtime(&self, f: &mut dyn FnMut(&mut Runtime)) {
-        let mut runtime = self.runtime.lock().unwrap();
-        f(&mut runtime.runtime)
+    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Handle)) {
+        let runtime = self.runtime.lock().unwrap();
+        f(&runtime.runtime.handle())
     }
 }
 

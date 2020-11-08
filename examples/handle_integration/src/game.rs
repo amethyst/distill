@@ -1,4 +1,5 @@
 use crate::{custom_asset::BigPerf, image::Image, storage::GenericAssetStorage};
+use atelier_assets::core::{self as atelier_core, asset_uuid};
 use atelier_assets::loader::{
     crossbeam_channel::{unbounded, Receiver},
     handle::{self, AssetHandle, Handle, RefOp, WeakHandle},
@@ -22,7 +23,10 @@ pub fn run() {
     let (tx, rx) = unbounded();
     let tx = Arc::new(tx);
 
-    let mut loader = Loader::new(Box::new(RpcIO::default()));
+    // let mut loader = Loader::new(Box::new(RpcIO::default()));
+    let file = std::fs::File::open(std::path::PathBuf::from("my.pack")).unwrap();
+    let file_reader = atelier_assets::loader::packfile_io::PackfileReader::new(file).unwrap();
+    let mut loader = Loader::new(Box::new(file_reader));
     let game = Game {
         storage: GenericAssetStorage::new(tx.clone(), loader.indirection_table()),
     };
