@@ -1,5 +1,5 @@
 use atelier_schema::{
-    data,
+    data, pack,
     service::asset_hub::{self, snapshot::Client as Snapshot},
 };
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
@@ -8,7 +8,7 @@ use capnp::message::ReaderOptions;
 
 use async_trait::async_trait;
 use futures_util::AsyncReadExt;
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
 use tokio::runtime::Runtime;
 
 mod shell;
@@ -96,6 +96,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut shell = Shell::new(ctx);
 
+    shell.register_command("pack", CmdPack);
     shell.register_command("show_all", CmdShowAll);
     shell.register_command("get", CmdGet);
     shell.register_command("build", CmdBuild);
@@ -103,6 +104,76 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     shell.register_command("assets_for_path", CmdAssetsForPath);
 
     shell.run_repl().await
+}
+
+struct CmdPack;
+#[async_trait(?Send)]
+impl Command<Context> for CmdPack {
+    fn desc(&self) -> &str {
+        "<path> - Pack artifacts into a file"
+    }
+
+    fn nargs(&self) -> usize {
+        1
+    }
+
+    async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
+        let out_file = std::fs::File::create(PathBuf::from(
+            args.get(0).expect("Expected file output path"),
+        ))?;
+        let start = Instant::now();
+        let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
+        let response = request.send().promise.await?;
+        let response = response.get()?;
+        let total_time = Instant::now().duration_since(start);
+        let assets = response.get_assets()?;
+        let mut message = capnp::message::Builder::new_default();
+        let packfile_builder = message.init_root::<pack::pack_file::Builder>();
+        let mut num_valid_entries = 0;
+        for asset in assets {
+            if matches!(
+                asset.get_latest_artifact().which()?,
+                data::asset_metadata::latest_artifact::Artifact(Ok(_))
+            ) {
+                num_valid_entries += 1;
+            }
+        }
+        let mut packfile_entries = packfile_builder.init_entries(num_valid_entries);
+        let mut i = 0;
+        for asset in assets {
+            if let data::asset_metadata::latest_artifact::Artifact(Ok(_)) =
+                asset.get_latest_artifact().which()?
+            {
+                let path_response = {
+                    let mut path_request = ctx.snapshot.borrow().get_path_for_assets_request();
+                    let req_list = path_request.get().init_assets(1);
+                    req_list.set_with_caveats(0, asset.get_id()?)?;
+                    path_request.send().promise.await?
+                };
+                let path = path_response.get()?.get_paths()?.get(0);
+                let artifact_response = {
+                    let mut artifact_request = ctx.snapshot.borrow().get_import_artifacts_request();
+                    let req_list = artifact_request.get().init_assets(1);
+                    req_list.set_with_caveats(0, asset.get_id()?)?;
+                    artifact_request.send().promise.await?
+                };
+                let artifact = artifact_response.get()?.get_artifacts()?.get(0);
+                let mut packfile_entry = packfile_entries.reborrow().get(i);
+                packfile_entry.set_asset_metadata(asset)?;
+                packfile_entry.set_artifact(artifact)?;
+                packfile_entry.set_path(path.get_path()?);
+                println!("path {:?}", std::str::from_utf8(path.get_path()?).unwrap());
+                i += 1;
+            }
+        }
+        capnp::serialize::write_message(out_file, &message)?;
+        println!(
+            "packed {} assets in {}\r",
+            num_valid_entries,
+            total_time.as_secs_f32(),
+        );
+        Ok(())
+    }
 }
 
 struct CmdShowAll;

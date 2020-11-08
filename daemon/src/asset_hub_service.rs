@@ -339,7 +339,17 @@ impl AssetHubSnapshotImpl {
             let asset_uuid = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
             if let Some(path) = path {
-                asset_paths.push((id, path));
+                for dir in ctx.file_tracker.get_watch_dirs() {
+                    let canonicalized_dir = crate::watcher::canonicalize_path(&dir);
+                    if path.starts_with(&canonicalized_dir) {
+                        asset_paths.push((
+                            id,
+                            path.strip_prefix(canonicalized_dir)
+                                .expect("error stripping prefix")
+                                .to_path_buf(),
+                        ));
+                    }
+                }
             }
         }
         let mut results_builder = results.get();

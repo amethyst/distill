@@ -1,7 +1,6 @@
 mod schemas;
 use atelier_core::{utils::make_array, ArtifactId, ArtifactMetadata, AssetMetadata, AssetRef};
-pub use schemas::data_capnp;
-pub use schemas::service_capnp;
+pub use schemas::{data_capnp, pack_capnp, service_capnp};
 use std::path::PathBuf;
 impl ::std::fmt::Debug for data_capnp::FileState {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
@@ -35,7 +34,7 @@ impl From<data_capnp::CompressionType> for atelier_core::CompressionType {
     }
 }
 
-pub use crate::{data_capnp as data, service_capnp as service};
+pub use crate::{data_capnp as data, pack_capnp as pack, service_capnp as service};
 
 fn set_assetref_list(
     asset_ids: &[AssetRef],

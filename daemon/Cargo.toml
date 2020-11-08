@@ -19,11 +19,27 @@ notify = "4.0.0"
 lmdb-rkv = "0.14"
 rayon = { version = "1.3", optional = true }
 log = { version = "0.4", features = ["serde", "std"] }
-tokio = { version = "0.2", features = ["tcp", "fs", "sync", "time", "rt-core", "rt-util", "stream", "rt-threaded", "io-util"] }
+tokio = { version = "0.2", features = [
+    "tcp",
+    "fs",
+    "sync",
+    "time",
+    "rt-core",
+    "rt-util",
+    "stream",
+    "rt-threaded",
+    "io-util"
+] }
 tokio-util = { version = "0.3", features = ["compat"] }
-futures = { version = "0.3", default-features = false, features = ["std", "async-await", "executor"] }
+futures = { version = "0.3", default-features = false, features = [
+    "std",
+    "async-await",
+    "executor"
+] }
 futures-util = { version = "0.3", default-features = false }
-futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
+futures-core = { version = "0.3", default-features = false, features = [
+    "alloc"
+] }
 futures-io = { version = "0.3", default-features = false }
 futures-executor = { version = "0.3", default-features = false }
 futures-channel = { version = "0.3", default-features = false }
@@ -45,7 +61,7 @@ uuid = { version = "0.8", features = ["v4"] }
 tempfile = "3"
 
 [features]
-parallel_hash = [ "rayon" ]
-pretty_log = [ "chrono", "fern" ]
+parallel_hash = ["rayon"]
+pretty_log = ["chrono", "fern"]
 serde_importers = []
 "atelier_importer/serde_importers" = ["serde_importers"]

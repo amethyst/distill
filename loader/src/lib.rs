@@ -11,6 +11,8 @@ pub mod loader;
 /// to load and hot reload assets. Intended for development workflows.
 #[cfg(feature = "rpc_io")]
 pub mod rpc_io;
+#[cfg(feature = "packfile_io")]
+pub mod packfile_io;
 /// [`AssetStorage`](crate::storage::AssetStorage) is implemented by engines to store loaded asset data.
 pub mod storage;
 

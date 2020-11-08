@@ -3,4 +3,7 @@
 pub mod data_capnp;
 #[allow(clippy::all)]
 #[allow(dead_code)]
+pub mod pack_capnp;
+#[allow(clippy::all)]
+#[allow(dead_code)]
 pub mod service_capnp;
