@@ -1,4 +1,7 @@
-use crate::{AssetRef, AssetUuid, LoadHandle, LoadStatus, Loader, LoaderInfoProvider};
+use crate::{
+    storage::{LoadStatus, LoaderInfoProvider},
+    AssetRef, AssetUuid, LoadHandle, Loader,
+};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures_core::future::{BoxFuture, Future};
 use serde::{
@@ -25,7 +28,7 @@ pub enum RefOp {
     IncreaseUuid(AssetUuid),
 }
 
-pub fn process_ref_ops<T: Loader>(loader: &T, rx: &Receiver<RefOp>) {
+pub fn process_ref_ops(loader: &Loader, rx: &Receiver<RefOp>) {
     loop {
         match rx.try_recv() {
             Err(_) => break,
@@ -404,7 +407,7 @@ impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeCon
     }
 }
 
-// Register this context with atelier-assets' Daemon to add serde support for Handle.
+/// Register this context with AssetDaemon to add serde support for Handle.
 pub struct HandleSerdeContextProvider;
 impl atelier_core::importer_context::ImporterContext for HandleSerdeContextProvider {
     fn handle(&self) -> Box<dyn atelier_core::importer_context::ImporterContextHandle> {
@@ -565,6 +568,8 @@ impl<'de> Visitor<'de> for AssetRefVisitor {
     }
 }
 
+/// Implementors of [`crate::storage::AssetStorage`] can implement this trait to enable convenience
+/// functions on the common [`AssetHandle`] trait, which is implemented by all handle types.
 pub trait TypedAssetStorage<A> {
     /// Returns the asset for the given handle, or `None` if has not completed loading.
     ///
@@ -616,7 +621,7 @@ pub trait AssetHandle {
     /// # Type Parameters
     ///
     /// * `L`: Asset loader type.
-    fn load_status<L: Loader>(&self, loader: &L) -> LoadStatus {
+    fn load_status(&self, loader: &Loader) -> LoadStatus {
         loader.get_load_status(self.load_handle())
     }
 

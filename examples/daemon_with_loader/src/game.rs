@@ -1,9 +1,21 @@
 use crate::image::Image;
-use atelier_loader::{
-    asset_uuid, rpc_loader::RpcLoader, AssetLoadOp, AssetStorage, AssetTypeId, LoadHandle,
-    LoadStatus, Loader, LoaderInfoProvider, TypeUuid,
+use atelier_assets::{
+    core::{self as atelier_core, asset_uuid},
+    loader::{
+        loader::Loader,
+        storage::{
+            AssetLoadOp, AssetStorage, DefaultIndirectionResolver, IndirectionTable, LoadHandle,
+            LoadStatus, LoaderInfoProvider,
+        },
+        AssetTypeId, RpcIO,
+    },
 };
-use std::{cell::RefCell, collections::HashMap, error::Error};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+    error::Error,
+};
+use type_uuid::TypeUuid;
 
 #[allow(dead_code)]
 struct AssetState<A> {
@@ -13,12 +25,30 @@ struct AssetState<A> {
 pub struct Storage<A> {
     assets: RefCell<HashMap<LoadHandle, AssetState<A>>>,
     uncommitted: RefCell<HashMap<LoadHandle, AssetState<A>>>,
+    indirection_table: IndirectionTable,
 }
 impl<A> Storage<A> {
-    fn new() -> Self {
+    fn new(indirection_table: IndirectionTable) -> Self {
         Self {
             assets: RefCell::new(HashMap::new()),
             uncommitted: RefCell::new(HashMap::new()),
+            indirection_table,
+        }
+    }
+    pub fn get_asset(&self, handle: LoadHandle) -> Option<Ref<'_, A>> {
+        let handle = if handle.is_indirect() {
+            self.indirection_table.resolve(handle)?
+        } else {
+            handle
+        };
+        let borrow = self.assets.borrow();
+        let asset = borrow.get(&handle);
+        if asset.is_some() {
+            Some(Ref::map(borrow, |a| {
+                &a.get(&handle).as_ref().unwrap().asset
+            }))
+        } else {
+            None
         }
     }
 }
@@ -28,16 +58,16 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         &self,
         _loader_info: &dyn LoaderInfoProvider,
         _asset_type_id: &AssetTypeId,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + 'static>> {
         let mut uncommitted = self.uncommitted.borrow_mut();
         uncommitted.insert(
             load_handle,
             AssetState {
-                asset: bincode::deserialize::<A>(data)?,
+                asset: bincode::deserialize::<A>(&data).expect("failed to deserialize asset"),
                 version,
             },
         );
@@ -67,9 +97,19 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         );
         log::info!("Commit {:?}", load_handle);
     }
-    fn free(&self, _asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
+    fn free(&self, _asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
+        let mut uncommitted = self.uncommitted.borrow_mut();
+        if let Some(asset) = uncommitted.get(&load_handle) {
+            if asset.version == version {
+                uncommitted.remove(&load_handle);
+            }
+        }
         let mut committed = self.assets.borrow_mut();
-        committed.remove(&load_handle);
+        if let Some(asset) = committed.get(&load_handle) {
+            if asset.version == version {
+                committed.remove(&load_handle);
+            }
+        }
         log::info!("Free {:?}", load_handle);
     }
 }
@@ -83,11 +123,11 @@ impl AssetStorage for Game {
         &self,
         loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + 'static>> {
         self.storage
             .get(asset_type_id)
             .expect("unknown asset type")
@@ -111,11 +151,11 @@ impl AssetStorage for Game {
             .expect("unknown asset type")
             .commit_asset_version(asset_type, load_handle, version)
     }
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
+    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
         self.storage
             .get(asset_type_id)
             .expect("unknown asset type")
-            .free(asset_type_id, load_handle)
+            .free(asset_type_id, load_handle, version)
     }
 }
 
@@ -123,14 +163,18 @@ pub fn run() {
     let mut game = Game {
         storage: HashMap::new(),
     };
+    let mut loader = Loader::new(Box::new(RpcIO::default()));
     // Create storage for Image type
-    game.storage
-        .insert(AssetTypeId(Image::UUID), Box::new(Storage::<Image>::new()));
+    game.storage.insert(
+        AssetTypeId(Image::UUID),
+        Box::new(Storage::<Image>::new(loader.indirection_table())),
+    );
 
-    let mut loader = RpcLoader::default();
     let handle = loader.add_ref(asset_uuid!("6c5ae1ad-ae30-471b-985b-7d017265f19f"));
     loop {
-        loader.process(&game).expect("failed to process loader");
+        loader
+            .process(&game, &DefaultIndirectionResolver)
+            .expect("failed to process loader");
         if let LoadStatus::Loaded = loader.get_load_status(handle) {
             break;
         }
@@ -139,7 +183,9 @@ pub fn run() {
     // Integrate with atelier_loader::handle for automatic reference counting!
     loader.remove_ref(handle);
     loop {
-        loader.process(&game).expect("failed to process loader");
+        loader
+            .process(&game, &DefaultIndirectionResolver)
+            .expect("failed to process loader");
         if let LoadStatus::NotRequested = loader.get_load_status(handle) {
             break;
         }

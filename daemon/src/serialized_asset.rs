@@ -1,5 +1,5 @@
 use crate::Result;
-use atelier_core::{AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use atelier_core::{ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{ArtifactMetadata, SerdeObj, SerializedAsset};
 
 pub fn create(
@@ -24,8 +24,8 @@ pub fn create(
 
     Ok(SerializedAsset {
         metadata: ArtifactMetadata {
-            id,
-            hash,
+            id: ArtifactId(hash),
+            asset_id: id,
             build_deps,
             load_deps,
             compression,

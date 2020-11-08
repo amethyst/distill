@@ -14,8 +14,8 @@ pub mod importer_context;
 pub mod utils;
 
 /// A universally unique identifier for an asset.
-/// An asset can be an instance of any Rust type that implements
-/// [type_uuid::TypeUuid] + [serde::Serialize] + [Send].
+/// An asset can be a value of any Rust type that implements
+/// [`TypeUuidDynamic`] + [serde::Serialize] + [Send].
 ///
 /// If using a human-readable format, serializes to a hyphenated UUID format and deserializes from
 /// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
@@ -88,7 +88,7 @@ impl<'de> Deserialize<'de> for AssetUuid {
     }
 }
 
-/// UUID of an asset's Rust type. Produced by [type_uuid::TypeUuid::UUID].
+/// UUID of an asset's Rust type. Produced by [`TypeUuidDynamic::uuid`].
 ///
 /// If using a human-readable format, serializes to a hyphenated UUID format and deserializes from
 /// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
@@ -190,3 +190,60 @@ impl Default for CompressionType {
         Self::None
     }
 }
+
+/// Serializable metadata for an asset.
+/// Stored in .meta files and metadata DB.
+#[derive(Debug, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct AssetMetadata {
+    /// UUID for the asset to uniquely identify it
+    pub id: AssetUuid,
+    /// Search tags are used by asset tooling to search for the imported asset
+    pub search_tags: Vec<(String, Option<String>)>,
+    /// The referenced build pipeline is invoked when a build artifact is requested for the imported asset
+    pub build_pipeline: Option<AssetUuid>,
+    /// The latest artifact produced when importing this asset
+    pub artifact: Option<ArtifactMetadata>,
+}
+
+/// 64-bit hash of the inputs that would produce a given asset artifact
+#[derive(Debug, Copy, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ArtifactId(pub u64);
+
+/// Serializable metadata for an artifact.
+/// Stored in .meta files and metadata DB.
+#[derive(Debug, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ArtifactMetadata {
+    /// Hash that identifies this artifact
+    pub id: ArtifactId,
+    /// UUID for this artifact's asset
+    pub asset_id: AssetUuid,
+    /// Build dependencies will be included in the Builder arguments when building an asset
+    pub build_deps: Vec<AssetRef>,
+    /// Load dependencies are guaranteed to load before this asset by the Loader
+    pub load_deps: Vec<AssetRef>,
+    /// Type of compression used to compress this artifact
+    pub compression: CompressionType,
+    /// Size of this artifact in bytes when compressed
+    pub compressed_size: Option<u64>,
+    /// Size of this artifact in bytes when serialized and uncompressed
+    pub uncompressed_size: Option<u64>,
+    /// The UUID of the artifact's Rust type
+    pub type_id: AssetTypeId,
+}
+
+/// Provides a unique 16-byte ID for a value's type.
+pub trait TypeUuidDynamic {
+    fn uuid(&self) -> [u8; 16];
+}
+
+#[cfg(feature = "type_uuid")]
+impl<T: type_uuid::TypeUuidDynamic> TypeUuidDynamic for T {
+    fn uuid(&self) -> [u8; 16] {
+        <Self as type_uuid::TypeUuidDynamic>::uuid(self)
+    }
+}
+#[cfg(feature = "type_uuid")]
+pub use type_uuid;

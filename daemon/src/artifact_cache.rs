@@ -1,7 +1,7 @@
 use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
 use crate::error::Result;
 use atelier_importer::SerializedAsset;
-use atelier_schema::data::artifact;
+use atelier_schema::{build_artifact_metadata, data::artifact};
 use std::sync::Arc;
 
 pub struct ArtifactCache {
@@ -44,7 +44,7 @@ impl ArtifactCache {
     ) {
         txn.put(
             self.tables.hash_to_artifact,
-            &artifact.metadata.hash.to_le_bytes(),
+            &artifact.metadata.id.0.to_le_bytes(),
             &build_artifact_message(artifact),
         )
         .expect("lmdb: failed to put path ref");
@@ -88,7 +88,7 @@ fn build_artifact_message<T: AsRef<[u8]>>(
     {
         let mut m = value_builder.init_root::<artifact::Builder<'_>>();
         let mut metadata = m.reborrow().init_metadata();
-        crate::asset_hub::build_artifact_metadata(&artifact.metadata, &mut metadata);
+        build_artifact_metadata(&artifact.metadata, &mut metadata);
         let slice: &[u8] = artifact.data.as_ref();
         m.reborrow().set_data(slice);
     }

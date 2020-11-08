@@ -28,6 +28,7 @@ interface AssetHub {
         patchAsset @7 (assetId :D.AssetUuid, assetHash :Data, patch :AssetData) -> (newImportHash :Data);
 
         # these are FileAssetSource specific and should probably be moved to another RPC interface
+        # but on the other hand are useful to have in the same DB snapshot
         getPathForAssets @8 (assets :List(D.AssetUuid)) -> (paths :List(AssetPath));
         getAssetsForPaths @9 (paths :List(Data)) -> (assets :List(PathAssets));
         createFile @10 (path :Data, assets :List(AssetData)) -> (newImportHash :Data);

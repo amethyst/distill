@@ -6,7 +6,6 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-type-uuid = "0.1"
 crossbeam-channel = "0.4"
 
 atelier-core = { path = "../core", version = "0.1.0", features = ["serde-1"] }
@@ -18,8 +17,8 @@ futures-channel = { version = "0.3", default-features = false, features = ["allo
 futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
 capnp = { version = "0.13", optional = true}
 capnp-rpc = { version = "0.13", optional = true }
-log = { version = "0.4", optional = true }
-dashmap = { version = "3.11", optional = true }
+log = { version = "0.4" }
+dashmap = { version = "3" }
 serde = { version = "1.0", features = ["derive"], optional = true}
 uuid = { version = "0.8", optional = true }
 
@@ -30,9 +29,10 @@ uuid = { version = "0.8", features = ["v4"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "0.2", features = ["io-util"] }
 futures-io = { version = "0.3" }
+type-uuid = "0.1"
 
 [features]
-default = ["rpc_loader", "handle"]
-rpc_loader = ["atelier-schema", "tokio", "capnp", "capnp-rpc", "log", "dashmap", "tokio-util", "futures-util"]
+default = ["rpc_io", "handle"]
+rpc_io = ["atelier-schema", "tokio", "capnp", "capnp-rpc", "tokio-util", "futures-util"]
 handle = ["serde", "uuid"]
 asset_uuid_macro = ["atelier-core/asset_uuid_macro"]

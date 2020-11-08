@@ -11,6 +11,7 @@ pub enum Error {
     RonDe(ron::de::Error),
     Boxed(Box<dyn std::error::Error + Send>),
     ExportUnsupported,
+    Custom(String),
 }
 
 impl std::error::Error for Error {
@@ -22,6 +23,7 @@ impl std::error::Error for Error {
             Error::RonDe(ref e) => Some(e),
             Error::Boxed(ref e) => e.source(),
             Error::ExportUnsupported => None,
+            Error::Custom(_) => None,
         }
     }
 }
@@ -35,6 +37,7 @@ impl fmt::Display for Error {
             Error::RonDe(ref e) => e.fmt(f),
             Error::Boxed(ref e) => e.fmt(f),
             Error::ExportUnsupported => write!(f, "{:?}", self),
+            Error::Custom(ref e) => write!(f, "{}", e),
         }
     }
 }
@@ -60,5 +63,17 @@ impl From<ron::de::Error> for Error {
 impl From<Box<dyn std::error::Error + Send>> for Error {
     fn from(err: Box<dyn std::error::Error + Send>) -> Error {
         Error::Boxed(err)
+    }
+}
+
+impl From<String> for Error {
+    fn from(err: String) -> Error {
+        Error::Custom(err)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(err: &str) -> Error {
+        Error::Custom(err.into())
     }
 }

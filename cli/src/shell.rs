@@ -40,6 +40,15 @@ pub struct Shell<C> {
     ctx: C,
 }
 
+#[derive(Debug)]
+struct Exit;
+impl std::error::Error for Exit {}
+impl std::fmt::Display for Exit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "exit")
+    }
+}
+
 impl<C> Shell<C> {
     pub fn new(ctx: C) -> Self {
         Self {
@@ -107,7 +116,9 @@ impl<C> Shell<C> {
                     for (cmd_key, cmd) in commands {
                         println!("  {} {}\r", cmd_key, cmd.desc());
                     }
+                    println!("  quit\r");
                 }
+                Some("exit") | Some("quit") => Err(Exit)?,
                 Some(_) => println!("Unknown command\r"),
                 None => {}
             }
@@ -293,7 +304,13 @@ impl<C> Shell<C> {
                             })),
                         ) => {
                             println!("\r");
-                            self.execute_command(&line).await?;
+                            match self.execute_command(&line).await {
+                                Err(err) if err.downcast_ref::<Exit>().is_some() => {
+                                    break 'repl_loop
+                                }
+                                Err(err) => Err(err)?,
+                                Ok(_) => {}
+                            }
                             history.push(line.trim().to_owned());
                             line.clear();
                             fut_autocomplete = None;

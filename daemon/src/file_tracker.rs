@@ -770,7 +770,7 @@ pub mod tests {
     }
 
     async fn expect_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) -> FileTrackerEvent {
-        let mut timeout = time::delay_for(Duration::from_millis(1000)).fuse();
+        let mut timeout = time::delay_for(Duration::from_millis(5000)).fuse();
         select! {
             evt = rx.next() => {
                 if let Some(evt) = evt {

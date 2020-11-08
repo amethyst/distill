@@ -1,5 +1,7 @@
-use atelier_core::AssetUuid;
-use atelier_importer::{Error, ImportedAsset, Importer, ImporterValue, Result};
+use atelier_assets::{
+    core::AssetUuid,
+    importer::{Error, ImportedAsset, Importer, ImporterValue, Result},
+};
 use image2::{color, ImageBuf};
 use serde::{Deserialize, Serialize};
 use type_uuid::*;

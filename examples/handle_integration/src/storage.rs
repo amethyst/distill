@@ -1,20 +1,24 @@
-use atelier_loader::{
+use atelier_assets::loader::{
     crossbeam_channel::Sender,
     handle::{AssetHandle, RefOp, TypedAssetStorage},
-    AssetLoadOp, AssetStorage, AssetTypeId, LoadHandle, LoaderInfoProvider, TypeUuid,
+    storage::{AssetLoadOp, AssetStorage, IndirectionTable, LoadHandle, LoaderInfoProvider},
+    AssetTypeId,
 };
 use std::{any::Any, cell::RefCell, collections::HashMap, error::Error, sync::Arc};
+use type_uuid::TypeUuid;
 
 pub struct GenericAssetStorage {
     storage: RefCell<HashMap<AssetTypeId, Box<dyn TypedStorage>>>,
     refop_sender: Arc<Sender<RefOp>>,
+    indirection_table: IndirectionTable,
 }
 
 impl GenericAssetStorage {
-    pub fn new(refop_sender: Arc<Sender<RefOp>>) -> Self {
+    pub fn new(refop_sender: Arc<Sender<RefOp>>, indirection_table: IndirectionTable) -> Self {
         Self {
             storage: RefCell::new(HashMap::new()),
             refop_sender,
+            indirection_table,
         }
     }
 
@@ -22,7 +26,10 @@ impl GenericAssetStorage {
         let mut storages = self.storage.borrow_mut();
         storages.insert(
             AssetTypeId(T::UUID),
-            Box::new(Storage::<T>::new(self.refop_sender.clone())),
+            Box::new(Storage::<T>::new(
+                self.refop_sender.clone(),
+                self.indirection_table.clone(),
+            )),
         );
     }
 }
@@ -35,25 +42,40 @@ pub struct Storage<A: TypeUuid> {
     refop_sender: Arc<Sender<RefOp>>,
     assets: HashMap<LoadHandle, AssetState<A>>,
     uncommitted: HashMap<LoadHandle, AssetState<A>>,
+    indirection_table: IndirectionTable,
 }
 impl<A: TypeUuid> Storage<A> {
-    fn new(sender: Arc<Sender<RefOp>>) -> Self {
+    fn new(sender: Arc<Sender<RefOp>>, indirection_table: IndirectionTable) -> Self {
         Self {
             refop_sender: sender,
             assets: HashMap::new(),
             uncommitted: HashMap::new(),
+            indirection_table,
         }
     }
     fn get<T: AssetHandle>(&self, handle: &T) -> Option<&A> {
-        self.assets.get(&handle.load_handle()).map(|a| &a.asset)
+        let handle = if handle.load_handle().is_indirect() {
+            self.indirection_table.resolve(handle.load_handle())?
+        } else {
+            handle.load_handle()
+        };
+        self.assets.get(&handle).map(|a| &a.asset)
     }
     fn get_version<T: AssetHandle>(&self, handle: &T) -> Option<u32> {
-        self.assets.get(&handle.load_handle()).map(|a| a.version)
+        let handle = if handle.load_handle().is_indirect() {
+            self.indirection_table.resolve(handle.load_handle())?
+        } else {
+            handle.load_handle()
+        };
+        self.assets.get(&handle).map(|a| a.version)
     }
     fn get_asset_with_version<T: AssetHandle>(&self, handle: &T) -> Option<(&A, u32)> {
-        self.assets
-            .get(&handle.load_handle())
-            .map(|a| (&a.asset, a.version))
+        let handle = if handle.load_handle().is_indirect() {
+            self.indirection_table.resolve(handle.load_handle())?
+        } else {
+            handle.load_handle()
+        };
+        self.assets.get(&handle).map(|a| (&a.asset, a.version))
     }
 }
 impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A>
@@ -108,13 +130,13 @@ pub trait TypedStorage: Any {
     fn update_asset(
         &mut self,
         loader_info: &dyn LoaderInfoProvider,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>>;
+    ) -> Result<(), Box<dyn Error + Send + 'static>>;
     fn commit_asset_version(&mut self, handle: LoadHandle, version: u32);
-    fn free(&mut self, handle: LoadHandle);
+    fn free(&mut self, handle: LoadHandle, version: u32);
 }
 
 impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for Storage<A> {
@@ -124,17 +146,18 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
     fn update_asset(
         &mut self,
         loader_info: &dyn LoaderInfoProvider,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + 'static>> {
         // To enable automatic serde of Handle, we need to set up a SerdeContext with a RefOp sender
-        let asset = futures_executor::block_on(atelier_loader::handle::SerdeContext::with(
+        let asset = futures_executor::block_on(atelier_assets::loader::handle::SerdeContext::with(
             loader_info,
             (*self.refop_sender).clone(),
-            async { bincode::deserialize::<A>(data) },
-        ))?;
+            async { bincode::deserialize::<A>(&data) },
+        ))
+        .expect("failed to deserialize asset");
         self.uncommitted
             .insert(load_handle, AssetState { asset, version });
         log::info!("{} bytes loaded for {:?}", data.len(), load_handle);
@@ -156,8 +179,17 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         );
         log::info!("Commit {:?}", load_handle);
     }
-    fn free(&mut self, load_handle: LoadHandle) {
-        self.assets.remove(&load_handle);
+    fn free(&mut self, load_handle: LoadHandle, version: u32) {
+        if let Some(asset) = self.uncommitted.get(&load_handle) {
+            if asset.version == version {
+                self.uncommitted.remove(&load_handle);
+            }
+        }
+        if let Some(asset) = self.assets.get(&load_handle) {
+            if asset.version == version {
+                self.assets.remove(&load_handle);
+            }
+        }
         log::info!("Free {:?}", load_handle);
     }
 }
@@ -168,11 +200,11 @@ impl AssetStorage for GenericAssetStorage {
         &self,
         loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
-        data: &[u8],
+        data: Vec<u8>,
         load_handle: LoadHandle,
         load_op: AssetLoadOp,
         version: u32,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + 'static>> {
         self.storage
             .borrow_mut()
             .get_mut(asset_type_id)
@@ -191,11 +223,11 @@ impl AssetStorage for GenericAssetStorage {
             .expect("unknown asset type")
             .commit_asset_version(load_handle, version)
     }
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle) {
+    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
         self.storage
             .borrow_mut()
             .get_mut(asset_type_id)
             .expect("unknown asset type")
-            .free(load_handle)
+            .free(load_handle, version)
     }
 }
