@@ -517,7 +517,7 @@ impl LoaderState {
                             if let LoadState::RequestingMetadata = version_load.state {
                                 version_load.state = LoadState::RequestDependencies
                             }
-                        } else {
+                        } else if request_data.is_some() {
                             load.version_counter += 1;
                             let new_version = load.version_counter;
                             load.versions.push(AssetVersionLoad {
@@ -1086,7 +1086,7 @@ fn commit_asset(
     version_load.state = LoadState::Loaded;
     for version_load in load.versions.iter_mut() {
         if version_load.version != version {
-            assert!(LoadState::Loaded == version_load.state);
+            assert_eq!(LoadState::Loaded, version_load.state);
             version_load.state = LoadState::UnloadRequested;
         }
     }
