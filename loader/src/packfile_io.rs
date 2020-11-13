@@ -32,7 +32,9 @@ impl PackfileMessageReader {
             // We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here
             let mut slice: &[u8] =
                 unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&self.mmap) };
-            capnp::serialize::read_message_from_flat_slice(&mut slice, Default::default())
+            let mut options = capnp::message::ReaderOptions::new();
+            options.traversal_limit_in_words( 1 << 31);
+            capnp::serialize::read_message_from_flat_slice(&mut slice, options)
         })?;
         messge_reader.get_root::<pack_file::Reader<'_>>()
     }
@@ -138,7 +140,7 @@ impl PackfileReaderInner {
         if let Some(indices) = self.assets_by_path.get(request.identifier().path()) {
             let mut metadata = Vec::with_capacity(indices.len());
             // TODO canonicalize the requested path
-            let path = std::path::PathBuf::from(request.identifier().path());
+            let path = std::path::PathBuf::from(request.identifier().path().replace("\\", "/"));
             for idx in indices {
                 let entry = entries.get(*idx);
                 let asset_metadata =
