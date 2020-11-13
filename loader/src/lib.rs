@@ -7,12 +7,12 @@ pub mod handle;
 pub mod io;
 /// [`Loader`] loads assets into engine-implemented [`AssetStorage`](crate::storage::AssetStorage)s.
 pub mod loader;
+#[cfg(feature = "packfile_io")]
+pub mod packfile_io;
 /// *feature:* `rpc_io`. `RpcIO` is an implementation of [`LoaderIO`](crate::io::LoaderIO) which communicates with `atelier_daemon`
 /// to load and hot reload assets. Intended for development workflows.
 #[cfg(feature = "rpc_io")]
 pub mod rpc_io;
-#[cfg(feature = "packfile_io")]
-pub mod packfile_io;
 /// [`AssetStorage`](crate::storage::AssetStorage) is implemented by engines to store loaded asset data.
 pub mod storage;
 
