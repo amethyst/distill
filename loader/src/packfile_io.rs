@@ -33,7 +33,7 @@ impl PackfileMessageReader {
             let mut slice: &[u8] =
                 unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&self.mmap) };
             let mut options = capnp::message::ReaderOptions::new();
-            options.traversal_limit_in_words( 1 << 31);
+            options.traversal_limit_in_words(1 << 31);
             capnp::serialize::read_message_from_flat_slice(&mut slice, options)
         })?;
         messge_reader.get_root::<pack_file::Reader<'_>>()

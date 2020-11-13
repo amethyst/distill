@@ -342,14 +342,14 @@ impl AssetHubSnapshotImpl {
                 for dir in ctx.file_tracker.get_watch_dirs() {
                     let canonicalized_dir = crate::watcher::canonicalize_path(&dir);
                     if path.starts_with(&canonicalized_dir) {
-                        let relative_path = path.strip_prefix(canonicalized_dir)
-                                .expect("error stripping prefix")
-                                .to_path_buf();
-                        let relative_path = crate::watcher::canonicalize_path(&relative_path).to_string_lossy().replace("\\", "/");
-                        asset_paths.push((
-                            id,
-                            relative_path,
-                        ));
+                        let relative_path = path
+                            .strip_prefix(canonicalized_dir)
+                            .expect("error stripping prefix")
+                            .to_path_buf();
+                        let relative_path = crate::watcher::canonicalize_path(&relative_path)
+                            .to_string_lossy()
+                            .replace("\\", "/");
+                        asset_paths.push((id, relative_path));
                     }
                 }
             }
@@ -359,10 +359,7 @@ impl AssetHubSnapshotImpl {
             .reborrow()
             .init_paths(asset_paths.len() as u32);
         for (idx, (asset, path)) in asset_paths.iter().enumerate() {
-            assets
-                .reborrow()
-                .get(idx as u32)
-                .set_path(path.as_bytes());
+            assets.reborrow().get(idx as u32).set_path(path.as_bytes());
             assets
                 .reborrow()
                 .get(idx as u32)
