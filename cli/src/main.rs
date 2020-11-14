@@ -118,18 +118,18 @@ impl Command<Context> for CmdPack {
     }
 
     async fn run(&self, ctx: &Context, args: Vec<&str>) -> DynResult {
-        let out_file = std::fs::File::create(PathBuf::from(
+        let mut out_file = std::fs::File::create(PathBuf::from(
             args.get(0).expect("Expected file output path"),
         ))?;
         let start = Instant::now();
         let request = ctx.snapshot.borrow().get_all_asset_metadata_request();
         let response = request.send().promise.await?;
         let response = response.get()?;
-        let total_time = Instant::now().duration_since(start);
         let assets = response.get_assets()?;
         let mut message = capnp::message::Builder::new_default();
         let packfile_builder = message.init_root::<pack::pack_file::Builder>();
         let mut num_valid_entries = 0;
+        let mut num_bytes = 0;
         for asset in assets {
             if matches!(
                 asset.get_latest_artifact().which()?,
@@ -162,14 +162,18 @@ impl Command<Context> for CmdPack {
                 packfile_entry.set_asset_metadata(asset)?;
                 packfile_entry.set_artifact(artifact)?;
                 packfile_entry.set_path(path.get_path()?);
-                println!("path {:?}", std::str::from_utf8(path.get_path()?).unwrap());
+                num_bytes += artifact.get_data()?.len();
+                // println!("path {:?}", std::str::from_utf8(path.get_path()?).unwrap());
                 i += 1;
             }
         }
-        capnp::serialize::write_message(out_file, &message)?;
+        capnp::serialize::write_message(&mut out_file, &message)?;
+        out_file.sync_all().unwrap();
+        let total_time = Instant::now().duration_since(start);
         println!(
-            "packed {} assets in {}\r",
+            "packed {} assets and {} MB in {}\r",
             num_valid_entries,
+            num_bytes / 1_000_000,
             total_time.as_secs_f32(),
         );
         Ok(())
