@@ -63,5 +63,3 @@ tempfile = "3"
 [features]
 parallel_hash = ["rayon"]
 pretty_log = ["chrono", "fern"]
-serde_importers = []
-"atelier_importer/serde_importers" = ["serde_importers"]
