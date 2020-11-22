@@ -9,7 +9,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::File,
     mem::ManuallyDrop,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use thread_local::ThreadLocal;
 
@@ -198,7 +198,7 @@ impl LoaderIO for PackfileReader {
         });
     }
 
-    fn tick(&mut self, loader: &mut LoaderState) {}
+    fn tick(&mut self, _loader: &mut LoaderState) {}
 
     fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Handle)) {
         let runtime = self.0.runtime.handle();
