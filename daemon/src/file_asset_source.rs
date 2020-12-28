@@ -781,32 +781,26 @@ impl FileAssetSource {
 
         // update or insert metadata for changed source pairs
         for (path, metadata) in changes.iter().filter(|(_, change)| change.is_some()) {
-            let import_state = &metadata.as_ref().unwrap().import_state;
-            if import_state.source_metadata().is_none() {
-                continue;
-            }
-            let metadata = import_state
-                .source_metadata()
-                .unwrap_or_else(|| panic!("Change for {:?} has no SourceMetadata", path));
-            debug!("imported {}", path.to_string_lossy());
+            if let Some(metadata) = metadata.as_ref().unwrap().import_state.source_metadata() {
+                debug!("imported {}", path.to_string_lossy());
 
-            let changed_assets = self
-                .put_metadata(txn, path, &metadata)
-                .expect("Failed to put metadata");
+                let changed_assets = self
+                    .put_metadata(txn, path, &metadata)
+                    .expect("Failed to put metadata");
 
-            for asset in changed_assets {
-                affected_assets.entry(asset).or_insert(None);
-            }
+                for asset in changed_assets {
+                    affected_assets.entry(asset).or_default();
+                }
 
-            for asset in metadata.assets.iter() {
-                affected_assets.insert(asset.id, Some(asset.clone()));
+                for asset in metadata.assets.iter() {
+                    affected_assets.insert(asset.id, Some(asset.clone()));
+                }
             }
         }
 
         // resolve unresolved path AssetRefs into UUIDs before updating asset metadata.
         for (path, metadata) in changes.iter().filter(|(_, change)| change.is_some()) {
-            let metadata = metadata.as_ref().unwrap();
-            for asset in metadata.assets.iter() {
+            for asset in metadata.as_ref().unwrap().assets.iter() {
                 let asset_metadata = affected_assets
                     .get_mut(&asset.metadata.id)
                     .expect("asset in changes but not in affected_assets")
@@ -820,8 +814,12 @@ impl FileAssetSource {
 
         // push removals and updates into AssetHub database
         for (asset, maybe_metadata) in affected_assets.iter_mut() {
-            match self.get_asset_path(txn, &asset) {
+            match self.get_asset_path(txn, asset) {
                 Some(ref path) => {
+                    debug!(
+                        "Processing Metadata Change for file: {}",
+                        path.to_string_lossy()
+                    );
                     let asset_metadata = maybe_metadata
                         .as_mut()
                         .expect("metadata exists in DB but not in hashmap");
@@ -833,21 +831,10 @@ impl FileAssetSource {
                         .import_state
                         .import_hash()
                         .expect("path changed but no import hash present");
-                    // TODO set error state for unresolved path references?
-                    // this code strips out path references for now, but it will probably crash and burn when loading
+
                     if let Some(a) = asset_metadata.artifact.as_mut() {
-                        a.load_deps = a
-                            .load_deps
-                            .iter()
-                            .filter(|x| x.is_uuid())
-                            .cloned()
-                            .collect();
-                        a.build_deps = a
-                            .build_deps
-                            .iter()
-                            .filter(|x| x.is_uuid())
-                            .cloned()
-                            .collect();
+                        a.load_deps = a.load_deps.to_vec();
+                        a.build_deps = a.build_deps.to_vec();
                         a.load_deps.sort_unstable();
                         a.build_deps.sort_unstable();
                         a.id = ArtifactId(utils::calc_import_artifact_hash(

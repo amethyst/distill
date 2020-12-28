@@ -179,9 +179,11 @@ impl AssetHub {
         let existing_metadata: Option<MessageReader<'_, asset_metadata::Owned>> =
             txn.get(self.tables.asset_metadata, &metadata.id)?;
         let new_metadata = build_asset_metadata_message::<&[u8; 8]>(&metadata, source);
+
         let mut deps_to_delete = Vec::new();
         let mut deps_to_add = Vec::new();
         let mut artifact_changed = true;
+
         if let Some(artifact_metadata) = &metadata.artifact {
             if let Some(existing_metadata) = existing_metadata {
                 let existing_metadata = existing_metadata.get()?;
@@ -207,6 +209,7 @@ impl AssetHub {
                 deps_to_add.extend(&artifact_metadata.build_deps);
             }
         }
+
         for dep in deps_to_add {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, dep.expect_uuid())? {
@@ -218,6 +221,7 @@ impl AssetHub {
             dependees.push(metadata.id);
             self.put_build_deps_reverse(txn, dep.expect_uuid(), dependees)?;
         }
+
         for dep in deps_to_delete {
             let mut dependees = Vec::new();
             if let Some(existing_list) = self.get_build_deps_reverse(txn, &dep)? {
@@ -236,6 +240,7 @@ impl AssetHub {
                 self.put_build_deps_reverse(txn, &dep, dependees)?;
             }
         }
+
         txn.put(self.tables.asset_metadata, &metadata.id, &new_metadata)?;
         if artifact_changed {
             change_batch.content_changes.push(metadata.id);
