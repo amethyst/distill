@@ -1010,7 +1010,7 @@ pub mod asset_hub {
             > {
                 self.client.new_call(_private::TYPE_ID, 0, None)
             }
-pub fn get_asset_metadata_with_dependencies_request(&self) -> ::capnp::capability::Request<crate::service_capnp::asset_hub::snapshot::get_asset_metadata_with_dependencies_params::Owned,crate::service_capnp::asset_hub::snapshot::get_asset_metadata_with_dependencies_results::Owned>{
+            pub fn get_asset_metadata_with_dependencies_request(&self) -> ::capnp::capability::Request<crate::service_capnp::asset_hub::snapshot::get_asset_metadata_with_dependencies_params::Owned,crate::service_capnp::asset_hub::snapshot::get_asset_metadata_with_dependencies_results::Owned>{
                 self.client.new_call(_private::TYPE_ID, 1, None)
             }
             pub fn get_all_asset_metadata_request(
