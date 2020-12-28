@@ -630,11 +630,21 @@ impl FileAssetSource {
 
         log::trace!("Importing source for {:?}", id);
         let imported_assets = import.import_source(scratch_buf).await?;
+        if let Some(import_op) = imported_assets.import_op {
+            // TODO store reported errors and warnings in metadata
+            for error in &import_op.errors {
+                log::error!("Import erorr {:?}: {:?}", path, error);
+            }
+            for warning in &import_op.warnings {
+                log::warn!("Import warning {:?}: {:?}", path, warning);
+            }
+        }
         let mut context_set = imported_assets
             .importer_context_set
             .expect("importer context set required");
         let mut this_asset = None;
         let mut rw_txn = self.artifact_cache.rw_txn().await?;
+        let asset_ids = imported_assets.assets.iter().map(|a| a.metadata.id).collect::<Vec<_>>();
         for asset in imported_assets.assets {
             let mut build_deps = asset
                 .metadata
@@ -718,7 +728,7 @@ impl FileAssetSource {
             Ok(asset)
         } else {
             Err(Error::Custom(
-                "Asset does not exist in source file".to_string(),
+                format!("Asset {} does not exist in source file {:?}. Found assets: {:?}", *id, path, asset_ids),
             ))
         }
     }
@@ -1192,6 +1202,15 @@ impl FileAssetSource {
 
                     if let Some((import, import_output)) = result {
                         let metadata = if let Some(mut import_output) = import_output {
+                            // TODO store reported errors and warnings in metadata
+                            if let Some(import_op) = import_output.import_op {
+                                for error in &import_op.errors {
+                                    log::error!("Import errors {:?}: {:?}", p.source, error);
+                                }
+                                for warning in &import_op.warnings {
+                                    log::warn!("Import warning {:?}: {:?}", p.source, warning);
+                                }
+                            }
                             // put import artifact in cache if it doesn't have unresolved refs
                             if !import_output.assets.is_empty() {
                                 let mut txn = self
