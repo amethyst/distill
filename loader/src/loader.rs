@@ -112,28 +112,24 @@ pub struct LoaderState {
     responses: IORequestChannels,
 }
 
-#[allow(clippy::type_complexity)]
+type ByteMessage = (Result<Vec<u8>>, LoadHandle, u32);
+type ArtifactMetadataMessage = (
+    Result<Vec<ArtifactMetadata>>,
+    HashMap<AssetUuid, (LoadHandle, u32)>,
+);
+type AssetMetadataMessage = (
+    Result<Vec<(PathBuf, Vec<AssetMetadata>)>>,
+    IndirectIdentifier,
+    LoadHandle,
+);
+
 struct IORequestChannels {
-    data_rx: Receiver<(Result<Vec<u8>>, LoadHandle, u32)>,
-    data_tx: Sender<(Result<Vec<u8>>, LoadHandle, u32)>,
-    metadata_rx: Receiver<(
-        Result<Vec<ArtifactMetadata>>,
-        HashMap<AssetUuid, (LoadHandle, u32)>,
-    )>,
-    metadata_tx: Sender<(
-        Result<Vec<ArtifactMetadata>>,
-        HashMap<AssetUuid, (LoadHandle, u32)>,
-    )>,
-    resolve_rx: Receiver<(
-        Result<Vec<(PathBuf, Vec<AssetMetadata>)>>,
-        IndirectIdentifier,
-        LoadHandle,
-    )>,
-    resolve_tx: Sender<(
-        Result<Vec<(PathBuf, Vec<AssetMetadata>)>>,
-        IndirectIdentifier,
-        LoadHandle,
-    )>,
+    data_rx: Receiver<ByteMessage>,
+    data_tx: Sender<ByteMessage>,
+    metadata_rx: Receiver<ArtifactMetadataMessage>,
+    metadata_tx: Sender<ArtifactMetadataMessage>,
+    resolve_rx: Receiver<AssetMetadataMessage>,
+    resolve_tx: Sender<AssetMetadataMessage>,
 }
 
 struct AssetLoadResult {
@@ -793,10 +789,7 @@ impl LoaderState {
     }
 
     fn process_resolve_requests(&self, io: &mut dyn LoaderIO, resolver: &dyn IndirectionResolver) {
-        while let Ok(response) = self.responses.resolve_rx.try_recv() {
-            let result = response.0;
-            let id = response.1;
-            let load_handle = response.2;
+        while let Ok((result, id, load_handle)) = self.responses.resolve_rx.try_recv() {
             let mut state = self
                 .indirect_states
                 .get_mut(&load_handle)
@@ -835,9 +828,7 @@ impl LoaderState {
                 });
             }
         }
-        if !assets_to_request.is_empty() {
-            io.get_asset_candidates(assets_to_request);
-        }
+        io.get_asset_candidates(assets_to_request);
     }
 
     pub fn invalidate_assets(&self, assets: &[AssetUuid]) {

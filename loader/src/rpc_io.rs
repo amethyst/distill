@@ -243,47 +243,32 @@ async fn do_resolve_request(
 
 fn process_requests(runtime: &mut RpcRuntime, requests: &mut QueuedRequests) {
     if let InternalConnectionState::Connected(connection) = &runtime.connection {
-        let len = requests.data_requests.len();
-        for asset in requests.data_requests.drain(0..len) {
+        for asset in requests.data_requests.drain(..) {
             let snapshot = connection.snapshot.clone();
             runtime.local.spawn_local(async move {
                 match do_import_artifact_request(&asset, &snapshot).await {
-                    Ok(data) => {
-                        asset.complete(data);
-                    }
-                    Err(e) => {
-                        asset.error(e);
-                    }
+                    Ok(data) => asset.complete(data),
+                    Err(e) => asset.error(e),
                 }
             });
         }
 
-        let len = requests.metadata_requests.len();
-        for m in requests.metadata_requests.drain(0..len) {
+        for m in requests.metadata_requests.drain(..) {
             let snapshot = connection.snapshot.clone();
             runtime.local.spawn_local(async move {
                 match do_metadata_request(&m, &snapshot).await {
-                    Ok(data) => {
-                        m.complete(data);
-                    }
-                    Err(e) => {
-                        m.error(e);
-                    }
+                    Ok(data) => m.complete(data),
+                    Err(e) => m.error(e),
                 }
             });
         }
 
-        let len = requests.resolve_requests.len();
-        for m in requests.resolve_requests.drain(0..len) {
+        for m in requests.resolve_requests.drain(..) {
             let snapshot = connection.snapshot.clone();
             runtime.local.spawn_local(async move {
                 match do_resolve_request(&m, &snapshot).await {
-                    Ok(data) => {
-                        m.complete(data);
-                    }
-                    Err(e) => {
-                        m.error(e);
-                    }
+                    Ok(data) => m.complete(data),
+                    Err(e) => m.error(e),
                 }
             });
         }
