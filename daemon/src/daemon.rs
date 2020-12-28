@@ -14,7 +14,7 @@ use std::{
 };
 
 #[derive(Default)]
-pub(crate) struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
+pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
     pub fn insert(&mut self, ext: &str, importer: Box<dyn BoxedImporter>) {
@@ -45,21 +45,21 @@ impl AssetDaemonTables {
 
 const DAEMON_VERSION: u32 = 2;
 pub struct AssetDaemon {
-    db_dir: PathBuf,
-    address: SocketAddr,
-    importers: ImporterMap,
-    importer_contexts: Vec<Box<dyn ImporterContext>>,
-    asset_dirs: Vec<PathBuf>,
+    pub db_dir: PathBuf,
+    pub address: SocketAddr,
+    pub importers: ImporterMap,
+    pub importer_contexts: Vec<Box<dyn ImporterContext>>,
+    pub asset_dirs: Vec<PathBuf>,
 }
 
-fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
+pub fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
     vec![atelier_loader::if_handle_enabled!(Box::new(
         atelier_loader::handle::HandleSerdeContextProvider
     ))]
 }
 
 #[allow(unused_mut)]
-fn default_importers() -> Vec<(&'static str, Box<dyn BoxedImporter>)> {
+pub fn default_importers() -> Vec<(&'static str, Box<dyn BoxedImporter>)> {
     let mut importers: Vec<(&'static str, Box<dyn BoxedImporter>)> = vec![];
 
     atelier_importer::if_serde_importers!(

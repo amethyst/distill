@@ -84,12 +84,21 @@ impl RpcRuntime {
             match std::mem::replace(&mut self.connection, InternalConnectionState::None) {
                 InternalConnectionState::Connected(mut conn) => {
                     if let Ok(change) = conn.snapshot_rx.try_recv() {
+                        log::trace!("RpcRuntime check_asset_changes Ok(change)");
                         conn.snapshot = change.snapshot;
                         let mut changed_assets = Vec::new();
                         for asset in change.changed_assets {
+                            log::trace!(
+                                "RpcRuntime check_asset_changes changed asset.id: {:?}",
+                                asset
+                            );
                             changed_assets.push(asset);
                         }
                         for asset in change.deleted_assets {
+                            log::trace!(
+                                "RpcRuntime check_asset_changes deleted asset.id: {:?}",
+                                asset
+                            );
                             changed_assets.push(asset);
                         }
                         loader.invalidate_assets(&changed_assets);
@@ -366,6 +375,10 @@ impl asset_hub::listener::Server for ListenerImpl {
     ) -> Promise<()> {
         let params = pry!(params.get());
         let snapshot = pry!(params.get_snapshot());
+        log::trace!(
+            "ListenerImpl::update self.snapshot_change: {:?}",
+            self.snapshot_change
+        );
         if let Some(change_num) = self.snapshot_change {
             let channel = self.snapshot_channel.clone();
             let mut request = snapshot.get_asset_changes_request();
@@ -383,10 +396,15 @@ impl asset_hub::listener::Server for ListenerImpl {
                         asset_change_event::ContentUpdateEvent(evt) => {
                             let evt = evt?;
                             let id = utils::make_array(evt.get_id()?.get_id()?);
+                            log::trace!("ListenerImpl::update asset_change_event::ContentUpdateEvent(evt) id: {:?}", id);
                             changed_assets.push(id);
                         }
                         asset_change_event::RemoveEvent(evt) => {
                             let id = utils::make_array(evt?.get_id()?.get_id()?);
+                            log::trace!(
+                                "ListenerImpl::update asset_change_event::RemoveEvent(evt) id: {:?}",
+                                id
+                            );
                             deleted_assets.push(id);
                         }
                     }
