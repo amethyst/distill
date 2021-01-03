@@ -1,4 +1,4 @@
-use crate::{capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction}};
+use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
 use crate::error::{Error, Result};
 use async_channel::Sender;
 use atelier_core::{utils, AssetRef, AssetUuid};
@@ -11,10 +11,15 @@ use atelier_schema::{
     },
     parse_db_asset_ref,
 };
-use std::{collections::{HashMap, HashSet, VecDeque}, hash::{Hash, Hasher}, path::PathBuf, sync::{
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    hash::{Hash, Hasher},
+    path::PathBuf,
+    sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
-    }};
+    },
+};
 
 pub type ListenerID = u64;
 
@@ -37,7 +42,6 @@ enum ChangeEvent {
     PathRemove(PathBuf),
     PathUpdate(PathBuf),
 }
-
 
 #[derive(Debug)]
 pub enum AssetBatchEvent {
@@ -104,10 +108,14 @@ fn add_asset_changelog_entry(
                 value.init_remove_event().init_id().set_id(&id.0);
             }
             ChangeEvent::PathRemove(path) => {
-                value.init_path_remove_event().set_path(path.to_string_lossy().as_bytes());
+                value
+                    .init_path_remove_event()
+                    .set_path(path.to_string_lossy().as_bytes());
             }
             ChangeEvent::PathUpdate(path) => {
-                value.init_path_update_event().set_path(path.to_string_lossy().as_bytes());
+                value
+                    .init_path_update_event()
+                    .set_path(path.to_string_lossy().as_bytes());
             }
         }
     }
@@ -298,7 +306,9 @@ impl AssetHub {
         relative_path: &PathBuf,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
-        change_batch.path_events.push(ChangeEvent::PathRemove(relative_path.clone()));
+        change_batch
+            .path_events
+            .push(ChangeEvent::PathRemove(relative_path.clone()));
         Ok(())
     }
 
@@ -308,7 +318,9 @@ impl AssetHub {
         relative_path: &PathBuf,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
-        change_batch.path_events.push(ChangeEvent::PathUpdate(relative_path.clone()));
+        change_batch
+            .path_events
+            .push(ChangeEvent::PathUpdate(relative_path.clone()));
         Ok(())
     }
 
@@ -398,6 +410,9 @@ impl AssetHub {
             log::info!("{} asset events generated", events.len());
         }
         for event in events.iter() {
+            add_asset_changelog_entry(&self.tables, txn, event)?;
+        }
+        for event in change_batch.path_events.iter() {
             add_asset_changelog_entry(&self.tables, txn, event)?;
         }
         Ok(!events.is_empty())

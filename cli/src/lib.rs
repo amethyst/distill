@@ -33,9 +33,9 @@ impl asset_hub::listener::Server for ListenerImpl {
 }
 
 pub fn make_array<A, T>(slice: &[T]) -> A
-    where
-        A: Sized + Default + AsMut<[T]>,
-        T: Copy,
+where
+    A: Sized + Default + AsMut<[T]>,
+    T: Copy,
 {
     let mut a = Default::default();
     <A as AsMut<[T]>>::as_mut(&mut a).copy_from_slice(slice);
@@ -125,7 +125,7 @@ impl Command<Context> for CmdPack {
         let mut i = 0;
         for asset in assets {
             if let data::asset_metadata::latest_artifact::Artifact(Ok(_)) =
-            asset.get_latest_artifact().which()?
+                asset.get_latest_artifact().which()?
             {
                 let path_response = {
                     let mut path_request = ctx.snapshot.borrow().get_path_for_assets_request();

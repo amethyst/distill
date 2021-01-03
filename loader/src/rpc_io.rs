@@ -420,10 +420,12 @@ impl asset_hub::listener::Server for ListenerImpl {
                             deleted_assets.push(id);
                         }
                         asset_change_event::PathRemoveEvent(evt) => {
-                            deleted_paths.push(PathBuf::from(std::str::from_utf8(evt?.get_path()?)?));
+                            deleted_paths
+                                .push(PathBuf::from(std::str::from_utf8(evt?.get_path()?)?));
                         }
                         asset_change_event::PathUpdateEvent(evt) => {
-                            changed_paths.push(PathBuf::from(std::str::from_utf8(evt?.get_path()?)?));
+                            changed_paths
+                                .push(PathBuf::from(std::str::from_utf8(evt?.get_path()?)?));
                         }
                     }
                 }

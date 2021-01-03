@@ -1,4 +1,7 @@
-use atelier_assets::{core::AssetUuid, importer::{AsyncImporter, Error, ImportOp, ImportedAsset, ImporterValue, Result}};
+use atelier_assets::{
+    core::AssetUuid,
+    importer::{AsyncImporter, Error, ImportOp, ImportedAsset, ImporterValue, Result},
+};
 use futures_core::future::BoxFuture;
 use futures_io::AsyncRead;
 use futures_util::AsyncReadExt;

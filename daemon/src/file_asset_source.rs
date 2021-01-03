@@ -7,7 +7,10 @@ use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use atelier_core::{ArtifactId, AssetRef, AssetUuid, CompressionType, utils::{self, canonicalize_path}};
+use atelier_core::{
+    utils::{self, canonicalize_path},
+    ArtifactId, AssetRef, AssetUuid, CompressionType,
+};
 use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
 };
@@ -644,7 +647,11 @@ impl FileAssetSource {
             .expect("importer context set required");
         let mut this_asset = None;
         let mut rw_txn = self.artifact_cache.rw_txn().await?;
-        let asset_ids = imported_assets.assets.iter().map(|a| a.metadata.id).collect::<Vec<_>>();
+        let asset_ids = imported_assets
+            .assets
+            .iter()
+            .map(|a| a.metadata.id)
+            .collect::<Vec<_>>();
         for asset in imported_assets.assets {
             let mut build_deps = asset
                 .metadata
@@ -727,9 +734,10 @@ impl FileAssetSource {
         if let Some(asset) = this_asset {
             Ok(asset)
         } else {
-            Err(Error::Custom(
-                format!("Asset {} does not exist in source file {:?}. Found assets: {:?}", *id, path, asset_ids),
-            ))
+            Err(Error::Custom(format!(
+                "Asset {} does not exist in source file {:?}. Found assets: {:?}",
+                *id, path, asset_ids
+            )))
         }
     }
 
@@ -788,14 +796,22 @@ impl FileAssetSource {
                 affected_assets.entry(asset).or_insert(None);
             }
             if let Some(relative_path) = self.tracker.make_relative_path(path) {
-                self.hub.remove_path(txn, &relative_path, change_batch).unwrap_or_else(|e| panic!("Failed to remove path {:?} in asset_hub: {:?}", path, e));
+                self.hub
+                    .remove_path(txn, &relative_path, change_batch)
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to remove path {:?} in asset_hub: {:?}", path, e)
+                    });
             }
         }
 
         // update or insert metadata for changed source pairs
         for (path, metadata) in changes.iter().filter(|(_, change)| change.is_some()) {
             if let Some(relative_path) = self.tracker.make_relative_path(path) {
-                self.hub.update_path(txn, &relative_path, change_batch).unwrap_or_else(|e| panic!("Failed to update path {:?} in asset_hub: {:?}", path, e));
+                self.hub
+                    .update_path(txn, &relative_path, change_batch)
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to update path {:?} in asset_hub: {:?}", path, e)
+                    });
             }
             let import_state = &metadata.as_ref().unwrap().import_state;
             if import_state.source_metadata().is_none() {

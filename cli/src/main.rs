@@ -1,6 +1,6 @@
-use tokio::runtime::Runtime;
-use atelier_cli::*;
 use atelier_cli::shell::Shell;
+use atelier_cli::*;
+use tokio::runtime::Runtime;
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut runtime = Runtime::new().unwrap();
