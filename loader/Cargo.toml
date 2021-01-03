@@ -56,6 +56,7 @@ packfile_io = [
     "memmap",
     "thread_local",
 ]
-rpc_io = ["atelier-schema", "tokio", "capnp", "capnp-rpc", "futures-util"]
+rpc_io = ["atelier-schema", "tokio", "capnp", "capnp-rpc", "futures-util", "invalidate_path"]
+invalidate_path = ["atelier-core/path_utils"]
 handle = ["serde", "uuid"]
 asset_uuid_macro = ["atelier-core/asset_uuid_macro"]

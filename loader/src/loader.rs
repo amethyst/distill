@@ -105,6 +105,10 @@ pub struct LoaderState {
     op_rx: Receiver<HandleOp>,
     invalidate_tx: Sender<AssetUuid>,
     invalidate_rx: Receiver<AssetUuid>,
+    #[cfg(feature = "invalidate_path")]
+    invalidate_path_tx: Sender<PathBuf>,
+    #[cfg(feature = "invalidate_path")]
+    invalidate_path_rx: Receiver<PathBuf>,
     pending_reloads: Vec<PendingReload>,
     indirect_states: DashMap<LoadHandle, IndirectLoad>,
     indirect_to_load: DashMap<IndirectIdentifier, LoadHandle>,
@@ -687,6 +691,26 @@ impl LoaderState {
             }
         }
     }
+
+    #[cfg(feature = "invalidate_path")]
+    fn process_path_changes(&mut self) {
+        let mut changes = HashSet::new();
+        while let Ok(asset) = self.invalidate_path_rx.try_recv() {
+            changes.insert(asset);
+        }
+        for entry in self.indirect_to_load.iter() {
+            let indirect_id = entry.key();
+            let handle = entry.value();
+            let cleaned_path = atelier_core::utils::canonicalize_path(&PathBuf::from(indirect_id.path()));
+            for change in &changes {
+                if change == &cleaned_path {
+                    if let Some(mut indirect) = self.indirect_states.get_mut(&handle) {
+                        indirect.pending_reresolve = true;
+                    }
+                }
+            }
+        }
+    }
     /// Checks for changed assets that need to be reloaded or unloaded
     fn process_asset_changes(&mut self, asset_storage: &dyn AssetStorage) {
         if self.pending_reloads.is_empty() {
@@ -845,6 +869,13 @@ impl LoaderState {
             let _ = self.invalidate_tx.send(*asset);
         }
     }
+
+    #[cfg(feature = "invalidate_path")]
+    pub fn invalidate_paths(&self, paths: &[PathBuf]) {
+        for path in paths {
+            let _ = self.invalidate_path_tx.send(path.clone());
+        }
+    }
 }
 
 /// Loads and tracks lifetimes of asset data.
@@ -872,6 +903,8 @@ impl Loader {
     ) -> Loader {
         let (op_tx, op_rx) = unbounded();
         let (invalidate_tx, invalidate_rx) = unbounded();
+        #[cfg(feature = "invalidate_path")]
+        let (invalidate_path_tx, invalidate_path_rx) = unbounded();
         let (metadata_tx, metadata_rx) = unbounded();
         let (data_tx, data_rx) = unbounded();
         let (resolve_tx, resolve_rx) = unbounded();
@@ -884,6 +917,10 @@ impl Loader {
                 op_tx,
                 invalidate_rx,
                 invalidate_tx,
+                #[cfg(feature = "invalidate_path")]
+                invalidate_path_rx,
+                #[cfg(feature = "invalidate_path")]
+                invalidate_path_tx,
                 pending_reloads: Vec::new(),
                 indirect_states: DashMap::new(),
                 indirect_to_load: DashMap::new(),
@@ -1034,6 +1071,7 @@ impl Loader {
     ) -> Result<()> {
         self.io.tick(&mut self.data);
         self.data.process_asset_changes(asset_storage);
+        self.data.process_path_changes();
         self.data.process_load_ops(asset_storage);
         self.data.process_load_states(asset_storage);
         self.data.process_indirect_states();
@@ -1060,6 +1098,13 @@ impl Loader {
     /// This causes the asset data to be reloaded.
     pub fn invalidate_assets(&self, assets: &[AssetUuid]) {
         self.data.invalidate_assets(assets);
+    }
+
+    /// Invalidates indirect identifiers that may match the provided paths.
+    ///
+    /// This may cause indirect handles to resolve to new assets.
+    pub fn invalidate_paths(&self, paths: &[PathBuf]) {
+        self.data.invalidate_paths(paths);
     }
 }
 
@@ -1098,7 +1143,7 @@ mod tests {
     use crate::{rpc_io::RpcIO, storage::DefaultIndirectionResolver};
     use atelier_core::AssetUuid;
     use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{AsyncImporter, ImportedAsset, ImporterValue, Result as ImportResult};
+    use atelier_importer::{AsyncImporter, ImportedAsset, ImportOp, ImporterValue, Result as ImportResult};
     use futures_core::future::BoxFuture;
     use futures_io::AsyncRead;
     use futures_util::io::AsyncReadExt;
@@ -1213,6 +1258,7 @@ mod tests {
 
         fn import<'a>(
             &'a self,
+            _op: &'a mut ImportOp,
             source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
             txt_format: &'a Self::Options,
             state: &'a mut Self::State,

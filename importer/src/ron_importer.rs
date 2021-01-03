@@ -90,7 +90,9 @@ mod tests {
                      }"
         .as_bytes();
 
+        let mut import_op = ImportOp::default();
         let a_boxed_res = futures_executor::block_on(importer.import_boxed(
+            &mut import_op,
             &mut a,
             Box::new(RonImporterOptions {}),
             Box::new(RonImporterState { id: None }),

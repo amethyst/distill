@@ -3,7 +3,7 @@ use crate::capnp_db::{
 };
 use crate::error::{Error, Result};
 use crate::watcher::{self, FileEvent, FileMetadata};
-use atelier_core::utils;
+use atelier_core::utils::{self, canonicalize_path};
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use event_listener::Event;
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
@@ -390,7 +390,7 @@ impl FileTracker {
                 } else {
                     path
                 };
-                watcher::canonicalize_path(&path)
+                canonicalize_path(&path)
             })
             .collect();
 
@@ -421,6 +421,23 @@ impl FileTracker {
             listener_tx,
             watch_dirs,
         }
+    }
+
+    pub fn make_relative_path(&self, absolute_path: &PathBuf) -> Option<PathBuf> {
+        for dir in self.get_watch_dirs() {
+            let canonicalized_dir = atelier_core::utils::canonicalize_path(&dir);
+            if absolute_path.starts_with(&canonicalized_dir) {
+                let relative_path = absolute_path
+                    .strip_prefix(canonicalized_dir)
+                    .expect("error stripping prefix")
+                    .to_path_buf();
+                let relative_path = atelier_core::utils::canonicalize_path(&relative_path)
+                    .to_string_lossy()
+                    .replace("\\", "/");
+                return Some(PathBuf::from(relative_path));
+            }
+        }
+        return None;
     }
 
     pub fn get_watch_dirs(&self) -> impl Iterator<Item = &'_ PathBuf> {
@@ -786,8 +803,8 @@ pub mod tests {
 
     async fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_ro_txn().await;
-        let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
-        let canonical_path = watcher::canonicalize_path(&path.join(name));
+        let path = canonicalize_path(&PathBuf::from(asset_dir));
+        let canonical_path = canonicalize_path(&path.join(name));
         let maybe_state = t.get_file_state(&txn, &canonical_path);
 
         assert!(
@@ -799,7 +816,7 @@ pub mod tests {
 
     async fn expect_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_ro_txn().await;
-        let canonical_path = watcher::canonicalize_path(&asset_dir.join(name));
+        let canonical_path = canonicalize_path(&asset_dir.join(name));
         t.get_file_state(&txn, &canonical_path)
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
@@ -832,7 +849,7 @@ pub mod tests {
 
     async fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_ro_txn().await;
-        let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
+        let path = canonicalize_path(&PathBuf::from(asset_dir));
         let canonical_path = path.join(name);
         t.get_dirty_file_state(&txn, &canonical_path)
             .unwrap_or_else(|| panic!("expected dirty file state for file {}", name));

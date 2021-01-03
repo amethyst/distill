@@ -1,4 +1,4 @@
-use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
+use crate::{capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction}};
 use crate::error::{Error, Result};
 use async_channel::Sender;
 use atelier_core::{utils, AssetRef, AssetUuid};
@@ -11,14 +11,10 @@ use atelier_schema::{
     },
     parse_db_asset_ref,
 };
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    hash::{Hash, Hasher},
-    sync::{
+use std::{collections::{HashMap, HashSet, VecDeque}, hash::{Hash, Hasher}, path::PathBuf, sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
-    },
-};
+    }};
 
 pub type ListenerID = u64;
 
@@ -38,7 +34,10 @@ struct AssetContentUpdateEvent {
 enum ChangeEvent {
     ContentUpdate(AssetContentUpdateEvent),
     Remove(AssetUuid),
+    PathRemove(PathBuf),
+    PathUpdate(PathBuf),
 }
+
 
 #[derive(Debug)]
 pub enum AssetBatchEvent {
@@ -47,12 +46,14 @@ pub enum AssetBatchEvent {
 
 pub struct ChangeBatch {
     content_changes: Vec<AssetUuid>,
+    path_events: Vec<ChangeEvent>,
 }
 
 impl ChangeBatch {
     pub fn new() -> ChangeBatch {
         ChangeBatch {
             content_changes: Vec::new(),
+            path_events: Vec::new(),
         }
     }
 }
@@ -101,6 +102,12 @@ fn add_asset_changelog_entry(
             }
             ChangeEvent::Remove(id) => {
                 value.init_remove_event().init_id().set_id(&id.0);
+            }
+            ChangeEvent::PathRemove(path) => {
+                value.init_path_remove_event().set_path(path.to_string_lossy().as_bytes());
+            }
+            ChangeEvent::PathUpdate(path) => {
+                value.init_path_update_event().set_path(path.to_string_lossy().as_bytes());
             }
         }
     }
@@ -282,6 +289,26 @@ impl AssetHub {
                 self.put_build_deps_reverse(txn, &dep, dependees)?;
             }
         }
+        Ok(())
+    }
+
+    pub fn remove_path(
+        &self,
+        _txn: &mut RwTransaction<'_>,
+        relative_path: &PathBuf,
+        change_batch: &mut ChangeBatch,
+    ) -> Result<()> {
+        change_batch.path_events.push(ChangeEvent::PathRemove(relative_path.clone()));
+        Ok(())
+    }
+
+    pub fn update_path(
+        &self,
+        _txn: &mut RwTransaction<'_>,
+        relative_path: &PathBuf,
+        change_batch: &mut ChangeBatch,
+    ) -> Result<()> {
+        change_batch.path_events.push(ChangeEvent::PathUpdate(relative_path.clone()));
         Ok(())
     }
 

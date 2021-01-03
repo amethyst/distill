@@ -7,7 +7,7 @@ use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use atelier_core::{utils, ArtifactId, AssetRef, AssetUuid, CompressionType};
+use atelier_core::{ArtifactId, AssetRef, AssetUuid, CompressionType, utils::{self, canonicalize_path}};
 use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
 };
@@ -140,7 +140,7 @@ fn resolve_source_path(abs_source_path: &PathBuf, path: &PathBuf) -> PathBuf {
     } else {
         path.clone()
     };
-    crate::watcher::canonicalize_path(&absolute_path)
+    canonicalize_path(&absolute_path)
 }
 
 impl FileAssetSource {
@@ -787,10 +787,16 @@ impl FileAssetSource {
             for asset in self.delete_metadata(txn, path) {
                 affected_assets.entry(asset).or_insert(None);
             }
+            if let Some(relative_path) = self.tracker.make_relative_path(path) {
+                self.hub.remove_path(txn, &relative_path, change_batch).unwrap_or_else(|e| panic!("Failed to remove path {:?} in asset_hub: {:?}", path, e));
+            }
         }
 
         // update or insert metadata for changed source pairs
         for (path, metadata) in changes.iter().filter(|(_, change)| change.is_some()) {
+            if let Some(relative_path) = self.tracker.make_relative_path(path) {
+                self.hub.update_path(txn, &relative_path, change_batch).unwrap_or_else(|e| panic!("Failed to update path {:?} in asset_hub: {:?}", path, e));
+            }
             let import_state = &metadata.as_ref().unwrap().import_state;
             if import_state.source_metadata().is_none() {
                 continue;
