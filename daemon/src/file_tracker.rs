@@ -18,9 +18,8 @@ use std::{
     cmp::PartialEq,
     collections::{HashMap, HashSet},
     fs,
-    iter::FromIterator,
     ops::IndexMut,
-    path::PathBuf,
+    path::{Path, PathBuf},
     str,
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
@@ -200,11 +199,13 @@ where
 
 // TODO(happens): Improve error handling for event handlers
 mod events {
+    use std::path::Path;
+
     use super::*;
     fn handle_update(
         txn: &mut RwTransaction<'_>,
         tables: &FileTrackerTables,
-        path: &PathBuf,
+        path: &Path,
         metadata: &watcher::FileMetadata,
         scan_stack: &mut Vec<ScanContext>,
     ) -> Result<()> {
@@ -229,7 +230,7 @@ mod events {
         if !scan_stack.is_empty() {
             let head_idx = scan_stack.len() - 1;
             let scan_ctx = scan_stack.index_mut(head_idx);
-            scan_ctx.files.insert(path.clone(), metadata.clone());
+            scan_ctx.files.insert(path.to_path_buf(), metadata.clone());
         }
         if changed {
             let value = build_source_info(&metadata);
@@ -323,7 +324,7 @@ mod events {
                         db_file_set.insert(PathBuf::from(key));
                     }
                 }
-                let scan_ctx_set = HashSet::from_iter(scan_ctx.files.keys().cloned());
+                let scan_ctx_set: HashSet<_> = scan_ctx.files.keys().cloned().collect();
                 let to_remove = db_file_set.difference(&scan_ctx_set);
                 for p in to_remove {
                     let p_str = p.to_string_lossy();
@@ -345,11 +346,10 @@ mod events {
                         let mut cursor = txn
                             .open_ro_cursor(tables.source_files)
                             .expect("Failed to open RO cursor for source_files table");
-                        let dirs_as_strings = Vec::from_iter(
-                            watched_dirs
-                                .into_iter()
-                                .map(|f| f.to_string_lossy().into_owned()),
-                        );
+                        let dirs_as_strings: Vec<_> = watched_dirs
+                            .into_iter()
+                            .map(|f| f.to_string_lossy().into_owned())
+                            .collect();
                         for iter_result in cursor.iter_start() {
                             let (key_bytes, _) =
                                 iter_result.expect("Error while iterating source file metadata");
@@ -466,7 +466,7 @@ impl FileTracker {
             .expect("db: Failed to clear rename_file_events table");
     }
 
-    pub async fn add_dirty_file(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Result<()> {
+    pub async fn add_dirty_file(&self, txn: &mut RwTransaction<'_>, path: &Path) -> Result<()> {
         let metadata = match tokio::fs::metadata(path).await {
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(Error::IO(e)),
@@ -540,11 +540,7 @@ impl FileTracker {
             .collect()
     }
 
-    pub fn delete_dirty_file_state<'a>(
-        &self,
-        txn: &'a mut RwTransaction<'_>,
-        path: &PathBuf,
-    ) -> bool {
+    pub fn delete_dirty_file_state<'a>(&self, txn: &'a mut RwTransaction<'_>, path: &Path) -> bool {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
 
@@ -556,7 +552,7 @@ impl FileTracker {
     pub fn get_dirty_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        path: &PathBuf,
+        path: &Path,
     ) -> Option<FileState> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
@@ -571,7 +567,7 @@ impl FileTracker {
                     .expect("capnp: Failed to get source info");
 
                 FileState {
-                    path: path.clone(),
+                    path: path.to_path_buf(),
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
@@ -582,7 +578,7 @@ impl FileTracker {
     pub fn get_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        path: &PathBuf,
+        path: &Path,
     ) -> Option<FileState> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
@@ -593,7 +589,7 @@ impl FileTracker {
                 let info = value.get().expect("capnp: Failed to get source file info");
 
                 FileState {
-                    path: path.clone(),
+                    path: path.to_path_buf(),
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
@@ -623,11 +619,11 @@ impl FileTracker {
     pub async fn run(&self) {
         let stopping = self.stopping_event.listen().fuse();
 
-        let already_running = self
-            .is_running
-            .compare_and_swap(false, true, Ordering::AcqRel);
+        let already_running =
+            self.is_running
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
 
-        if already_running {
+        if already_running.is_err() {
             return;
         }
 
@@ -711,7 +707,6 @@ pub mod tests {
         sync::Arc,
         time::Duration,
     };
-    use tempfile;
 
     pub fn with_tracker<F, T>(f: F)
     where
@@ -727,13 +722,12 @@ pub mod tests {
             let _ = fs::create_dir(db_dir.path());
             let asset_paths = vec![asset_dir.path().to_str().unwrap()];
             let db = Arc::new(
-                Environment::with_map_size(db_dir.path(), 1 << 21).expect(
-                    format!(
+                Environment::with_map_size(db_dir.path(), 1 << 21).unwrap_or_else(|_| {
+                    panic!(
                         "failed to create db environment {}",
                         db_dir.path().to_string_lossy()
                     )
-                    .as_str(),
-                ),
+                }),
             );
             let tracker = Arc::new(FileTracker::new(db, asset_paths));
             let (tx, mut rx) = unbounded();
@@ -759,7 +753,7 @@ pub mod tests {
         select! {
             evt = rx.next() => {
                 if let Some(evt) = evt {
-                    assert!(false, "Received unexpected event {:?}", evt);
+                    panic!("Received unexpected event {:?}", evt);
                 }
             }
             _ = timeout => {
@@ -778,7 +772,7 @@ pub mod tests {
                 }
             }
             _ = timeout => {
-                assert!(false, "Timed out waiting for file event");
+                panic!("Timed out waiting for file event");
             }
         };
         unreachable!();

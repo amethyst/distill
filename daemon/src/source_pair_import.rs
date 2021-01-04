@@ -11,7 +11,6 @@ use atelier_importer::{
 use atelier_schema::data;
 use futures_core::future::{BoxFuture, Future};
 use log::{debug, error};
-use std::io::Read;
 use std::{
     collections::HashSet,
     fs,
@@ -20,6 +19,7 @@ use std::{
     path::PathBuf,
     time::Instant,
 };
+use std::{io::Read, path::Path};
 use tokio::{fs::File, prelude::*};
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
@@ -79,7 +79,7 @@ pub(crate) struct SourcePairImport<'a> {
 pub(crate) trait SourceMetadataCache {
     fn restore_metadata<'a>(
         &self,
-        path: &PathBuf,
+        path: &Path,
         importer: &'a dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()>;

@@ -23,7 +23,10 @@ use futures_util::stream::StreamExt;
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 use std::{path::PathBuf, str, sync::Arc, time::Instant};
 use tokio::runtime::Runtime;
 
@@ -130,15 +133,15 @@ where
     }))
 }
 
-fn resolve_source_path(abs_source_path: &PathBuf, path: &PathBuf) -> PathBuf {
+fn resolve_source_path(abs_source_path: &Path, path: &Path) -> PathBuf {
     let absolute_path = if path.is_relative() {
         // TODO check from root of asset folder as well?
-        let mut parent_path = abs_source_path.clone();
+        let mut parent_path = abs_source_path.to_path_buf();
         parent_path.pop();
         parent_path.push(path);
         parent_path
     } else {
-        path.clone()
+        path.to_path_buf()
     };
     crate::watcher::canonicalize_path(&absolute_path)
 }
@@ -175,7 +178,7 @@ impl FileAssetSource {
     fn put_metadata<'a>(
         &self,
         txn: &'a mut RwTransaction<'_>,
-        path: &PathBuf,
+        path: &Path,
         metadata: &SourceMetadata,
     ) -> Result<Vec<AssetUuid>> {
         let mut affected_assets = Vec::new();
@@ -340,7 +343,7 @@ impl FileAssetSource {
     pub fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        path: &PathBuf,
+        path: &Path,
     ) -> Option<MessageReader<'a, source_metadata::Owned>> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
@@ -365,7 +368,7 @@ impl FileAssetSource {
             })
     }
 
-    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &PathBuf) -> Vec<AssetUuid> {
+    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &Path) -> Vec<AssetUuid> {
         let to_remove: Vec<AssetUuid> = self
             .get_metadata(txn, path)
             .map(|existing| {
@@ -403,7 +406,7 @@ impl FileAssetSource {
     pub fn resolve_asset_ref<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        source_path: &PathBuf,
+        source_path: &Path,
         asset_ref: &AssetRef,
     ) -> Option<AssetUuid> {
         match asset_ref {
@@ -443,7 +446,7 @@ impl FileAssetSource {
         &self,
         txn: &'a mut RwTransaction<'_>,
         asset_id: &AssetUuid,
-        path: &PathBuf,
+        path: &Path,
     ) {
         let path_str = path.to_string_lossy();
         let path = path_str.as_bytes();
@@ -469,8 +472,8 @@ impl FileAssetSource {
     fn add_path_ref<'a>(
         &self,
         txn: &'a mut RwTransaction<'_>,
-        source: &PathBuf,
-        path_ref: &PathBuf,
+        source: &Path,
+        path_ref: &Path,
     ) -> bool {
         let path_ref = resolve_source_path(source, path_ref);
         let key_str = path_ref.to_string_lossy();
@@ -515,7 +518,7 @@ impl FileAssetSource {
     pub fn get_path_refs<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        path: &PathBuf,
+        path: &Path,
     ) -> Vec<PathBuf> {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
@@ -542,12 +545,7 @@ impl FileAssetSource {
             })
     }
 
-    fn remove_path_ref(
-        &self,
-        txn: &mut RwTransaction<'_>,
-        source: &PathBuf,
-        path_ref: &PathBuf,
-    ) -> bool {
+    fn remove_path_ref(&self, txn: &mut RwTransaction<'_>, source: &Path, path_ref: &Path) -> bool {
         let path_ref = resolve_source_path(source, path_ref);
         let key_str = path_ref.to_string_lossy();
         let key = key_str.as_bytes();
@@ -726,7 +724,7 @@ impl FileAssetSource {
     fn resolve_metadata_asset_refs<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
-        path: &PathBuf,
+        path: &Path,
         asset_import_result: &AssetImportResultMetadata,
         artifact: &mut ArtifactMetadata,
     ) {
@@ -1443,7 +1441,7 @@ where
 {
     fn restore_metadata(
         &self,
-        path: &PathBuf,
+        path: &Path,
         importer: &dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()> {

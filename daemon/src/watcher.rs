@@ -1,12 +1,12 @@
 use crate::error::{Error, Result};
 use futures_channel::mpsc::UnboundedSender;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
-use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, UNIX_EPOCH};
+use std::{collections::HashMap, path::Path};
 
 /// The purpose of DirWatcher is to provide enough information to
 /// determine which files may be candidates for going through the asset import process.
@@ -56,8 +56,8 @@ pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
     }
 }
 
-pub fn canonicalize_path(path: &PathBuf) -> PathBuf {
-    use path_slash::PathBufExt;
+use path_slash::{PathBufExt, PathExt};
+pub fn canonicalize_path(path: &Path) -> PathBuf {
     let cleaned_path = PathBuf::from_slash(path_clean::clean(&path.to_slash_lossy()));
     PathBuf::from(dunce::simplified(&cleaned_path))
 }
@@ -95,7 +95,7 @@ impl DirWatcher {
             tx: self.tx.clone(),
         }
     }
-    fn scan_directory<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<()>
+    fn scan_directory<F>(&mut self, dir: &Path, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
     {
@@ -109,7 +109,7 @@ impl DirWatcher {
             .map_err(|_| Error::SendError)?;
         result
     }
-    fn scan_directory_recurse<F>(&mut self, dir: &PathBuf, evt_create: &F) -> Result<()>
+    fn scan_directory_recurse<F>(&mut self, dir: &Path, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
     {
@@ -194,24 +194,26 @@ impl DirWatcher {
         }
     }
 
-    fn watch(&mut self, path: &PathBuf) -> Result<bool> {
+    fn watch(&mut self, path: &Path) -> Result<bool> {
         let refs = *self.watch_refs.get(path).unwrap_or(&0);
         match refs {
             0 => {
                 self.watcher.watch(path, RecursiveMode::Recursive)?;
-                self.dirs.push(path.clone());
-                self.watch_refs.insert(path.clone(), 1);
+                self.dirs.push(path.to_path_buf());
+                self.watch_refs.insert(path.to_path_buf(), 1);
                 return Ok(true);
             }
             refs if refs > 0 => {
-                self.watch_refs.entry(path.clone()).and_modify(|r| *r += 1);
+                self.watch_refs
+                    .entry(path.to_path_buf())
+                    .and_modify(|r| *r += 1);
             }
             _ => {}
         }
         Ok(false)
     }
 
-    fn unwatch(&mut self, path: &PathBuf) -> Result<bool> {
+    fn unwatch(&mut self, path: &Path) -> Result<bool> {
         let refs = *self.watch_refs.get(path).unwrap_or(&0);
         if refs == 1 {
             self.watcher.unwatch(path)?;
@@ -224,7 +226,9 @@ impl DirWatcher {
             self.watch_refs.remove(path);
             return Ok(true);
         } else if refs > 0 {
-            self.watch_refs.entry(path.clone()).and_modify(|r| *r -= 1);
+            self.watch_refs
+                .entry(path.to_path_buf())
+                .and_modify(|r| *r -= 1);
         }
         Ok(false)
     }
