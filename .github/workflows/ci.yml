@@ -29,13 +29,8 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.toolchain }}
+          components: clippy
           override: true
-
-      - uses: actions/cache@v2
-        with:
-          path: |
-            target
-          key: ${{ runner.os }}-cargo-check-test-${{ matrix.toolchain }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
         run: cargo check
@@ -74,10 +69,7 @@ jobs:
       - name: Check the format
         run: cargo +stable fmt --all -- --check
 
-      - name: Run clippy
-        run: >
-          cargo +stable clippy
-          --all-targets
-          --all-features
-          --
-          -D warnings
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features -- -D warnings
