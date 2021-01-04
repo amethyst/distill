@@ -98,7 +98,8 @@ mod tests {
         let a_serde_obj = a_boxed_res
             .value
             .assets
-            .into_iter().next()
+            .into_iter()
+            .next()
             .unwrap()
             .asset_data;
 
@@ -137,7 +138,8 @@ mod tests {
         let b_serde_obj = b_boxed_res
             .value
             .assets
-            .into_iter().next()
+            .into_iter()
+            .next()
             .unwrap()
             .asset_data;
         let b_downcast = b_serde_obj.any().downcast_ref::<B>();
