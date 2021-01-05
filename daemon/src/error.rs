@@ -9,10 +9,9 @@ pub enum Error {
     Capnp(capnp::Error),
     NotInSchema(capnp::NotInSchema),
     BincodeError(bincode::ErrorKind),
-    RonSerError(ron::ser::Error),
-    RonDeError(ron::de::Error),
+    RonError(ron::Error),
     ErasedSerde(erased_serde::Error),
-    MetaDeError(PathBuf, ron::de::Error),
+    MetaDeError(PathBuf, ron::Error),
     SetLoggerError(log::SetLoggerError),
     UuidLength,
     RecvError,
@@ -36,8 +35,7 @@ impl std::error::Error for Error {
             Error::NotInSchema(ref e) => Some(e),
             Error::BincodeError(ref e) => Some(e),
             Error::ErasedSerde(ref e) => Some(e),
-            Error::RonSerError(ref e) => Some(e),
-            Error::RonDeError(ref e) => Some(e),
+            Error::RonError(ref e) => Some(e),
             Error::MetaDeError(_, ref e) => Some(e),
             Error::SetLoggerError(ref e) => Some(e),
             Error::UuidLength => None,
@@ -61,16 +59,9 @@ impl fmt::Display for Error {
             Error::NotInSchema(ref e) => e.fmt(f),
             Error::BincodeError(ref e) => e.fmt(f),
             Error::ErasedSerde(ref e) => e.fmt(f),
-            Error::RonSerError(ref e) => e.fmt(f),
-            Error::RonDeError(ref e) => e.fmt(f),
+            Error::RonError(ref e) => e.fmt(f),
             Error::MetaDeError(ref path, ref e) => {
-                if let ron::de::Error::Parser(..) = e {
-                    // Special case for display of errors with known line:column format.
-                    // That way the full message is a well-formed file location link.
-                    write!(f, "metadata {}:", path.display())?;
-                } else {
-                    write!(f, "metadata {} ", path.display())?;
-                }
+                write!(f, "metadata {} ", path.display())?;
                 e.fmt(f)
             }
             Error::SetLoggerError(ref e) => e.fmt(f),
@@ -114,14 +105,9 @@ impl From<Box<bincode::ErrorKind>> for Error {
         Error::BincodeError(*err)
     }
 }
-impl From<ron::ser::Error> for Error {
-    fn from(err: ron::ser::Error) -> Error {
-        Error::RonSerError(err)
-    }
-}
-impl From<ron::de::Error> for Error {
-    fn from(err: ron::de::Error) -> Error {
-        Error::RonDeError(err)
+impl From<ron::Error> for Error {
+    fn from(err: ron::Error) -> Error {
+        Error::RonError(err)
     }
 }
 
