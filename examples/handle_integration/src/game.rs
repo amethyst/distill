@@ -1,5 +1,4 @@
 use crate::{custom_asset::BigPerf, image::Image, storage::GenericAssetStorage};
-use atelier_assets::core::{self as atelier_core, asset_uuid};
 use atelier_assets::loader::{
     crossbeam_channel::{unbounded, Receiver},
     handle::{self, AssetHandle, Handle, RefOp, WeakHandle},

@@ -67,7 +67,7 @@ pub async fn create_context() -> Result<Context, Box<dyn std::error::Error>> {
         rpc_twoparty_capnp::Side::Client,
         *ReaderOptions::new()
             .nesting_limit(64)
-            .traversal_limit_in_words(64 * 1024 * 1024),
+            .traversal_limit_in_words(Some(256 * 1024 * 1024)),
     ));
 
     let mut rpc_system = RpcSystem::new(rpc_network, None);

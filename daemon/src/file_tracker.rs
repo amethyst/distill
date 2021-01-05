@@ -640,7 +640,7 @@ impl FileTracker {
 
         let already_running = self
             .is_running
-            .compare_and_swap(false, true, Ordering::AcqRel);
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_err();
 
         if already_running {
             return;
