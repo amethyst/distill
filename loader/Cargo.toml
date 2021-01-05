@@ -18,7 +18,7 @@ futures-core = { version = "0.3", default-features = false, features = ["alloc"]
 capnp = { version = "0.13", optional = true}
 capnp-rpc = { version = "0.13", optional = true }
 log = { version = "0.4" }
-dashmap = { version = "3" }
+dashmap = "4.0.1"
 serde = { version = "1.0", features = ["derive"], optional = true}
 uuid = { version = "0.8", optional = true }
 
