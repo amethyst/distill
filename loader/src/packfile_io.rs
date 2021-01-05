@@ -92,10 +92,8 @@ impl PackfileReaderInner {
     ) -> capnp::Result<Vec<ArtifactMetadata>> {
         let reader = self.reader.get_reader()?;
         let mut to_visit = request.requested_assets().cloned().collect::<Vec<_>>();
-        use std::iter::FromIterator;
-        let mut visited = HashSet::<AssetUuid, std::collections::hash_map::RandomState>::from_iter(
-            to_visit.iter().cloned(),
-        );
+        let mut visited: HashSet<AssetUuid, std::collections::hash_map::RandomState> =
+            to_visit.iter().cloned().collect();
         let entries = reader.get_entries()?;
         let mut metadata = Vec::new();
         while let Some(uuid) = to_visit.pop() {

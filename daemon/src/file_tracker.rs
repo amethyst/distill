@@ -18,7 +18,6 @@ use std::{
     cmp::PartialEq,
     collections::{HashMap, HashSet},
     fs,
-    iter::FromIterator,
     ops::IndexMut,
     path::PathBuf,
     str,
@@ -323,7 +322,7 @@ mod events {
                         db_file_set.insert(PathBuf::from(key));
                     }
                 }
-                let scan_ctx_set = HashSet::from_iter(scan_ctx.files.keys().cloned());
+                let scan_ctx_set: HashSet<PathBuf> = scan_ctx.files.keys().cloned().collect();
                 let to_remove = db_file_set.difference(&scan_ctx_set);
                 for p in to_remove {
                     let p_str = p.to_string_lossy();
@@ -345,11 +344,10 @@ mod events {
                         let mut cursor = txn
                             .open_ro_cursor(tables.source_files)
                             .expect("Failed to open RO cursor for source_files table");
-                        let dirs_as_strings = Vec::from_iter(
-                            watched_dirs
-                                .into_iter()
-                                .map(|f| f.to_string_lossy().into_owned()),
-                        );
+                        let dirs_as_strings: Vec<String> = watched_dirs
+                            .into_iter()
+                            .map(|f| f.to_string_lossy().into_owned())
+                            .collect();
                         for iter_result in cursor.iter_start() {
                             let (key_bytes, _) =
                                 iter_result.expect("Error while iterating source file metadata");

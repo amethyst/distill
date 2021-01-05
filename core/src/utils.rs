@@ -47,8 +47,7 @@ where
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
     import_hash.hash(&mut hasher);
     (*id).hash(&mut hasher);
-    use std::iter::FromIterator;
-    let mut deps = Vec::from_iter(dep_list.into_iter());
+    let mut deps = dep_list.into_iter().collect::<Vec<_>>();
     deps.sort_by_key(|dep| *dep.borrow());
     deps.dedup_by_key(|dep| *dep.borrow());
     for dep in &deps {
