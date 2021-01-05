@@ -437,7 +437,7 @@ impl FileTracker {
                 return Some(PathBuf::from(relative_path));
             }
         }
-        return None;
+        None
     }
 
     pub fn get_watch_dirs(&self) -> impl Iterator<Item = &'_ PathBuf> {

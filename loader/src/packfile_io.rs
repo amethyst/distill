@@ -30,8 +30,8 @@ impl PackfileMessageReader {
     fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>> {
         let messge_reader = self.message_reader.get_or_try(|| {
             // We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here
-            let mut slice: &[u8] =
-                unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&self.mmap) };
+            let slice: &[u8] = &self.mmap;
+            let mut slice: &[u8] = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) };
             let mut options = capnp::message::ReaderOptions::new();
             options.traversal_limit_in_words(1 << 31);
             capnp::serialize::read_message_from_flat_slice(&mut slice, options)

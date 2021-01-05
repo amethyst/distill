@@ -335,6 +335,7 @@ impl<'a> SourcePairImport<'a> {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn build_import_result(
         &mut self,
         op: Option<ImportOp>,
