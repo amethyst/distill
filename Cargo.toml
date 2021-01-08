@@ -15,8 +15,8 @@ license = "MIT OR Apache-2.0"
 
 [workspace]
 members = [
-    "importer", 
-    "loader", 
+    "importer",
+    "loader",
     "schema",
     "client",
     "cli",
@@ -37,7 +37,7 @@ serde-1 = ["atelier-core/serde"]
 asset_uuid_macro = ["atelier-core/asset_uuid_macro"]
 type_uuid = ["atelier-core/type_uuid"]
 serde_importers = ["atelier-importer/serde_importers"]
-parallel_hash = [ "atelier-daemon/parallel_hash" ]
-pretty_log = [ "atelier-daemon/pretty_log" ]
+parallel_hash = ["atelier-daemon/parallel_hash"]
+pretty_log = ["atelier-daemon/pretty_log"]
 rpc_io = ["atelier-loader/rpc_io"]
 handle = ["atelier-loader/handle"]

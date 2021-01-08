@@ -15,7 +15,7 @@ tokio-util = { version = "0.3", features = ["compat"], optional = true }
 futures-util = { version = "0.3.9", default-features = false, features = ["io"], optional = true }
 futures-channel = { version = "0.3", default-features = false, features = ["alloc"] }
 futures-core = { version = "0.3.9", default-features = false, features = ["alloc"] }
-capnp = { version = "0.13", optional = true}
+capnp = { version = "0.13", optional = true }
 capnp-rpc = { version = "0.13", optional = true }
 log = "0.4.11"
 dashmap = "4.0.1"
@@ -33,6 +33,13 @@ type-uuid = "0.1.2"
 
 [features]
 default = ["rpc_io", "handle"]
-rpc_io = ["atelier-schema", "tokio", "capnp", "capnp-rpc", "tokio-util", "futures-util"]
+rpc_io = [
+    "atelier-schema",
+    "tokio",
+    "capnp",
+    "capnp-rpc",
+    "tokio-util",
+    "futures-util",
+]
 handle = ["serde", "uuid"]
 asset_uuid_macro = ["atelier-core/asset_uuid_macro"]

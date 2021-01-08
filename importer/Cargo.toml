@@ -23,4 +23,10 @@ type-uuid = { version = "0.1.2", optional = true }
 futures-executor = { version = "0.3" }
 
 [features]
-serde_importers = ["typetag", "serde-importable-derive", "ron", "atelier-core/type_uuid", "type-uuid"]
+serde_importers = [
+    "typetag",
+    "serde-importable-derive",
+    "ron",
+    "atelier-core/type_uuid",
+    "type-uuid",
+]

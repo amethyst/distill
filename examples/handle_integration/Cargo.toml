@@ -7,12 +7,12 @@ readme = "README.md"
 license = "MIT/Apache-2.0"
 
 [dependencies]
-atelier-assets = { version = "0.1", path = "../..", features = ["serde_importers", "asset_uuid_macro"]}
+atelier-assets = { version = "0.1", path = "../..", features = ["serde_importers", "asset_uuid_macro"] }
 futures-executor = { version = "0.3", default-features = false }
 tokio = { version = "0.2", features = ["io-util"] }
 
 type-uuid = "0.1.2"
-image2 = { version = "0.11", features = [ "ser" ] }
+image2 = { version = "0.11", features = ["ser"] }
 log = { version = "0.4.11", features = ["serde"] }
 serde = "1.0.118"
 uuid = "0.8.1"
