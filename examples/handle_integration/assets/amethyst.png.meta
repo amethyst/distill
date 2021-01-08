@@ -1,20 +1,20 @@
 (
     version: 1,
-    import_hash: Some(15090209414957017868),
+    import_hash: Some(17953370956625591029),
     importer_version: 1,
     importer_type: "720d636b-b79c-42d4-8f46-a2d8e1ada46e",
     importer_options: (),
-    importer_state: (Some("36605880-e92e-4d87-818f-acc2ab236e9c")),
+    importer_state: (Some("9565224c-ed28-4681-836b-50b062bb65bb")),
     assets: [
         (
-            id: "36605880-e92e-4d87-818f-acc2ab236e9c",
+            id: "9565224c-ed28-4681-836b-50b062bb65bb",
             search_tags: [
                 ("file_name", Some("amethyst.png")),
             ],
             build_pipeline: None,
             artifact: Some((
-                hash: 12078420733849445096,
-                id: "36605880-e92e-4d87-818f-acc2ab236e9c",
+                id: (13517966531206634026),
+                asset_id: "9565224c-ed28-4681-836b-50b062bb65bb",
                 build_deps: [],
                 load_deps: [],
                 compression: None,

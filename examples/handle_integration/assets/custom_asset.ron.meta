@@ -1,22 +1,22 @@
 (
     version: 1,
-    import_hash: Some(11943023854699880),
+    import_hash: Some(2001196813644415423),
     importer_version: 1,
     importer_type: "162ede20-6fdd-44c1-8387-8f93983c067c",
     importer_options: (),
     importer_state: (
-        id: Some("0977fd59-e52d-4910-85e0-d61ae8affa8c"),
+        id: Some("888dce0b-282a-4c4a-bdef-4e1de588145f"),
     ),
     assets: [
         (
-            id: "0977fd59-e52d-4910-85e0-d61ae8affa8c",
+            id: "888dce0b-282a-4c4a-bdef-4e1de588145f",
             search_tags: [
                 ("file_name", Some("custom_asset.ron")),
             ],
             build_pipeline: None,
             artifact: Some((
-                hash: 10868599799857052654,
-                id: "0977fd59-e52d-4910-85e0-d61ae8affa8c",
+                id: (1452492512431649541),
+                asset_id: "888dce0b-282a-4c4a-bdef-4e1de588145f",
                 build_deps: [
                     Uuid("36605880-e92e-4d87-818f-acc2ab236e9c"),
                     Path("amethyst.png"),
