@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 fn main() {
     init_logging().expect("failed to init logging");
+
     std::thread::spawn(move || {
         AssetDaemon::default()
             .with_importer("png", crate::image::ImageImporter)
@@ -14,9 +15,7 @@ fn main() {
             .with_asset_dirs(vec![PathBuf::from("assets")])
             .run();
     });
-    game::run();
 
-    println!("Successfully loaded and unloaded assets.");
     println!(
         r#"Check the asset metadata using the CLI! 
 Open a new terminal without exiting this program, and run:
@@ -26,12 +25,6 @@ Open a new terminal without exiting this program, and run:
 - `help` to list all available commands. 
 "#
     );
-    use std::io::{Read, Write};
-    let mut stdin = std::io::stdin();
-    let mut stdout = std::io::stdout();
 
-    write!(stdout, "Press any key to exit...").unwrap();
-    stdout.flush().unwrap();
-
-    let _ = stdin.read(&mut [0u8]).unwrap();
+    game::run();
 }
