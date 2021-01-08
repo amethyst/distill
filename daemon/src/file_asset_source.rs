@@ -7,7 +7,10 @@ use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
 use crate::source_pair_import::{
     self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
 };
-use atelier_core::{utils, ArtifactId, AssetRef, AssetUuid, CompressionType};
+use atelier_core::{
+    utils::{self, canonicalize_path},
+    ArtifactId, AssetRef, AssetUuid, CompressionType,
+};
 use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
 };
@@ -140,7 +143,7 @@ fn resolve_source_path(abs_source_path: &PathBuf, path: &PathBuf) -> PathBuf {
     } else {
         path.clone()
     };
-    crate::watcher::canonicalize_path(&absolute_path)
+    canonicalize_path(&absolute_path)
 }
 
 impl FileAssetSource {
@@ -630,11 +633,25 @@ impl FileAssetSource {
 
         log::trace!("Importing source for {:?}", id);
         let imported_assets = import.import_source(scratch_buf).await?;
+        if let Some(import_op) = imported_assets.import_op {
+            // TODO store reported errors and warnings in metadata
+            for error in &import_op.errors {
+                log::error!("Import erorr {:?}: {:?}", path, error);
+            }
+            for warning in &import_op.warnings {
+                log::warn!("Import warning {:?}: {:?}", path, warning);
+            }
+        }
         let mut context_set = imported_assets
             .importer_context_set
             .expect("importer context set required");
         let mut this_asset = None;
         let mut rw_txn = self.artifact_cache.rw_txn().await?;
+        let asset_ids = imported_assets
+            .assets
+            .iter()
+            .map(|a| a.metadata.id)
+            .collect::<Vec<_>>();
         for asset in imported_assets.assets {
             let mut build_deps = asset
                 .metadata
@@ -717,9 +734,10 @@ impl FileAssetSource {
         if let Some(asset) = this_asset {
             Ok(asset)
         } else {
-            Err(Error::Custom(
-                "Asset does not exist in source file".to_string(),
-            ))
+            Err(Error::Custom(format!(
+                "Asset {} does not exist in source file {:?}. Found assets: {:?}",
+                *id, path, asset_ids
+            )))
         }
     }
 
@@ -777,10 +795,24 @@ impl FileAssetSource {
             for asset in self.delete_metadata(txn, path) {
                 affected_assets.entry(asset).or_insert(None);
             }
+            if let Some(relative_path) = self.tracker.make_relative_path(path) {
+                self.hub
+                    .remove_path(txn, &relative_path, change_batch)
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to remove path {:?} in asset_hub: {:?}", path, e)
+                    });
+            }
         }
 
         // update or insert metadata for changed source pairs
         for (path, metadata) in changes.iter().filter(|(_, change)| change.is_some()) {
+            if let Some(relative_path) = self.tracker.make_relative_path(path) {
+                self.hub
+                    .update_path(txn, &relative_path, change_batch)
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to update path {:?} in asset_hub: {:?}", path, e)
+                    });
+            }
             let import_state = &metadata.as_ref().unwrap().import_state;
             if import_state.source_metadata().is_none() {
                 continue;
@@ -1192,6 +1224,15 @@ impl FileAssetSource {
 
                     if let Some((import, import_output)) = result {
                         let metadata = if let Some(mut import_output) = import_output {
+                            // TODO store reported errors and warnings in metadata
+                            if let Some(import_op) = import_output.import_op {
+                                for error in &import_op.errors {
+                                    log::error!("Import errors {:?}: {:?}", p.source, error);
+                                }
+                                for warning in &import_op.warnings {
+                                    log::warn!("Import warning {:?}: {:?}", p.source, warning);
+                                }
+                            }
                             // put import artifact in cache if it doesn't have unresolved refs
                             if !import_output.assets.is_empty() {
                                 let mut txn = self

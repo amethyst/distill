@@ -6,6 +6,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[non_exhaustive]
 pub enum Error {
     IoError(std::io::Error),
+    Uuid(uuid::Error),
     ErasedSerde(erased_serde::Error),
     #[cfg(feature = "serde_importers")]
     RonDe(ron::de::Error),
@@ -18,6 +19,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
             Error::IoError(ref e) => Some(e),
+            Error::Uuid(ref e) => Some(e),
             Error::ErasedSerde(ref e) => Some(e),
             #[cfg(feature = "serde_importers")]
             Error::RonDe(ref e) => Some(e),
@@ -31,6 +33,7 @@ impl std::error::Error for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            Error::Uuid(ref e) => e.fmt(f),
             Error::IoError(ref e) => e.fmt(f),
             Error::ErasedSerde(ref e) => e.fmt(f),
             #[cfg(feature = "serde_importers")]
@@ -39,6 +42,12 @@ impl fmt::Display for Error {
             Error::ExportUnsupported => write!(f, "{:?}", self),
             Error::Custom(ref e) => write!(f, "{}", e),
         }
+    }
+}
+
+impl From<uuid::Error> for Error {
+    fn from(err: uuid::Error) -> Error {
+        Error::Uuid(err)
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{ImportedAsset, Importer, ImporterValue, Result, SerdeImportable};
+use crate::{ImportOp, ImportedAsset, Importer, ImporterValue, Result, SerdeImportable};
 use atelier_core::AssetUuid;
 use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,7 @@ impl Importer for RonImporter {
 
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn Read,
         _: &Self::Options,
         state: &mut Self::State,
@@ -89,7 +90,9 @@ mod tests {
                      }"
         .as_bytes();
 
+        let mut import_op = ImportOp::default();
         let a_boxed_res = futures_executor::block_on(importer.import_boxed(
+            &mut import_op,
             &mut a,
             Box::new(RonImporterOptions {}),
             Box::new(RonImporterState { id: None }),
@@ -129,7 +132,9 @@ mod tests {
                      }"
         .as_bytes();
 
+        let mut op = ImportOp::default();
         let b_boxed_res = futures_executor::block_on(importer.import_boxed(
+            &mut op,
             &mut b,
             Box::new(RonImporterOptions {}),
             Box::new(RonImporterState { id: None }),

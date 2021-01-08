@@ -1,6 +1,7 @@
 #![recursion_limit = "1024"] // required for select!
 #![allow(unknown_lints)]
 #![warn(clippy::all, rust_2018_idioms, rust_2018_compatibility)]
+#![allow(clippy::rc_buffer)] // https://github.com/rust-lang/rust-clippy/issues/6170
 
 mod artifact_cache;
 mod asset_hub;

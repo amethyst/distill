@@ -4,7 +4,7 @@
 
 pub mod asset_path {
     #[derive(Copy, Clone)]
-    pub struct Owned;
+    pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
         type Reader = Reader<'a>;
         type Builder = Builder<'a>;
@@ -59,7 +59,7 @@ pub mod asset_path {
     }
 
     impl<'a> Reader<'a> {
-        pub fn reborrow(&self) -> Reader {
+        pub fn reborrow(&self) -> Reader<'_> {
             Reader { ..*self }
         }
 
@@ -133,7 +133,7 @@ pub mod asset_path {
         }
     }
 
-    impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+    impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
         fn set_pointer_builder<'b>(
             pointer: ::capnp::private::layout::PointerBuilder<'b>,
             value: Reader<'a>,
@@ -147,10 +147,10 @@ pub mod asset_path {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
-        pub fn reborrow(&mut self) -> Builder {
+        pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
-        pub fn reborrow_as_reader(&self) -> Reader {
+        pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
 
@@ -165,9 +165,9 @@ pub mod asset_path {
             )
         }
         #[inline]
-        pub fn set_id<'b>(
+        pub fn set_id(
             &mut self,
-            value: crate::data_capnp::asset_uuid::Reader<'b>,
+            value: crate::data_capnp::asset_uuid::Reader<'_>,
         ) -> ::capnp::Result<()> {
             ::capnp::traits::SetPointerBuilder::set_pointer_builder(
                 self.builder.get_pointer_field(0),
@@ -190,7 +190,7 @@ pub mod asset_path {
             )
         }
         #[inline]
-        pub fn set_path(&mut self, value: ::capnp::data::Reader) {
+        pub fn set_path(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(1).set_data(value);
         }
         #[inline]
@@ -229,7 +229,7 @@ pub mod asset_path {
 
 pub mod path_assets {
     #[derive(Copy, Clone)]
-    pub struct Owned;
+    pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
         type Reader = Reader<'a>;
         type Builder = Builder<'a>;
@@ -284,7 +284,7 @@ pub mod path_assets {
     }
 
     impl<'a> Reader<'a> {
-        pub fn reborrow(&self) -> Reader {
+        pub fn reborrow(&self) -> Reader<'_> {
             Reader { ..*self }
         }
 
@@ -361,7 +361,7 @@ pub mod path_assets {
         }
     }
 
-    impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+    impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
         fn set_pointer_builder<'b>(
             pointer: ::capnp::private::layout::PointerBuilder<'b>,
             value: Reader<'a>,
@@ -375,10 +375,10 @@ pub mod path_assets {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
-        pub fn reborrow(&mut self) -> Builder {
+        pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
-        pub fn reborrow_as_reader(&self) -> Reader {
+        pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
 
@@ -393,7 +393,7 @@ pub mod path_assets {
             )
         }
         #[inline]
-        pub fn set_path(&mut self, value: ::capnp::data::Reader) {
+        pub fn set_path(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(0).set_data(value);
         }
         #[inline]
@@ -462,7 +462,7 @@ pub mod path_assets {
 
 pub mod asset_data {
     #[derive(Copy, Clone)]
-    pub struct Owned;
+    pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
         type Reader = Reader<'a>;
         type Builder = Builder<'a>;
@@ -517,7 +517,7 @@ pub mod asset_data {
     }
 
     impl<'a> Reader<'a> {
-        pub fn reborrow(&self) -> Reader {
+        pub fn reborrow(&self) -> Reader<'_> {
             Reader { ..*self }
         }
 
@@ -591,7 +591,7 @@ pub mod asset_data {
         }
     }
 
-    impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+    impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
         fn set_pointer_builder<'b>(
             pointer: ::capnp::private::layout::PointerBuilder<'b>,
             value: Reader<'a>,
@@ -605,10 +605,10 @@ pub mod asset_data {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
-        pub fn reborrow(&mut self) -> Builder {
+        pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
-        pub fn reborrow_as_reader(&self) -> Reader {
+        pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
 
@@ -623,7 +623,7 @@ pub mod asset_data {
             )
         }
         #[inline]
-        pub fn set_data(&mut self, value: ::capnp::data::Reader) {
+        pub fn set_data(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(0).set_data(value);
         }
         #[inline]
@@ -641,7 +641,7 @@ pub mod asset_data {
             )
         }
         #[inline]
-        pub fn set_type_id(&mut self, value: ::capnp::data::Reader) {
+        pub fn set_type_id(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(1).set_data(value);
         }
         #[inline]
@@ -698,7 +698,7 @@ pub mod asset_hub {
         }
     }
     #[derive(Copy, Clone)]
-    pub struct Owned;
+    pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
         type Reader = Client;
         type Builder = Client;
@@ -733,9 +733,9 @@ pub mod asset_hub {
         }
     }
 
-    impl ::capnp::traits::SetPointerBuilder<Client> for Client {
+    impl ::capnp::traits::SetPointerBuilder for Client {
         fn set_pointer_builder(
-            pointer: ::capnp::private::layout::PointerBuilder,
+            pointer: ::capnp::private::layout::PointerBuilder<'_>,
             from: Client,
             _canonicalize: bool,
         ) -> ::capnp::Result<()> {
@@ -943,7 +943,7 @@ pub mod asset_hub {
             }
         }
         #[derive(Copy, Clone)]
-        pub struct Owned;
+        pub struct Owned(());
         impl<'a> ::capnp::traits::Owned<'a> for Owned {
             type Reader = Client;
             type Builder = Client;
@@ -978,9 +978,9 @@ pub mod asset_hub {
             }
         }
 
-        impl ::capnp::traits::SetPointerBuilder<Client> for Client {
+        impl ::capnp::traits::SetPointerBuilder for Client {
             fn set_pointer_builder(
-                pointer: ::capnp::private::layout::PointerBuilder,
+                pointer: ::capnp::private::layout::PointerBuilder<'_>,
                 from: Client,
                 _canonicalize: bool,
             ) -> ::capnp::Result<()> {
@@ -1313,7 +1313,7 @@ pub mod asset_hub {
 
         pub mod get_asset_metadata_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -1368,7 +1368,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -1438,7 +1438,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -1452,10 +1452,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -1523,7 +1523,7 @@ pub mod asset_hub {
 
         pub mod get_asset_metadata_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -1578,7 +1578,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -1648,7 +1648,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -1662,10 +1662,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -1736,7 +1736,7 @@ pub mod asset_hub {
 
         pub mod get_asset_metadata_with_dependencies_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -1791,7 +1791,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -1861,7 +1861,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -1875,10 +1875,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -1946,7 +1946,7 @@ pub mod asset_hub {
 
         pub mod get_asset_metadata_with_dependencies_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -2001,7 +2001,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -2071,7 +2071,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -2085,10 +2085,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -2159,7 +2159,7 @@ pub mod asset_hub {
 
         pub mod get_all_asset_metadata_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -2214,7 +2214,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -2270,7 +2270,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -2284,10 +2284,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -2319,7 +2319,7 @@ pub mod asset_hub {
 
         pub mod get_all_asset_metadata_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -2374,7 +2374,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -2444,7 +2444,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -2458,10 +2458,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -2532,7 +2532,7 @@ pub mod asset_hub {
 
         pub mod get_latest_asset_change_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -2587,7 +2587,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -2643,7 +2643,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -2657,10 +2657,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -2692,7 +2692,7 @@ pub mod asset_hub {
 
         pub mod get_latest_asset_change_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -2747,7 +2747,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -2807,7 +2807,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -2821,10 +2821,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -2864,7 +2864,7 @@ pub mod asset_hub {
 
         pub mod get_asset_changes_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -2919,7 +2919,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -2983,7 +2983,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -2997,10 +2997,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -3048,7 +3048,7 @@ pub mod asset_hub {
 
         pub mod get_asset_changes_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -3103,7 +3103,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -3176,7 +3176,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -3190,10 +3190,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -3269,7 +3269,7 @@ pub mod asset_hub {
 
         pub mod get_import_artifacts_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -3324,7 +3324,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -3394,7 +3394,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -3408,10 +3408,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -3479,7 +3479,7 @@ pub mod asset_hub {
 
         pub mod get_import_artifacts_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -3534,7 +3534,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -3604,7 +3604,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -3618,10 +3618,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -3689,7 +3689,7 @@ pub mod asset_hub {
 
         pub mod update_asset_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -3744,7 +3744,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -3810,7 +3810,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -3824,10 +3824,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -3844,9 +3844,9 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_asset<'b>(
+                pub fn set_asset(
                     &mut self,
-                    value: crate::data_capnp::artifact::Reader<'b>,
+                    value: crate::data_capnp::artifact::Reader<'_>,
                 ) -> ::capnp::Result<()> {
                     ::capnp::traits::SetPointerBuilder::set_pointer_builder(
                         self.builder.get_pointer_field(0),
@@ -3895,7 +3895,7 @@ pub mod asset_hub {
 
         pub mod update_asset_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -3950,7 +3950,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -4016,7 +4016,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -4030,10 +4030,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -4048,7 +4048,7 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_new_import_hash(&mut self, value: ::capnp::data::Reader) {
+                pub fn set_new_import_hash(&mut self, value: ::capnp::data::Reader<'_>) {
                     self.builder.get_pointer_field(0).set_data(value);
                 }
                 #[inline]
@@ -4083,7 +4083,7 @@ pub mod asset_hub {
 
         pub mod patch_asset_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -4138,7 +4138,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -4228,7 +4228,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -4242,10 +4242,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -4262,9 +4262,9 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_asset_id<'b>(
+                pub fn set_asset_id(
                     &mut self,
-                    value: crate::data_capnp::asset_uuid::Reader<'b>,
+                    value: crate::data_capnp::asset_uuid::Reader<'_>,
                 ) -> ::capnp::Result<()> {
                     ::capnp::traits::SetPointerBuilder::set_pointer_builder(
                         self.builder.get_pointer_field(0),
@@ -4290,7 +4290,7 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_asset_hash(&mut self, value: ::capnp::data::Reader) {
+                pub fn set_asset_hash(&mut self, value: ::capnp::data::Reader<'_>) {
                     self.builder.get_pointer_field(1).set_data(value);
                 }
                 #[inline]
@@ -4311,9 +4311,9 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_patch<'b>(
+                pub fn set_patch(
                     &mut self,
-                    value: crate::service_capnp::asset_data::Reader<'b>,
+                    value: crate::service_capnp::asset_data::Reader<'_>,
                 ) -> ::capnp::Result<()> {
                     ::capnp::traits::SetPointerBuilder::set_pointer_builder(
                         self.builder.get_pointer_field(2),
@@ -4367,7 +4367,7 @@ pub mod asset_hub {
 
         pub mod patch_asset_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -4422,7 +4422,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -4488,7 +4488,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -4502,10 +4502,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -4520,7 +4520,7 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_new_import_hash(&mut self, value: ::capnp::data::Reader) {
+                pub fn set_new_import_hash(&mut self, value: ::capnp::data::Reader<'_>) {
                     self.builder.get_pointer_field(0).set_data(value);
                 }
                 #[inline]
@@ -4555,7 +4555,7 @@ pub mod asset_hub {
 
         pub mod get_path_for_assets_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -4610,7 +4610,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -4680,7 +4680,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -4694,10 +4694,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -4765,7 +4765,7 @@ pub mod asset_hub {
 
         pub mod get_path_for_assets_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -4820,7 +4820,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -4890,7 +4890,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -4904,10 +4904,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -4978,7 +4978,7 @@ pub mod asset_hub {
 
         pub mod get_assets_for_paths_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -5033,7 +5033,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -5099,7 +5099,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -5113,10 +5113,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -5176,7 +5176,7 @@ pub mod asset_hub {
 
         pub mod get_assets_for_paths_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -5231,7 +5231,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -5301,7 +5301,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -5315,10 +5315,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -5389,7 +5389,7 @@ pub mod asset_hub {
 
         pub mod create_file_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -5444,7 +5444,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -5524,7 +5524,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -5538,10 +5538,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -5556,7 +5556,7 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_path(&mut self, value: ::capnp::data::Reader) {
+                pub fn set_path(&mut self, value: ::capnp::data::Reader<'_>) {
                     self.builder.get_pointer_field(0).set_data(value);
                 }
                 #[inline]
@@ -5630,7 +5630,7 @@ pub mod asset_hub {
 
         pub mod create_file_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -5685,7 +5685,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -5751,7 +5751,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -5765,10 +5765,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -5783,7 +5783,7 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_new_import_hash(&mut self, value: ::capnp::data::Reader) {
+                pub fn set_new_import_hash(&mut self, value: ::capnp::data::Reader<'_>) {
                     self.builder.get_pointer_field(0).set_data(value);
                 }
                 #[inline]
@@ -5818,7 +5818,7 @@ pub mod asset_hub {
 
         pub mod delete_file_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -5873,7 +5873,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -5939,7 +5939,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -5953,10 +5953,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -5971,7 +5971,7 @@ pub mod asset_hub {
                     )
                 }
                 #[inline]
-                pub fn set_path(&mut self, value: ::capnp::data::Reader) {
+                pub fn set_path(&mut self, value: ::capnp::data::Reader<'_>) {
                     self.builder.get_pointer_field(0).set_data(value);
                 }
                 #[inline]
@@ -6006,7 +6006,7 @@ pub mod asset_hub {
 
         pub mod delete_file_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -6061,7 +6061,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -6117,7 +6117,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -6131,10 +6131,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -6185,7 +6185,7 @@ pub mod asset_hub {
             }
         }
         #[derive(Copy, Clone)]
-        pub struct Owned;
+        pub struct Owned(());
         impl<'a> ::capnp::traits::Owned<'a> for Owned {
             type Reader = Client;
             type Builder = Client;
@@ -6220,9 +6220,9 @@ pub mod asset_hub {
             }
         }
 
-        impl ::capnp::traits::SetPointerBuilder<Client> for Client {
+        impl ::capnp::traits::SetPointerBuilder for Client {
             fn set_pointer_builder(
-                pointer: ::capnp::private::layout::PointerBuilder,
+                pointer: ::capnp::private::layout::PointerBuilder<'_>,
                 from: Client,
                 _canonicalize: bool,
             ) -> ::capnp::Result<()> {
@@ -6329,7 +6329,7 @@ pub mod asset_hub {
 
         pub mod update_params {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -6384,7 +6384,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -6456,7 +6456,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -6470,10 +6470,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -6540,7 +6540,7 @@ pub mod asset_hub {
 
         pub mod update_results {
             #[derive(Copy, Clone)]
-            pub struct Owned;
+            pub struct Owned(());
             impl<'a> ::capnp::traits::Owned<'a> for Owned {
                 type Reader = Reader<'a>;
                 type Builder = Builder<'a>;
@@ -6595,7 +6595,7 @@ pub mod asset_hub {
             }
 
             impl<'a> Reader<'a> {
-                pub fn reborrow(&self) -> Reader {
+                pub fn reborrow(&self) -> Reader<'_> {
                     Reader { ..*self }
                 }
 
@@ -6651,7 +6651,7 @@ pub mod asset_hub {
                 }
             }
 
-            impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+            impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
                 fn set_pointer_builder<'b>(
                     pointer: ::capnp::private::layout::PointerBuilder<'b>,
                     value: Reader<'a>,
@@ -6665,10 +6665,10 @@ pub mod asset_hub {
                 pub fn into_reader(self) -> Reader<'a> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
-                pub fn reborrow(&mut self) -> Builder {
+                pub fn reborrow(&mut self) -> Builder<'_> {
                     Builder { ..*self }
                 }
-                pub fn reborrow_as_reader(&self) -> Reader {
+                pub fn reborrow_as_reader(&self) -> Reader<'_> {
                     ::capnp::traits::FromStructReader::new(self.builder.into_reader())
                 }
 
@@ -6701,7 +6701,7 @@ pub mod asset_hub {
 
     pub mod register_listener_params {
         #[derive(Copy, Clone)]
-        pub struct Owned;
+        pub struct Owned(());
         impl<'a> ::capnp::traits::Owned<'a> for Owned {
             type Reader = Reader<'a>;
             type Builder = Builder<'a>;
@@ -6756,7 +6756,7 @@ pub mod asset_hub {
         }
 
         impl<'a> Reader<'a> {
-            pub fn reborrow(&self) -> Reader {
+            pub fn reborrow(&self) -> Reader<'_> {
                 Reader { ..*self }
             }
 
@@ -6821,7 +6821,7 @@ pub mod asset_hub {
             }
         }
 
-        impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+        impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
             fn set_pointer_builder<'b>(
                 pointer: ::capnp::private::layout::PointerBuilder<'b>,
                 value: Reader<'a>,
@@ -6835,10 +6835,10 @@ pub mod asset_hub {
             pub fn into_reader(self) -> Reader<'a> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
-            pub fn reborrow(&mut self) -> Builder {
+            pub fn reborrow(&mut self) -> Builder<'_> {
                 Builder { ..*self }
             }
-            pub fn reborrow_as_reader(&self) -> Reader {
+            pub fn reborrow_as_reader(&self) -> Reader<'_> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
 
@@ -6896,7 +6896,7 @@ pub mod asset_hub {
 
     pub mod register_listener_results {
         #[derive(Copy, Clone)]
-        pub struct Owned;
+        pub struct Owned(());
         impl<'a> ::capnp::traits::Owned<'a> for Owned {
             type Reader = Reader<'a>;
             type Builder = Builder<'a>;
@@ -6951,7 +6951,7 @@ pub mod asset_hub {
         }
 
         impl<'a> Reader<'a> {
-            pub fn reborrow(&self) -> Reader {
+            pub fn reborrow(&self) -> Reader<'_> {
                 Reader { ..*self }
             }
 
@@ -7005,7 +7005,7 @@ pub mod asset_hub {
             }
         }
 
-        impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+        impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
             fn set_pointer_builder<'b>(
                 pointer: ::capnp::private::layout::PointerBuilder<'b>,
                 value: Reader<'a>,
@@ -7019,10 +7019,10 @@ pub mod asset_hub {
             pub fn into_reader(self) -> Reader<'a> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
-            pub fn reborrow(&mut self) -> Builder {
+            pub fn reborrow(&mut self) -> Builder<'_> {
                 Builder { ..*self }
             }
-            pub fn reborrow_as_reader(&self) -> Reader {
+            pub fn reborrow_as_reader(&self) -> Reader<'_> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
 
@@ -7054,7 +7054,7 @@ pub mod asset_hub {
 
     pub mod get_snapshot_params {
         #[derive(Copy, Clone)]
-        pub struct Owned;
+        pub struct Owned(());
         impl<'a> ::capnp::traits::Owned<'a> for Owned {
             type Reader = Reader<'a>;
             type Builder = Builder<'a>;
@@ -7109,7 +7109,7 @@ pub mod asset_hub {
         }
 
         impl<'a> Reader<'a> {
-            pub fn reborrow(&self) -> Reader {
+            pub fn reborrow(&self) -> Reader<'_> {
                 Reader { ..*self }
             }
 
@@ -7163,7 +7163,7 @@ pub mod asset_hub {
             }
         }
 
-        impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+        impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
             fn set_pointer_builder<'b>(
                 pointer: ::capnp::private::layout::PointerBuilder<'b>,
                 value: Reader<'a>,
@@ -7177,10 +7177,10 @@ pub mod asset_hub {
             pub fn into_reader(self) -> Reader<'a> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
-            pub fn reborrow(&mut self) -> Builder {
+            pub fn reborrow(&mut self) -> Builder<'_> {
                 Builder { ..*self }
             }
-            pub fn reborrow_as_reader(&self) -> Reader {
+            pub fn reborrow_as_reader(&self) -> Reader<'_> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
 
@@ -7212,7 +7212,7 @@ pub mod asset_hub {
 
     pub mod get_snapshot_results {
         #[derive(Copy, Clone)]
-        pub struct Owned;
+        pub struct Owned(());
         impl<'a> ::capnp::traits::Owned<'a> for Owned {
             type Reader = Reader<'a>;
             type Builder = Builder<'a>;
@@ -7267,7 +7267,7 @@ pub mod asset_hub {
         }
 
         impl<'a> Reader<'a> {
-            pub fn reborrow(&self) -> Reader {
+            pub fn reborrow(&self) -> Reader<'_> {
                 Reader { ..*self }
             }
 
@@ -7332,7 +7332,7 @@ pub mod asset_hub {
             }
         }
 
-        impl<'a> ::capnp::traits::SetPointerBuilder<Builder<'a>> for Reader<'a> {
+        impl<'a> ::capnp::traits::SetPointerBuilder for Reader<'a> {
             fn set_pointer_builder<'b>(
                 pointer: ::capnp::private::layout::PointerBuilder<'b>,
                 value: Reader<'a>,
@@ -7346,10 +7346,10 @@ pub mod asset_hub {
             pub fn into_reader(self) -> Reader<'a> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
-            pub fn reborrow(&mut self) -> Builder {
+            pub fn reborrow(&mut self) -> Builder<'_> {
                 Builder { ..*self }
             }
-            pub fn reborrow_as_reader(&self) -> Reader {
+            pub fn reborrow_as_reader(&self) -> Reader<'_> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
 

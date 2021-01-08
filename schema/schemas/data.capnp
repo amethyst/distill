@@ -147,6 +147,8 @@ struct AssetChangeEvent {
   union {
     contentUpdateEvent @0 :AssetContentUpdateEvent;
     removeEvent @1 :AssetRemoveEvent;
+    pathUpdateEvent @2 :PathUpdateEvent;
+    pathRemoveEvent @3 :PathRemoveEvent;
   }
 }
 
@@ -159,8 +161,16 @@ struct AssetContentUpdateEvent {
     buildDepHash @2 :Data;
 }
 
+struct PathUpdateEvent {
+    path @0 :Data;
+}
+
 struct AssetRemoveEvent {
     id @0 :AssetUuid;
+}
+
+struct PathRemoveEvent {
+    path @0 :Data;
 }
 
 enum CompressionType {

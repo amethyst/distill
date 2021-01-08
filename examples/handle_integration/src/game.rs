@@ -23,6 +23,9 @@ pub fn run() {
     let tx = Arc::new(tx);
 
     let mut loader = Loader::new(Box::new(RpcIO::default()));
+    // let file = std::fs::File::open(std::path::PathBuf::from("my.pack")).unwrap();
+    // let file_reader = atelier_assets::loader::packfile_io::PackfileReader::new(file).unwrap();
+    // let mut loader = Loader::new(Box::new(file_reader));
     let game = Game {
         storage: GenericAssetStorage::new(tx.clone(), loader.indirection_table()),
     };

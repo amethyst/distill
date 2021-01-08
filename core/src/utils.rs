@@ -47,12 +47,18 @@ where
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
     import_hash.hash(&mut hasher);
     (*id).hash(&mut hasher);
-    use std::iter::FromIterator;
-    let mut deps = Vec::from_iter(dep_list.into_iter());
+    let mut deps = dep_list.into_iter().collect::<Vec<_>>();
     deps.sort_by_key(|dep| *dep.borrow());
     deps.dedup_by_key(|dep| *dep.borrow());
     for dep in &deps {
         dep.borrow().hash(&mut hasher);
     }
     hasher.finish()
+}
+
+#[cfg(feature = "path_utils")]
+pub fn canonicalize_path(path: &PathBuf) -> PathBuf {
+    use path_slash::PathBufExt;
+    let cleaned_path = PathBuf::from_slash(path_clean::clean(&path.to_slash_lossy()));
+    PathBuf::from(dunce::simplified(&cleaned_path))
 }

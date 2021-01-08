@@ -6,7 +6,7 @@ use crate::{
     file_asset_source::FileAssetSource,
     file_tracker::FileTracker,
 };
-use atelier_core::utils;
+use atelier_core::utils::{self, canonicalize_path};
 use atelier_importer::SerializedAsset;
 use atelier_schema::{
     build_artifact_metadata,
@@ -339,7 +339,19 @@ impl AssetHubSnapshotImpl {
             let asset_uuid = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             let path = ctx.file_source.get_asset_path(txn, &asset_uuid);
             if let Some(path) = path {
-                asset_paths.push((id, path));
+                for dir in ctx.file_tracker.get_watch_dirs() {
+                    let canonicalized_dir = canonicalize_path(&dir);
+                    if path.starts_with(&canonicalized_dir) {
+                        let relative_path = path
+                            .strip_prefix(canonicalized_dir)
+                            .expect("error stripping prefix")
+                            .to_path_buf();
+                        let relative_path = canonicalize_path(&relative_path)
+                            .to_string_lossy()
+                            .replace("\\", "/");
+                        asset_paths.push((id, relative_path));
+                    }
+                }
             }
         }
         let mut results_builder = results.get();
@@ -347,10 +359,7 @@ impl AssetHubSnapshotImpl {
             .reborrow()
             .init_paths(asset_paths.len() as u32);
         for (idx, (asset, path)) in asset_paths.iter().enumerate() {
-            assets
-                .reborrow()
-                .get(idx as u32)
-                .set_path(path.to_string_lossy().as_bytes());
+            assets.reborrow().get(idx as u32).set_path(path.as_bytes());
             assets
                 .reborrow()
                 .get(idx as u32)
@@ -375,14 +384,14 @@ impl AssetHubSnapshotImpl {
             let mut metadata = None;
             if path.is_relative() {
                 for dir in ctx.file_tracker.get_watch_dirs() {
-                    let canonicalized = crate::watcher::canonicalize_path(&dir.join(&path));
+                    let canonicalized = canonicalize_path(&dir.join(&path));
                     metadata = ctx.file_source.get_metadata(txn, &canonicalized);
                     if metadata.is_some() {
                         break;
                     }
                 }
             } else {
-                let canonicalized = crate::watcher::canonicalize_path(&path);
+                let canonicalized = canonicalize_path(&path);
                 metadata = ctx.file_source.get_metadata(txn, &canonicalized)
             }
             if let Some(metadata) = metadata {
