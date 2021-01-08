@@ -23,7 +23,7 @@ pub use loader::Loader;
 pub use rpc_io::RpcIO;
 pub use storage::LoadHandle;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + 'static>>;
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + 'static>>;
 
 #[cfg(feature = "handle")]
 #[macro_export]
