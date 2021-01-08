@@ -21,6 +21,7 @@ skip = [
     { name = "cfg-if", version = "0.1.10" },
     { name = "pin-project-lite", version = "0.1.11" }, # upgrade tokio
     { name = "winapi", version = "0.2.8" }, # upgrade tokio and notify
+    { name = "wasi", version = "0.9.0" }, # upgrade tempfile and uuid
 ]
 
 [sources]
