@@ -9,6 +9,6 @@ license = "MIT OR Apache-2.0"
 proc-macro = true
 
 [dependencies]
-quote = "1"
-syn = "1"
-uuid = "0.8"
+quote = "1.0.8"
+syn = "1.0.58"
+uuid = "0.8.1"
