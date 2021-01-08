@@ -32,4 +32,3 @@ rpc_io = [
     "futures-util",
 ]
 handle = ["serde", "uuid"]
-asset_uuid_macro = ["atelier-core/asset_uuid_macro"]

@@ -34,7 +34,6 @@ atelier-loader = { version = "0.1", path = "loader" }
 
 [features]
 serde-1 = ["atelier-core/serde"]
-asset_uuid_macro = ["atelier-core/asset_uuid_macro"]
 type_uuid = ["atelier-core/type_uuid"]
 serde_importers = ["atelier-importer/serde_importers"]
 parallel_hash = ["atelier-daemon/parallel_hash"]

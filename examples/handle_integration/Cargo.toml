@@ -7,7 +7,7 @@ readme = "README.md"
 license = "MIT/Apache-2.0"
 
 [dependencies]
-atelier-assets = { version = "0.1", path = "../..", features = ["serde_importers", "asset_uuid_macro"] }
+atelier-assets = { version = "0.1", path = "../..", features = ["serde_importers"] }
 futures-executor = { version = "0.3", default-features = false }
 tokio = { version = "0.2", features = ["io-util"] }
 

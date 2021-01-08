@@ -431,11 +431,6 @@ impl FileTracker {
         self.db.rw_txn().await.expect("db: Failed to open rw txn")
     }
 
-    #[cfg(test)]
-    pub async fn get_ro_txn(&self) -> RoTransaction<'_> {
-        self.db.ro_txn().await.expect("db: Failed to open ro txn")
-    }
-
     pub fn read_rename_events<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         iter_txn: &'a V,
@@ -780,7 +775,7 @@ pub mod tests {
     }
 
     async fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().await;
+        let txn = t.get_rw_txn().await;
         let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
         let canonical_path = watcher::canonicalize_path(&path.join(name));
         let maybe_state = t.get_file_state(&txn, &canonical_path);
@@ -793,7 +788,7 @@ pub mod tests {
     }
 
     async fn expect_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().await;
+        let txn = t.get_rw_txn().await;
         let canonical_path = watcher::canonicalize_path(&asset_dir.join(name));
         t.get_file_state(&txn, &canonical_path)
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
@@ -826,7 +821,7 @@ pub mod tests {
     }
 
     async fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
-        let txn = t.get_ro_txn().await;
+        let txn = t.get_rw_txn().await;
         let path = watcher::canonicalize_path(&PathBuf::from(asset_dir));
         let canonical_path = path.join(name);
         t.get_dirty_file_state(&txn, &canonical_path)
