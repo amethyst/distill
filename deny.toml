@@ -15,7 +15,13 @@ exceptions = [
 
 [bans]
 multiple-versions = "deny"
-wildcards = "warn"
+wildcards = "deny"
+
+skip = [
+    { name = "cfg-if", version = "0.1.10" },
+    { name = "pin-project-lite", version = "0.1.11" }, # upgrade tokio
+    { name = "winapi", version = "0.2.8" }, # upgrade tokio and notify
+]
 
 [sources]
 unknown-git = "deny"
