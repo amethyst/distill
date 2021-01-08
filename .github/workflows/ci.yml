@@ -1,75 +1,45 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+  pull_request:
 
 env:
+  RUSTFLAGS: -Cdebuginfo=0 -Dwarnings
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        toolchain: [stable, nightly]
-        os: [windows-2019, ubuntu-20.04, macos-10.15]
-        exclude:
-          - os: macos-10.15
-            toolchain: nightly
-        checks:
-          - advisories
-          - bans licenses sources
-          
-    # Prevent sudden announcement of a new advisory from failing ci:
-    continue-on-error: ${{ matrix.checks == 'advisories' }}
-
+  tests:
+    name: Lint and Tests
     runs-on: ${{ matrix.os }}
-    needs: [clean, deny-check]
+    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        toolchain: [stable, nightly]
     steps:
       - uses: actions/checkout@v2
 
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.toolchain }}
-          components: clippy
+          profile: minimal
           override: true
 
-      - name: Build
-        run: cargo check
-        env:
-          CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-C debuginfo=0 -D warnings"
+      - run: rustup component add rustfmt
+        if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
 
-      - name: Run tests
-        run: cargo test --workspace
-        if: ${{ runner.os == 'Linux' }}
-        env:
-          CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-C debuginfo=0 -D warnings"
+      - run: cargo +nightly fmt --all -- --check
+        if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
+        
+      - run: rustup component add clippy
+        if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
 
+      - run: cargo +nightly clippy -Z unstable-options --workspace --all-targets --all-features
+        if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
 
-  deny-check:
-    name: cargo-deny
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - uses: EmbarkStudios/cargo-deny-action@v1
-        with:
-          command: check ${{ matrix.checks }}
-
-  clean:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-          override: true
-
-      - name: Check the format
-        run: cargo +stable fmt --all -- --check
-
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features -- -D warnings
+      - run: cargo test --workspace --all-features
