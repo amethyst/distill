@@ -6,7 +6,7 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-crossbeam-channel = "0.4"
+crossbeam-channel = "0.5.0"
 
 atelier-core = { path = "../core", version = "0.1.0", features = ["serde-1"] }
 atelier-schema = { path = "../schema", version = "0.1.0", optional = true }
