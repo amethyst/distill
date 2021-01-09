@@ -1023,8 +1023,8 @@ impl Loader {
     /// # Parameters
     ///
     /// * `id`: UUID of the asset.
-    pub fn add_ref(&self, id: AssetUuid) -> LoadHandle {
-        self.data.add_refs(id, 1)
+    pub fn add_ref<U: Into<AssetUuid>>(&self, id: U) -> LoadHandle {
+        self.data.add_refs(id.into(), 1)
     }
 
     /// Adds a reference to an indirect id and returns its [`LoadHandle`] with [`LoadHandle::is_indirect`] set to `true`.

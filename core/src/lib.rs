@@ -6,6 +6,7 @@ use serde::{
 #[cfg(feature = "serde-1")]
 use std::str::FromStr;
 pub use uuid;
+use uuid::Uuid;
 
 use std::fmt;
 
@@ -20,6 +21,16 @@ pub mod utils;
 /// any format supported by the `uuid` crate. Otherwise, serializes to and from a `[u8; 16]`.
 #[derive(PartialEq, Eq, Clone, Copy, Default, Hash, Ord, PartialOrd)]
 pub struct AssetUuid(pub [u8; 16]);
+
+impl<S: AsRef<str>> From<S> for AssetUuid {
+    fn from(s: S) -> Self {
+        AssetUuid(
+            *Uuid::parse_str(s.as_ref())
+                .expect("Macro input is not a UUID string")
+                .as_bytes(),
+        )
+    }
+}
 
 impl AsMut<[u8]> for AssetUuid {
     fn as_mut(&mut self) -> &mut [u8] {

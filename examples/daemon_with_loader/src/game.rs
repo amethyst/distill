@@ -171,11 +171,7 @@ pub fn run() {
         Box::new(Storage::<Image>::new(loader.indirection_table())),
     );
 
-    let handle = loader.add_ref(AssetUuid(
-        *Uuid::parse_str("6c5ae1ad-ae30-471b-985b-7d017265f19f")
-            .expect("not a UUID string")
-            .as_bytes(),
-    ));
+    let handle = loader.add_ref("6c5ae1ad-ae30-471b-985b-7d017265f19f");
     loop {
         loader
             .process(&game, &DefaultIndirectionResolver)
