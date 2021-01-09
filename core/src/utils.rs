@@ -55,3 +55,10 @@ where
     }
     hasher.finish()
 }
+
+#[cfg(feature = "path_utils")]
+pub fn canonicalize_path(path: &Path) -> PathBuf {
+    use path_slash::{PathBufExt, PathExt};
+    let cleaned_path = PathBuf::from_slash(path_clean::clean(&path.to_slash_lossy()));
+    PathBuf::from(dunce::simplified(&cleaned_path))
+}

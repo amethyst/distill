@@ -14,6 +14,7 @@ use atelier_schema::{
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{Hash, Hasher},
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -38,6 +39,8 @@ struct AssetContentUpdateEvent {
 enum ChangeEvent {
     ContentUpdate(AssetContentUpdateEvent),
     Remove(AssetUuid),
+    PathRemove(PathBuf),
+    PathUpdate(PathBuf),
 }
 
 #[derive(Debug)]
@@ -47,12 +50,14 @@ pub enum AssetBatchEvent {
 
 pub struct ChangeBatch {
     content_changes: Vec<AssetUuid>,
+    path_events: Vec<ChangeEvent>,
 }
 
 impl ChangeBatch {
     pub fn new() -> ChangeBatch {
         ChangeBatch {
             content_changes: Vec::new(),
+            path_events: Vec::new(),
         }
     }
 }
@@ -101,6 +106,16 @@ fn add_asset_changelog_entry(
             }
             ChangeEvent::Remove(id) => {
                 value.init_remove_event().init_id().set_id(&id.0);
+            }
+            ChangeEvent::PathRemove(path) => {
+                value
+                    .init_path_remove_event()
+                    .set_path(path.to_string_lossy().as_bytes());
+            }
+            ChangeEvent::PathUpdate(path) => {
+                value
+                    .init_path_update_event()
+                    .set_path(path.to_string_lossy().as_bytes());
             }
         }
     }
@@ -285,6 +300,30 @@ impl AssetHub {
         Ok(())
     }
 
+    pub fn remove_path(
+        &self,
+        _txn: &mut RwTransaction<'_>,
+        relative_path: &Path,
+        change_batch: &mut ChangeBatch,
+    ) -> Result<()> {
+        change_batch
+            .path_events
+            .push(ChangeEvent::PathRemove(relative_path.to_path_buf()));
+        Ok(())
+    }
+
+    pub fn update_path(
+        &self,
+        _txn: &mut RwTransaction<'_>,
+        relative_path: &Path,
+        change_batch: &mut ChangeBatch,
+    ) -> Result<()> {
+        change_batch
+            .path_events
+            .push(ChangeEvent::PathUpdate(relative_path.to_path_buf()));
+        Ok(())
+    }
+
     pub fn add_changes(
         &self,
         txn: &mut RwTransaction<'_>,
@@ -371,6 +410,9 @@ impl AssetHub {
             log::info!("{} asset events generated", events.len());
         }
         for event in events.iter() {
+            add_asset_changelog_entry(&self.tables, txn, event)?;
+        }
+        for event in change_batch.path_events.iter() {
             add_asset_changelog_entry(&self.tables, txn, event)?;
         }
         Ok(!events.is_empty())

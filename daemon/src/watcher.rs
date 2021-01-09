@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use atelier_core::utils::canonicalize_path;
 use futures_channel::mpsc::UnboundedSender;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs;
@@ -54,12 +55,6 @@ pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
         length: metadata.len(),
         last_modified: in_ms,
     }
-}
-
-use path_slash::{PathBufExt, PathExt};
-pub fn canonicalize_path(path: &Path) -> PathBuf {
-    let cleaned_path = PathBuf::from_slash(path_clean::clean(&path.to_slash_lossy()));
-    PathBuf::from(dunce::simplified(&cleaned_path))
 }
 
 impl DirWatcher {

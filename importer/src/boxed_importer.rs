@@ -1,4 +1,4 @@
-use crate::{error::Result, AsyncImporter, ExportAsset, ImporterValue, SerdeObj};
+use crate::{error::Result, AsyncImporter, ExportAsset, ImportOp, ImporterValue, SerdeObj};
 use atelier_core::{AssetMetadata, AssetTypeId, TypeUuidDynamic};
 use erased_serde::Deserializer;
 use futures_core::future::BoxFuture;
@@ -35,6 +35,7 @@ pub struct SourceMetadata<Options: 'static, State: 'static> {
 pub trait BoxedImporter: TypeUuidDynamic + Send + Sync + 'static {
     fn import_boxed<'a>(
         &'a self,
+        op: &'a mut ImportOp,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         options: Box<dyn SerdeObj>,
         state: Box<dyn SerdeObj>,
@@ -87,6 +88,7 @@ where
 {
     fn import_boxed<'a>(
         &'a self,
+        op: &'a mut ImportOp,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         options: Box<dyn SerdeObj>,
         mut state: Box<dyn SerdeObj>,
@@ -107,7 +109,7 @@ where
             };
 
             log::trace!("import_boxed about to import");
-            let result = self.import(source, o, s).await?;
+            let result = self.import(op, source, o, s).await?;
             log::trace!("import_boxed imported");
             Ok(BoxedImporterValue {
                 value: result,

@@ -1,3 +1,4 @@
+#![allow(clippy::needless_lifetimes)]
 use futures_core::future::{BoxFuture, Future};
 use futures_util::future::FutureExt;
 use futures_util::stream::{FuturesUnordered, Stream};

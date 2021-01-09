@@ -1,6 +1,6 @@
 use atelier_assets::{
     core::AssetUuid,
-    importer::{AsyncImporter, Error, ImportedAsset, ImporterValue, Result},
+    importer::{AsyncImporter, Error, ImportOp, ImportedAsset, ImporterValue, Result},
 };
 use futures_core::future::BoxFuture;
 use futures_io::AsyncRead;
@@ -40,6 +40,7 @@ impl AsyncImporter for ImageImporter {
     /// Reads the given bytes and produces assets.
     fn import<'a>(
         &'a self,
+        _op: &'a mut ImportOp,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         _options: &Self::Options,
         state: &'a mut Self::State,

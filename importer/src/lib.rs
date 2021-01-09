@@ -34,6 +34,24 @@ pub use atelier_core::{
     ArtifactMetadata, AssetMetadata,
 };
 
+#[derive(Default)]
+pub struct ImportOp {
+    pub errors: Vec<Box<dyn std::error::Error + Send + 'static>>,
+    pub warnings: Vec<Box<dyn std::error::Error + Send + 'static>>,
+}
+
+impl ImportOp {
+    pub fn error<T: Into<Box<dyn std::error::Error + Send + 'static>>>(&mut self, err: T) {
+        self.errors.push(err.into());
+    }
+    pub fn warn<T: Into<Box<dyn std::error::Error + Send + 'static>>>(&mut self, err: T) {
+        self.warnings.push(err.into());
+    }
+    pub fn new_asset_uuid(&self) -> AssetUuid {
+        AssetUuid(*uuid::Uuid::new_v4().as_bytes())
+    }
+}
+
 /// Importers parse file formats and produce assets.
 pub trait Importer: Send + 'static {
     /// Returns the version of the importer.
@@ -60,6 +78,7 @@ pub trait Importer: Send + 'static {
     /// Reads the given bytes and produces assets.
     fn import(
         &self,
+        op: &mut ImportOp,
         source: &mut dyn Read,
         options: &Self::Options,
         state: &mut Self::State,
@@ -103,6 +122,7 @@ pub trait AsyncImporter: Send + 'static {
     /// Reads the given bytes and produces assets.
     fn import<'a>(
         &'a self,
+        op: &'a mut ImportOp,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         options: &'a Self::Options,
         state: &'a mut Self::State,
@@ -144,6 +164,7 @@ impl<T: Importer + Sync> AsyncImporter for T {
     /// Reads the given bytes and produces assets.
     fn import<'a>(
         &'a self,
+        op: &'a mut ImportOp,
         source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
         options: &'a Self::Options,
         state: &'a mut Self::State,
@@ -153,7 +174,7 @@ impl<T: Importer + Sync> AsyncImporter for T {
             let mut bytes = Vec::new();
             source.read_to_end(&mut bytes).await?;
             let mut reader = bytes.as_slice();
-            <T as Importer>::import(self, &mut reader, options, state)
+            <T as Importer>::import(self, op, &mut reader, options, state)
         })
     }
 

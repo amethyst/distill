@@ -1,6 +1,6 @@
 use atelier_assets::{
     core::AssetUuid,
-    importer::{Error, ImportedAsset, Importer, ImporterValue, Result},
+    importer::{Error, ImportOp, ImportedAsset, Importer, ImporterValue, Result},
 };
 use image2::{color, ImageBuf};
 use serde::{Deserialize, Serialize};
@@ -37,6 +37,7 @@ impl Importer for ImageImporter {
     /// Reads the given bytes and produces assets.
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn std::io::Read,
         _options: &Self::Options,
         state: &mut Self::State,

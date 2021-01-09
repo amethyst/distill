@@ -4,9 +4,9 @@ use crate::file_tracker::FileState;
 use crate::watcher::file_metadata;
 use atelier_core::{utils, ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{
-    ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportedAsset, ImporterContext,
-    ImporterContextHandle, SerdeObj, SerializedAsset, SourceMetadata as ImporterSourceMetadata,
-    SOURCEMETADATA_VERSION,
+    ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportOp, ImportedAsset,
+    ImporterContext, ImporterContextHandle, SerdeObj, SerializedAsset,
+    SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
 use atelier_schema::data;
 use futures_core::future::{BoxFuture, Future};
@@ -41,6 +41,7 @@ pub(crate) struct SourcePair {
 pub(crate) struct PairImportResult {
     pub importer_context_set: Option<ImporterContextHandleSet>,
     pub assets: Vec<AssetImportResult>,
+    pub import_op: Option<ImportOp>,
 }
 
 pub(crate) struct AssetImportResult {
@@ -330,11 +331,14 @@ impl<'a> SourcePairImport<'a> {
         Ok(PairImportResult {
             importer_context_set: None,
             assets,
+            import_op: None,
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn build_import_result(
         &mut self,
+        op: Option<ImportOp>,
         importer: &dyn BoxedImporter,
         options: Box<dyn SerdeObj>,
         state: Box<dyn SerdeObj>,
@@ -463,6 +467,7 @@ impl<'a> SourcePairImport<'a> {
         Ok(PairImportResult {
             importer_context_set: Some(ctx),
             assets: imported_assets,
+            import_op: op,
         })
     }
 
@@ -505,7 +510,15 @@ impl<'a> SourcePairImport<'a> {
         let imported = exported.value;
 
         let result = self
-            .build_import_result(importer, options, state, scratch_buf, imported.assets, ctx)
+            .build_import_result(
+                None,
+                importer,
+                options,
+                state,
+                scratch_buf,
+                imported.assets,
+                ctx,
+            )
             .await?;
         log::info!(
             "Exported pair in {}",
@@ -528,6 +541,8 @@ impl<'a> SourcePairImport<'a> {
 
         let source = &self.source;
 
+        let mut import_op = ImportOp::default();
+        let import_op_ref = &mut import_op;
         let imported = ctx
             .scope(async move {
                 //This is broken on tokio 0.2.14 and later (concurrent file loads endlessly yield to
@@ -546,6 +561,7 @@ impl<'a> SourcePairImport<'a> {
                 use tokio_util::compat::*;
                 importer
                     .import_boxed(
+                        import_op_ref,
                         &mut cursor.compat(),
                         metadata.importer_options,
                         metadata.importer_state,
@@ -558,7 +574,15 @@ impl<'a> SourcePairImport<'a> {
         let state = imported.state;
         let imported = imported.value;
         let result = self
-            .build_import_result(importer, options, state, scratch_buf, imported.assets, ctx)
+            .build_import_result(
+                Some(import_op),
+                importer,
+                options,
+                state,
+                scratch_buf,
+                imported.assets,
+                ctx,
+            )
             .await?;
         log::info!(
             "Imported pair {:?} in {}",

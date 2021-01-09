@@ -71,7 +71,6 @@ impl Default for AssetDaemon {
     fn default() -> Self {
         let mut importer_map = ImporterMap::default();
         for (ext, importer) in default_importers() {
-            println!("ext {}", ext);
             importer_map.insert(ext, importer);
         }
         Self {

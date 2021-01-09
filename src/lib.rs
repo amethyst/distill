@@ -3,21 +3,42 @@ pub use atelier_daemon as daemon;
 pub use atelier_importer as importer;
 pub use atelier_loader as loader;
 
+use atelier_core::{AssetRef, AssetUuid};
+use atelier_loader::handle::{Handle, SerdeContext};
+
+pub fn make_handle<T>(uuid: AssetUuid) -> Handle<T> {
+    SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
+        let load_handle = loader_info_provider
+            .get_load_handle(&AssetRef::Uuid(uuid))
+            .unwrap();
+        Handle::<T>::new(ref_op_sender.clone(), load_handle)
+    })
+}
+
+pub fn make_handle_from_str<T>(uuid_str: &str) -> Result<Handle<T>, atelier_core::uuid::Error> {
+    use std::str::FromStr;
+    Ok(make_handle(AssetUuid(
+        *atelier_core::uuid::Uuid::from_str(uuid_str)?.as_bytes(),
+    )))
+}
+
 #[cfg(test)]
 mod tests {
-    use atelier_core::AssetUuid;
-    use atelier_core::{AssetRef, AssetTypeId};
+    use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
     use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{AsyncImporter, ImportedAsset, ImporterValue, Result as ImportResult};
-    use atelier_loader::{
-        storage::{
-            AssetLoadOp, AssetStorage, DefaultIndirectionResolver, LoadStatus, LoaderInfoProvider,
-        },
-        LoadHandle, Loader, RpcIO,
+    use atelier_importer::{
+        AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,
     };
+    use atelier_loader::{
+        rpc_io::RpcIO,
+        storage::DefaultIndirectionResolver,
+        storage::{AssetLoadOp, AssetStorage, LoadStatus, LoaderInfoProvider},
+        LoadHandle, Loader,
+    };
+
     use futures_core::future::BoxFuture;
     use futures_io::AsyncRead;
-    use futures_util::AsyncReadExt;
+    use futures_util::io::AsyncReadExt;
     use serde::{Deserialize, Serialize};
     use std::{
         collections::HashMap,
@@ -130,6 +151,7 @@ mod tests {
 
         fn import<'a>(
             &'a self,
+            _op: &'a mut ImportOp,
             source: &'a mut (dyn AsyncRead + Unpin + Send + Sync),
             txt_format: &'a Self::Options,
             state: &'a mut Self::State,
@@ -162,25 +184,6 @@ mod tests {
                 })
             })
         }
-    }
-
-    fn spawn_daemon(daemon_address: &str) -> JoinHandle<()> {
-        let daemon_address = daemon_address
-            .parse()
-            .expect("Failed to parse string as `SocketAddr`.");
-        thread::Builder::new()
-            .name("atelier-daemon".to_string())
-            .spawn(move || {
-                let tests_path = PathBuf::from_iter(&[env!("CARGO_MANIFEST_DIR"), "tests"]);
-
-                AssetDaemon::default()
-                    .with_db_path(tests_path.join("assets_db"))
-                    .with_address(daemon_address)
-                    .with_importer("txt", TxtImporter)
-                    .with_asset_dirs(vec![tests_path.join("assets")])
-                    .run();
-            })
-            .expect("Failed to spawn `atelier-daemon` thread.")
     }
 
     fn wait_for_status(
@@ -315,5 +318,24 @@ mod tests {
             (AssetUuid(asset_uuid), *file_name)
         })
         .collect::<Vec<(AssetUuid, &'static str)>>()
+    }
+
+    fn spawn_daemon(daemon_address: &str) -> JoinHandle<()> {
+        let daemon_address = daemon_address
+            .parse()
+            .expect("Failed to parse string as `SocketAddr`.");
+        thread::Builder::new()
+            .name("atelier-daemon".to_string())
+            .spawn(move || {
+                let tests_path = PathBuf::from_iter(&[env!("CARGO_MANIFEST_DIR"), "tests"]);
+
+                AssetDaemon::default()
+                    .with_db_path(tests_path.join("assets_db"))
+                    .with_address(daemon_address)
+                    .with_importer("txt", TxtImporter)
+                    .with_asset_dirs(vec![tests_path.join("assets")])
+                    .run();
+            })
+            .expect("Failed to spawn `atelier-daemon` thread.")
     }
 }

@@ -32,15 +32,6 @@ atelier-daemon = { version = "0.1", path = "daemon" }
 atelier-importer = { version = "0.1", path = "importer" }
 atelier-loader = { version = "0.1", path = "loader" }
 
-[features]
-serde-1 = ["atelier-core/serde"]
-type_uuid = ["atelier-core/type_uuid"]
-serde_importers = ["atelier-importer/serde_importers"]
-parallel_hash = ["atelier-daemon/parallel_hash"]
-pretty_log = ["atelier-daemon/pretty_log"]
-rpc_io = ["atelier-loader/rpc_io"]
-handle = ["atelier-loader/handle"]
-
 [dev-dependencies]
 futures-core = "0.3.9"
 futures-io = "0.3.9"
@@ -48,3 +39,13 @@ futures-util = "0.3.9"
 serde = "1.0.118"
 type-uuid = "0.1.2"
 uuid = "0.8.1"
+
+[features]
+serde-1 = ["atelier-core/serde"]
+type_uuid = ["atelier-core/type_uuid"]
+serde_importers = ["atelier-importer/serde_importers"]
+parallel_hash = ["atelier-daemon/parallel_hash"]
+pretty_log = ["atelier-daemon/pretty_log"]
+rpc_io = ["atelier-loader/rpc_io"]
+packfile_io = ["atelier-loader/packfile_io"]
+handle = ["atelier-loader/handle"]
