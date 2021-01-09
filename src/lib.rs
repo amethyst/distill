@@ -25,7 +25,7 @@ pub fn make_handle_from_str<T>(uuid_str: &str) -> Result<Handle<T>, atelier_core
 #[cfg(feature = "type_uuid")]
 #[cfg(test)]
 mod tests {
-    use atelier_core::{type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid};
+    use atelier_core::{type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid};
     use atelier_daemon::{init_logging, AssetDaemon};
     use atelier_importer::{
         AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,

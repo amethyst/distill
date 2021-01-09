@@ -1,9 +1,9 @@
+use atelier_assets::core::{type_uuid, type_uuid::TypeUuid};
 use atelier_assets::{
     importer::{self as atelier_importer, typetag, SerdeImportable},
     loader::handle::Handle,
 };
 use serde::{Deserialize, Serialize};
-use type_uuid::TypeUuid;
 
 #[derive(Serialize, Deserialize, TypeUuid, SerdeImportable, Debug)]
 #[uuid = "fab4249b-f95d-411d-a017-7549df090a4f"]

@@ -1,10 +1,10 @@
+use atelier_assets::core::{type_uuid, type_uuid::TypeUuid};
 use atelier_assets::{
     core::AssetUuid,
     importer::{Error, ImportOp, ImportedAsset, Importer, ImporterValue, Result},
 };
 use image2::{color, ImageBuf};
 use serde::{Deserialize, Serialize};
-use type_uuid::*;
 
 #[derive(TypeUuid, Serialize, Deserialize, Debug)]
 #[uuid = "d4079e74-3ec9-4ebc-9b77-a87cafdfdada"]

@@ -1,3 +1,4 @@
+use atelier_assets::core::type_uuid::TypeUuid;
 use atelier_assets::loader::{
     crossbeam_channel::Sender,
     handle::{AssetHandle, RefOp, TypedAssetStorage},
@@ -5,7 +6,6 @@ use atelier_assets::loader::{
     AssetTypeId,
 };
 use std::{any::Any, cell::RefCell, collections::HashMap, error::Error, sync::Arc};
-use type_uuid::TypeUuid;
 
 pub struct GenericAssetStorage {
     storage: RefCell<HashMap<AssetTypeId, Box<dyn TypedStorage>>>,

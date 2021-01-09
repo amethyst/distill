@@ -245,12 +245,16 @@ pub struct ArtifactMetadata {
 }
 
 /// Provides a unique 16-byte ID for a value's type.
-#[cfg(not(feature = "type_uuid"))]
 pub trait TypeUuidDynamic {
     fn uuid(&self) -> [u8; 16];
 }
 
 #[cfg(feature = "type_uuid")]
-pub use type_uuid;
+impl<T: type_uuid::TypeUuidDynamic> TypeUuidDynamic for T {
+    fn uuid(&self) -> [u8; 16] {
+        <Self as type_uuid::TypeUuidDynamic>::uuid(self)
+    }
+}
+
 #[cfg(feature = "type_uuid")]
-pub use type_uuid::TypeUuidDynamic;
+pub use type_uuid;
