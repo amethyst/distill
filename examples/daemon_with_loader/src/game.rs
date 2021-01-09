@@ -1,22 +1,18 @@
 use crate::image::Image;
-use atelier_assets::{
-    core::AssetUuid,
-    loader::{
-        loader::Loader,
-        storage::{
-            AssetLoadOp, AssetStorage, DefaultIndirectionResolver, IndirectionTable, LoadHandle,
-            LoadStatus, LoaderInfoProvider,
-        },
-        AssetTypeId, RpcIO,
+use atelier_assets::core::type_uuid::TypeUuid;
+use atelier_assets::loader::{
+    loader::Loader,
+    storage::{
+        AssetLoadOp, AssetStorage, DefaultIndirectionResolver, IndirectionTable, LoadHandle,
+        LoadStatus, LoaderInfoProvider,
     },
+    AssetTypeId, RpcIO,
 };
 use std::{
     cell::{Ref, RefCell},
     collections::HashMap,
     error::Error,
 };
-use type_uuid::TypeUuid;
-use uuid::Uuid;
 
 #[allow(dead_code)]
 struct AssetState<A> {
