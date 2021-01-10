@@ -1534,7 +1534,7 @@ where
         }
         Ok(())
     }
-    fn get_cached_metadata(&self, path: &PathBuf) -> Result<Option<ImportResultMetadata>> {
+    fn get_cached_metadata(&self, path: &Path) -> Result<Option<ImportResultMetadata>> {
         let saved_metadata = self.file_asset_source.get_metadata(self.txn, path);
         if let Some(saved_metadata) = saved_metadata {
             let saved_metadata = saved_metadata.get()?;

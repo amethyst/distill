@@ -1,12 +1,14 @@
 use crate::image::Image;
-use atelier_assets::core::type_uuid::TypeUuid;
-use atelier_assets::loader::{
-    loader::Loader,
-    storage::{
-        AssetLoadOp, AssetStorage, DefaultIndirectionResolver, IndirectionTable, LoadHandle,
-        LoadStatus, LoaderInfoProvider,
+use atelier_assets::{
+    core::type_uuid::TypeUuid,
+    loader::{
+        loader::Loader,
+        storage::{
+            AssetLoadOp, AssetStorage, DefaultIndirectionResolver, IndirectionTable, LoadHandle,
+            LoadStatus, LoaderInfoProvider,
+        },
+        AssetTypeId, RpcIO,
     },
-    AssetTypeId, RpcIO,
 };
 use std::{
     cell::{Ref, RefCell},

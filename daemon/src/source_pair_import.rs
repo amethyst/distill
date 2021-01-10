@@ -11,6 +11,9 @@ use atelier_importer::{
 use atelier_schema::data;
 use futures_core::future::{BoxFuture, Future};
 use log::{debug, error};
+use serde::{Deserialize, Serialize};
+use std::io::Read;
+use std::path::Path;
 use std::{
     collections::HashSet,
     fs,
@@ -19,7 +22,6 @@ use std::{
     path::PathBuf,
     time::Instant,
 };
-use std::{io::Read, path::Path};
 use tokio::{fs::File, prelude::*};
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
@@ -98,7 +100,7 @@ pub(crate) trait SourceMetadataCache {
         importer: &dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()>;
-    fn get_cached_metadata(&self, path: &PathBuf) -> Result<Option<ImportResultMetadata>>;
+    fn get_cached_metadata(&self, path: &Path) -> Result<Option<ImportResultMetadata>>;
 }
 
 pub struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);

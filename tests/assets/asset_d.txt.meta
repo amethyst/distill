@@ -1,29 +1,7 @@
 (
-    version: 1,
-    import_hash: Some(883292489818595139),
-    importer_version: 1,
-    importer_type: "fa50e08c-af6c-4ada-aed1-447c116d63bc",
+    version: 2,
     importer_options: (),
     importer_state: (
         id: Some("14f807b9-69ef-484b-9cb8-44787883b86d"),
     ),
-    assets: [
-        (
-            id: "14f807b9-69ef-484b-9cb8-44787883b86d",
-            search_tags: [
-                ("file_name", Some("asset_d.txt")),
-            ],
-            build_pipeline: None,
-            artifact: Some((
-                id: (9576014379011982172),
-                asset_id: "14f807b9-69ef-484b-9cb8-44787883b86d",
-                build_deps: [],
-                load_deps: [],
-                compression: None,
-                compressed_size: Some(8),
-                uncompressed_size: Some(8),
-                type_id: "7edbc10a-2147-499c-af9a-498723c7b35f",
-            )),
-        ),
-    ],
 )

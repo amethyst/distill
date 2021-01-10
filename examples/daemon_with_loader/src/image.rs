@@ -1,7 +1,5 @@
 use atelier_assets::{
-    core::type_uuid,
-    core::type_uuid::TypeUuid,
-    core::AssetUuid,
+    core::{type_uuid, type_uuid::TypeUuid, AssetUuid},
     importer::{AsyncImporter, Error, ImportOp, ImportedAsset, ImporterValue, Result},
 };
 use futures_core::future::BoxFuture;
