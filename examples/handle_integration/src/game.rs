@@ -32,8 +32,7 @@ pub fn run() {
     game.storage.add_storage::<Image>();
     game.storage.add_storage::<BigPerf>();
     let weak_handle = {
-        // add_ref begins loading of the asset
-        // let handle = loader.add_ref(asset_uuid!("0977fd59-e52d-4910-85e0-d61ae8affa8c"));
+        // add_ref_indirect begins loading of the asset
         let handle = loader.add_ref_indirect(IndirectIdentifier::Path("custom_asset.ron".into()));
         // From the returned LoadHandle, create a typed, internally refcounted Handle.
         // This requires a channel to send increase/decrease over to be able to implement

@@ -14,7 +14,7 @@ use atelier_schema::{
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{Hash, Hasher},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -303,24 +303,24 @@ impl AssetHub {
     pub fn remove_path(
         &self,
         _txn: &mut RwTransaction<'_>,
-        relative_path: &PathBuf,
+        relative_path: &Path,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
         change_batch
             .path_events
-            .push(ChangeEvent::PathRemove(relative_path.clone()));
+            .push(ChangeEvent::PathRemove(relative_path.to_path_buf()));
         Ok(())
     }
 
     pub fn update_path(
         &self,
         _txn: &mut RwTransaction<'_>,
-        relative_path: &PathBuf,
+        relative_path: &Path,
         change_batch: &mut ChangeBatch,
     ) -> Result<()> {
         change_batch
             .path_events
-            .push(ChangeEvent::PathUpdate(relative_path.clone()));
+            .push(ChangeEvent::PathUpdate(relative_path.to_path_buf()));
         Ok(())
     }
 

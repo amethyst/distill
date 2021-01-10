@@ -1,8 +1,12 @@
 target
 /assets
+
 .assets_db
-.vscode
 */tests/assets_db
+*.mdb
+
 Cargo.lock
+
 .DS_Store
-/.idea
+.idea/
+.vscode/

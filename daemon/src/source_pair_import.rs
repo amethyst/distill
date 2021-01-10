@@ -13,6 +13,7 @@ use futures_core::future::{BoxFuture, Future};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
+use std::path::Path;
 use std::{
     collections::HashSet,
     fs,
@@ -95,11 +96,11 @@ pub(crate) struct SourcePairImport<'a> {
 pub(crate) trait SourceMetadataCache {
     fn restore_source_metadata(
         &self,
-        path: &PathBuf,
+        path: &Path,
         importer: &dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()>;
-    fn get_cached_metadata(&self, path: &PathBuf) -> Result<Option<ImportResultMetadata>>;
+    fn get_cached_metadata(&self, path: &Path) -> Result<Option<ImportResultMetadata>>;
 }
 
 pub struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);

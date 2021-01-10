@@ -1,6 +1,6 @@
 use crate::image::Image;
 use atelier_assets::{
-    core::{self as atelier_core, asset_uuid},
+    core::type_uuid::TypeUuid,
     loader::{
         loader::Loader,
         storage::{
@@ -15,7 +15,6 @@ use std::{
     collections::HashMap,
     error::Error,
 };
-use type_uuid::TypeUuid;
 
 #[allow(dead_code)]
 struct AssetState<A> {
@@ -170,7 +169,7 @@ pub fn run() {
         Box::new(Storage::<Image>::new(loader.indirection_table())),
     );
 
-    let handle = loader.add_ref(asset_uuid!("6c5ae1ad-ae30-471b-985b-7d017265f19f"));
+    let handle = loader.add_ref("6c5ae1ad-ae30-471b-985b-7d017265f19f");
     loop {
         loader
             .process(&game, &DefaultIndirectionResolver)

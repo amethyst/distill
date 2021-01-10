@@ -118,7 +118,7 @@ impl<C> Shell<C> {
                     }
                     println!("  quit\r");
                 }
-                Some("exit") | Some("quit") => Err(Exit)?,
+                Some("exit") | Some("quit") => return Err(Exit.into()),
                 Some(_) => println!("Unknown command\r"),
                 None => {}
             }
@@ -257,11 +257,12 @@ impl<C> Shell<C> {
                             Action::Event(Event::Key(KeyEvent {
                                 code: KeyCode::Esc, ..
                             })),
-                        ) |
-                        (
+                        )
+                        | (
                             State::Insert,
                             Action::Event(Event::Key(KeyEvent {
-                                code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL
+                                code: KeyCode::Char('c'),
+                                modifiers: KeyModifiers::CONTROL,
                             })),
                         ) => {
                             break 'repl_loop;
@@ -314,7 +315,7 @@ impl<C> Shell<C> {
                                 Err(err) if err.downcast_ref::<Exit>().is_some() => {
                                     break 'repl_loop
                                 }
-                                Err(err) => Err(err)?,
+                                Err(err) => return Err(err),
                                 Ok(_) => {}
                             }
                             history.push(line.trim().to_owned());

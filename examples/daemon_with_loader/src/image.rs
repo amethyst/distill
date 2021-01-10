@@ -1,5 +1,5 @@
 use atelier_assets::{
-    core::AssetUuid,
+    core::{type_uuid, type_uuid::TypeUuid, AssetUuid},
     importer::{AsyncImporter, Error, ImportOp, ImportedAsset, ImporterValue, Result},
 };
 use futures_core::future::BoxFuture;
@@ -7,7 +7,6 @@ use futures_io::AsyncRead;
 use futures_util::AsyncReadExt;
 use image2::{color, ImageBuf};
 use serde::{Deserialize, Serialize};
-use type_uuid::*;
 
 #[derive(TypeUuid, Serialize, Deserialize)]
 #[uuid = "d4079e74-3ec9-4ebc-9b77-a87cafdfdada"]

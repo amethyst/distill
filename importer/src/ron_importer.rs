@@ -1,9 +1,8 @@
 use crate::{ImportOp, ImportedAsset, Importer, ImporterValue, Result, SerdeImportable};
-use atelier_core::AssetUuid;
+use atelier_core::{type_uuid, type_uuid::TypeUuid, AssetUuid};
 use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
-use type_uuid::*;
 
 #[derive(Default, Deserialize, Serialize, TypeUuid, Clone, Copy)]
 #[uuid = "f3cd048a-2c98-4e4b-95a2-d7c0ee6f7beb"]
@@ -102,7 +101,7 @@ mod tests {
             .value
             .assets
             .into_iter()
-            .nth(0)
+            .next()
             .unwrap()
             .asset_data;
 
@@ -144,7 +143,7 @@ mod tests {
             .value
             .assets
             .into_iter()
-            .nth(0)
+            .next()
             .unwrap()
             .asset_data;
         let b_downcast = b_serde_obj.any().downcast_ref::<B>();

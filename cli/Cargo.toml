@@ -6,14 +6,14 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-capnp = "0.14"
-capnp-rpc = "0.14"
+capnp = "0.14.0"
+capnp-rpc = "0.14.0"
 tokio = { version = "0.2", features = ["io-std", "rt-util", "tcp", "io-util"] }
 tokio-util = { version = "0.3", features = ["codec", "compat"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
-futures-util = { version = "0.3", default-features = false, features = ["async-await-macro"] }
+futures-util = { version = "0.3.9", default-features = false, features = ["async-await-macro"] }
 atelier-schema = { path = "../schema" }
-uuid = "0.8"
+uuid = "0.8.1"
 async-trait = "0.1.22"
 crossterm = { version = "0.17", features = ["event-stream"] }
 defer = "0.1.0"

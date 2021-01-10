@@ -2,7 +2,7 @@ use crate::{AssetTypeId, AssetUuid};
 use std::{
     ffi::OsStr,
     hash::{Hash, Hasher},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 pub fn make_array<A, T>(slice: &[T]) -> A
@@ -33,7 +33,7 @@ pub fn uuid_from_slice(slice: &[u8]) -> Option<AssetUuid> {
     Some(AssetUuid(bytes))
 }
 
-pub fn to_meta_path(p: &PathBuf) -> PathBuf {
+pub fn to_meta_path(p: &Path) -> PathBuf {
     p.with_file_name(OsStr::new(
         &(p.file_name().unwrap().to_str().unwrap().to_owned() + ".meta"),
     ))
@@ -47,7 +47,7 @@ where
     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
     import_hash.hash(&mut hasher);
     (*id).hash(&mut hasher);
-    let mut deps = dep_list.into_iter().collect::<Vec<_>>();
+    let mut deps: Vec<_> = dep_list.into_iter().collect();
     deps.sort_by_key(|dep| *dep.borrow());
     deps.dedup_by_key(|dep| *dep.borrow());
     for dep in &deps {
@@ -57,8 +57,8 @@ where
 }
 
 #[cfg(feature = "path_utils")]
-pub fn canonicalize_path(path: &PathBuf) -> PathBuf {
-    use path_slash::PathBufExt;
+pub fn canonicalize_path(path: &Path) -> PathBuf {
+    use path_slash::{PathBufExt, PathExt};
     let cleaned_path = PathBuf::from_slash(path_clean::clean(&path.to_slash_lossy()));
     PathBuf::from(dunce::simplified(&cleaned_path))
 }

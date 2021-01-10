@@ -10,6 +10,5 @@ uuid = { version = "0.8", features = ["v4"] }
 downcast = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
-type-uuid = "0.1"
 erased-serde = "0.3"
 petgraph = "0.4.13"

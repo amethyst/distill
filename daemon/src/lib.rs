@@ -56,12 +56,13 @@ pub fn init_logging() -> Result<()> {
 }
 #[cfg(feature = "pretty_log")]
 pub fn init_logging() -> Result<()> {
+    use chrono::Local;
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "[{timestamp}][{level}][{target}] {message}",
                 level = record.level(),
-                timestamp = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
+                timestamp = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
                 target = record.target(),
                 message = message,
             ))

@@ -21,7 +21,7 @@ impl ImporterMap {
         self.0.insert(ext.to_lowercase(), importer);
     }
 
-    pub fn get_by_path<'a>(&'a self, path: &PathBuf) -> Option<&'a dyn BoxedImporter> {
+    pub fn get_by_path<'a>(&'a self, path: &Path) -> Option<&'a dyn BoxedImporter> {
         let lower_extension = path
             .extension()
             .map(|s| s.to_str().unwrap().to_lowercase())
