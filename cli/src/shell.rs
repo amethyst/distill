@@ -257,11 +257,12 @@ impl<C> Shell<C> {
                             Action::Event(Event::Key(KeyEvent {
                                 code: KeyCode::Esc, ..
                             })),
-                        ) |
-                        (
+                        )
+                        | (
                             State::Insert,
                             Action::Event(Event::Key(KeyEvent {
-                                code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL
+                                code: KeyCode::Char('c'),
+                                modifiers: KeyModifiers::CONTROL,
                             })),
                         ) => {
                             break 'repl_loop;
