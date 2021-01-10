@@ -210,6 +210,7 @@ pub struct AssetMetadata {
 /// 64-bit hash of the inputs that would produce a given asset artifact
 #[derive(Debug, Copy, Clone, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[serde(transparent)]
 pub struct ArtifactId(pub u64);
 
 /// Serializable metadata for an artifact.

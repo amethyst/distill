@@ -1,5 +1,5 @@
 use crate::{error::Result, AsyncImporter, ExportAsset, ImportOp, ImporterValue, SerdeObj};
-use atelier_core::{AssetMetadata, AssetTypeId, TypeUuidDynamic};
+use atelier_core::TypeUuidDynamic;
 use erased_serde::Deserializer;
 use futures_core::future::BoxFuture;
 use futures_io::{AsyncRead, AsyncWrite};
@@ -7,26 +7,17 @@ use serde::{Deserialize, Serialize};
 
 /// Version of the SourceMetadata struct.
 /// Used for forward compatibility to enable changing the .meta file format
-pub const SOURCEMETADATA_VERSION: u32 = 1;
+pub const SOURCEMETADATA_VERSION: u32 = 2;
 
 /// SourceMetadata is the in-memory representation of the .meta file for a (source, .meta) pair.
 #[derive(Serialize, Deserialize)]
 pub struct SourceMetadata<Options: 'static, State: 'static> {
     /// Metadata struct version
     pub version: u32,
-    /// Hash of the source file + importer options + importer state when last importing source file.
-    pub import_hash: Option<u64>,
-    /// The [`crate::Importer::version`] used to import the source file.
-    pub importer_version: u32,
-    /// The [`TypeUuidDynamic::uuid`] used to import the source file.
-    #[serde(default)]
-    pub importer_type: AssetTypeId,
     /// The [`crate::Importer::Options`] used to import the source file.
     pub importer_options: Options,
     /// The [`crate::Importer::State`] generated when importing the source file.
     pub importer_state: State,
-    /// Metadata for assets generated when importing the source file.
-    pub assets: Vec<AssetMetadata>,
 }
 
 /// Trait object wrapper for [`crate::Importer`] implementations.
@@ -168,12 +159,8 @@ where
         let metadata = erased_serde::deserialize::<SourceMetadata<O, S>>(deserializer)?;
         Ok(SourceMetadata {
             version: metadata.version,
-            import_hash: metadata.import_hash,
-            importer_version: metadata.importer_version,
-            importer_type: metadata.importer_type,
             importer_options: Box::new(metadata.importer_options),
             importer_state: Box::new(metadata.importer_state),
-            assets: metadata.assets,
         })
     }
 

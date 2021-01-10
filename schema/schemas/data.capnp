@@ -78,6 +78,7 @@ struct SourceMetadata {
   }
   pathRefs @10 :List(Data);
   importHash @11 :Data;
+  version @12 :UInt32;
 }
 
 struct PathRefs {

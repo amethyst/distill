@@ -1994,6 +1994,10 @@ pub mod source_metadata {
             !self.reader.get_pointer_field(9).is_null()
         }
         #[inline]
+        pub fn get_version(self) -> u32 {
+            self.reader.get_data_field::<u32>(2)
+        }
+        #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(2) {
                 0 => ::core::result::Result::Ok(Error(
@@ -2319,6 +2323,14 @@ pub mod source_metadata {
             !self.builder.get_pointer_field(9).is_null()
         }
         #[inline]
+        pub fn get_version(self) -> u32 {
+            self.builder.get_data_field::<u32>(2)
+        }
+        #[inline]
+        pub fn set_version(&mut self, value: u32) {
+            self.builder.set_data_field::<u32>(2, value);
+        }
+        #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(2) {
                 0 => ::core::result::Result::Ok(Error(
@@ -2347,7 +2359,7 @@ pub mod source_metadata {
     mod _private {
         use capnp::private::layout;
         pub const STRUCT_SIZE: layout::StructSize = layout::StructSize {
-            data: 1,
+            data: 2,
             pointers: 10,
         };
         pub const TYPE_ID: u64 = 0x8b58_45d1_f338_0aa8;
