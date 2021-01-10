@@ -210,7 +210,6 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
     fn test_connect() {
         let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
@@ -223,11 +222,7 @@ mod tests {
         let mut loader = Loader::new(Box::new(RpcIO::new(daemon_address).unwrap()));
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset.txt"
-            AssetUuid(
-                *uuid::Uuid::parse_str("60352042-616f-460e-abd2-546195c060fe")
-                    .unwrap()
-                    .as_bytes(),
-            ),
+            "b24d209d-6622-4d78-a983-731e8b76f04d",
         );
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
@@ -237,7 +232,6 @@ mod tests {
         wait_for_status(LoadStatus::NotRequested, handle, &mut loader, &storage);
     }
 
-    #[ignore]
     #[test]
     fn test_load_with_dependencies() {
         let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
@@ -250,11 +244,7 @@ mod tests {
         let mut loader = Loader::new(Box::new(RpcIO::new(daemon_address).unwrap()));
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset_a.txt"
-            AssetUuid(
-                *uuid::Uuid::parse_str("a5ce4da0-675e-4460-be02-c8b145c2ee49")
-                    .unwrap()
-                    .as_bytes(),
-            ),
+            "d83bb247-2710-4c10-83df-d7daa53e19bf",
         );
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
@@ -304,10 +294,10 @@ mod tests {
 
     fn asset_tree() -> Vec<(AssetUuid, &'static str)> {
         [
-            ("a5ce4da0-675e-4460-be02-c8b145c2ee49", "asset_a.txt"),
-            ("039dc5f8-ee1c-4949-a7df-72383f12c7a2", "asset_b.txt"),
-            ("c071f3ff-c9ea-4bf5-b3b9-bf5fc29f9b59", "asset_c.txt"),
-            ("55adb689-b91c-42a0-941b-de4a9f7f4f03", "asset_d.txt"),
+            ("d83bb247-2710-4c10-83df-d7daa53e19bf", "asset_a.txt"),
+            ("23da999a-a974-4d0e-918a-f226ea0b3e69", "asset_b.txt"),
+            ("40becaa7-cedb-466a-afee-41fecb1c916f", "asset_c.txt"),
+            ("14f807b9-69ef-484b-9cb8-44787883b86d", "asset_d.txt"),
         ]
         .iter()
         .map(|(id, file_name)| {

@@ -1,5 +1,5 @@
 # empty file indicates no dependencies
 # non-empty file indicates additional assets that are depended on.
 # comments begin with `#`
-039dc5f8-ee1c-4949-a7df-72383f12c7a2 # asset_b.txt
-55adb689-b91c-42a0-941b-de4a9f7f4f03 # asset_d.txt
+23da999a-a974-4d0e-918a-f226ea0b3e69 # asset_b.txt
+14f807b9-69ef-484b-9cb8-44787883b86d # asset_d.txt
