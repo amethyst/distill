@@ -24,6 +24,19 @@ use tokio::{fs::File, prelude::*};
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
+/// CachedSourceMetadata contains metadata about the inputs and results of an import operation.
+#[derive(Serialize, Deserialize, Default)]
+pub struct ImportResultMetadata {
+    /// Hash of the source file + importer options + importer state when last importing source file.
+    pub import_hash: Option<u64>,
+    /// The [`crate::Importer::version`] used to import the source file.
+    pub importer_version: u32,
+    /// The [`TypeUuidDynamic::uuid`] used to import the source file.
+    #[serde(default)]
+    pub importer_type: AssetTypeId,
+    /// Metadata of assets resulting from importing the source file.
+    pub assets: Vec<AssetMetadata>,
+}
 // Only files get Some(hash)
 #[derive(Clone, Debug)]
 pub(crate) struct HashedSourcePair {
@@ -75,15 +88,17 @@ pub(crate) struct SourcePairImport<'a> {
     meta_hash: Option<u64>,
     import_hash: Option<u64>,
     source_metadata: Option<SourceMetadata>,
+    result_metadata: Option<ImportResultMetadata>,
 }
 
 pub(crate) trait SourceMetadataCache {
-    fn restore_metadata<'a>(
+    fn restore_source_metadata(
         &self,
         path: &Path,
-        importer: &'a dyn BoxedImporter,
+        importer: &dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()>;
+    fn get_cached_metadata(&self, path: &PathBuf) -> Result<Option<ImportResultMetadata>>;
 }
 
 pub struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);
@@ -147,6 +162,9 @@ impl<'a> SourcePairImport<'a> {
     pub fn source_metadata(&self) -> Option<&SourceMetadata> {
         self.source_metadata.as_ref()
     }
+    pub fn result_metadata(&self) -> Option<&ImportResultMetadata> {
+        self.result_metadata.as_ref()
+    }
     pub fn set_source_hash(&mut self, source_hash: u64) {
         self.source_hash = Some(source_hash);
     }
@@ -178,11 +196,13 @@ impl<'a> SourcePairImport<'a> {
     }
 
     pub fn needs_source_import(&mut self, scratch_buf: &mut Vec<u8>) -> Result<bool> {
-        if let Some(ref metadata) = self.source_metadata {
-            if metadata.version != SOURCEMETADATA_VERSION {
+        if let (Some(meta_file), Some(cached_result)) =
+            (self.source_metadata.as_ref(), self.result_metadata.as_ref())
+        {
+            if meta_file.version != SOURCEMETADATA_VERSION {
                 return Ok(true);
             }
-            if metadata.importer_version
+            if cached_result.importer_version
                 != self
                     .importer
                     .expect("need importer to determine if source import is required")
@@ -190,19 +210,19 @@ impl<'a> SourcePairImport<'a> {
             {
                 return Ok(true);
             }
-            if metadata.import_hash.is_none() {
+            if cached_result.import_hash.is_none() {
                 return Ok(true);
             }
             if self.import_hash.is_none() {
                 self.import_hash = Some(self.calc_import_hash(
-                    metadata.importer_options.as_ref(),
-                    metadata.importer_state.as_ref(),
-                    metadata.importer_version,
-                    metadata.importer_type.0,
+                    meta_file.importer_options.as_ref(),
+                    meta_file.importer_state.as_ref(),
+                    cached_result.importer_version,
+                    cached_result.importer_type.0,
                     scratch_buf,
                 )?);
             }
-            Ok(self.import_hash.unwrap() != metadata.import_hash.unwrap())
+            Ok(self.import_hash.unwrap() != cached_result.import_hash.unwrap())
         } else {
             Ok(true)
         }
@@ -249,6 +269,14 @@ impl<'a> SourcePairImport<'a> {
         Ok(())
     }
 
+    pub fn get_result_metadata_from_cache<C: SourceMetadataCache>(
+        &mut self,
+        cache: &C,
+    ) -> Result<()> {
+        self.result_metadata = cache.get_cached_metadata(&self.source)?;
+        Ok(())
+    }
+
     pub fn generate_source_metadata<C: SourceMetadataCache>(&mut self, metadata_cache: &C) {
         let importer = self
             .importer
@@ -257,16 +285,12 @@ impl<'a> SourcePairImport<'a> {
 
         let mut default_metadata = SourceMetadata {
             version: SOURCEMETADATA_VERSION,
-            importer_version: importer.version(),
-            importer_type: AssetTypeId(importer.uuid()),
             importer_options: importer.default_options(),
             importer_state: importer.default_state(),
-            import_hash: None,
-            assets: Vec::new(),
         };
 
         let restored =
-            metadata_cache.restore_metadata(&self.source, importer, &mut default_metadata);
+            metadata_cache.restore_source_metadata(&self.source, importer, &mut default_metadata);
         if restored.is_ok() {
             self.source_metadata = Some(default_metadata);
         }
@@ -283,15 +307,16 @@ impl<'a> SourcePairImport<'a> {
         }
         ImporterContextHandleSet(ctx_handles)
     }
-    pub fn import_result_from_metadata(&mut self) -> Result<PairImportResult> {
+
+    pub fn import_result_from_cached_data(&self) -> Result<PairImportResult> {
         let mut assets = Vec::new();
-        let source_metadata = self
-            .source_metadata()
-            .expect("cannot generate import result without source_metadata");
-        for asset in source_metadata.assets.iter() {
-            use std::iter::FromIterator;
-            let unresolved_load_refs: HashSet<AssetRef, std::collections::hash_map::RandomState> =
-                HashSet::from_iter(
+        if let Some(metadatas) = self.result_metadata.as_ref() {
+            for asset in &metadatas.assets {
+                use std::iter::FromIterator;
+                let unresolved_load_refs: HashSet<
+                    AssetRef,
+                    std::collections::hash_map::RandomState,
+                > = HashSet::from_iter(
                     asset
                         .artifact
                         .as_ref()
@@ -305,8 +330,10 @@ impl<'a> SourcePairImport<'a> {
                         })
                         .unwrap_or_else(Vec::new),
                 );
-            let unresolved_build_refs: HashSet<AssetRef, std::collections::hash_map::RandomState> =
-                HashSet::from_iter(
+                let unresolved_build_refs: HashSet<
+                    AssetRef,
+                    std::collections::hash_map::RandomState,
+                > = HashSet::from_iter(
                     asset
                         .artifact
                         .as_ref()
@@ -320,13 +347,14 @@ impl<'a> SourcePairImport<'a> {
                         })
                         .unwrap_or_else(Vec::new),
                 );
-            assets.push(AssetImportResult {
-                metadata: asset.clone(),
-                unresolved_load_refs: unresolved_load_refs.into_iter().collect(),
-                unresolved_build_refs: unresolved_build_refs.into_iter().collect(),
-                asset: None,
-                serialized_asset: None,
-            });
+                assets.push(AssetImportResult {
+                    metadata: asset.clone(),
+                    unresolved_load_refs: unresolved_load_refs.into_iter().collect(),
+                    unresolved_build_refs: unresolved_build_refs.into_iter().collect(),
+                    asset: None,
+                    serialized_asset: None,
+                });
+            }
         }
         Ok(PairImportResult {
             importer_context_set: None,
@@ -456,12 +484,14 @@ impl<'a> SourcePairImport<'a> {
         }
         self.source_metadata = Some(SourceMetadata {
             version: SOURCEMETADATA_VERSION,
+            importer_options: options,
+            importer_state: state,
+        });
+        self.result_metadata = Some(ImportResultMetadata {
+            assets: imported_assets.iter().map(|a| a.metadata.clone()).collect(),
             import_hash: Some(import_hash),
             importer_version: importer.version(),
             importer_type: AssetTypeId(importer.uuid()),
-            importer_options: options,
-            importer_state: state,
-            assets: imported_assets.iter().map(|m| m.metadata.clone()).collect(),
         });
 
         Ok(PairImportResult {
@@ -678,6 +708,7 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
                 Ok(None)
             } else {
                 import.read_metadata_from_file(scratch_buf).await?;
+                import.get_result_metadata_from_cache(metadata_cache)?;
                 if import.needs_source_import(scratch_buf)? {
                     debug!("needs source import {:?}", import.source);
                     let imported_assets = import.import_source(scratch_buf).await?;
@@ -685,7 +716,7 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
                     Ok(Some((import, Some(imported_assets))))
                 } else {
                     debug!("does not need source import {:?}", import.source);
-                    let imported_assets = import.import_result_from_metadata()?;
+                    let imported_assets = import.import_result_from_cached_data()?;
                     Ok(Some((import, Some(imported_assets))))
                 }
             }
@@ -706,6 +737,7 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
                 Ok(Some((import, None)))
             } else {
                 import.generate_source_metadata(metadata_cache);
+                import.get_result_metadata_from_cache(metadata_cache)?;
                 if import.needs_source_import(scratch_buf)? {
                     debug!("running importer for source file..");
                     let imported_assets = import.import_source(scratch_buf).await?;
@@ -713,7 +745,7 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
                     Ok(Some((import, Some(imported_assets))))
                 } else {
                     debug!("using cached metadata for source file");
-                    let imported_assets = import.import_result_from_metadata()?;
+                    let imported_assets = import.import_result_from_cached_data()?;
                     import.write_metadata()?;
                     Ok(Some((import, Some(imported_assets))))
                 }

@@ -2,7 +2,7 @@ use crate::DynResult;
 use async_trait::async_trait;
 use crossterm::{
     cursor::{MoveLeft, MoveToColumn, MoveUp},
-    event::{Event, EventStream, KeyCode, KeyEvent},
+    event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers},
     queue,
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
@@ -256,6 +256,12 @@ impl<C> Shell<C> {
                             State::Insert,
                             Action::Event(Event::Key(KeyEvent {
                                 code: KeyCode::Esc, ..
+                            })),
+                        ) |
+                        (
+                            State::Insert,
+                            Action::Event(Event::Key(KeyEvent {
+                                code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL
                             })),
                         ) => {
                             break 'repl_loop;
