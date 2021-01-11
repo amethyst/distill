@@ -247,7 +247,7 @@ impl<T: ?Sized> From<Handle<T>> for GenericHandle {
 /// and so you can simply get and use a weak handle to that asset in other parts of your code. This
 /// removes reference counting overhead, but also ensures that the system which uses the weak handle
 /// is not in control of when to unload the asset.
-#[derive(Eq, Hash, PartialEq, Debug)]
+#[derive(Clone, Eq, Hash, PartialEq, Debug)]
 pub struct WeakHandle {
     id: LoadHandle,
 }
