@@ -19,6 +19,8 @@ pub mod storage;
 pub use atelier_core::{AssetRef, AssetTypeId, AssetUuid};
 pub use crossbeam_channel;
 pub use loader::Loader;
+#[cfg(feature = "packfile_io")]
+pub use packfile_io::PackfileReader;
 #[cfg(feature = "rpc_io")]
 pub use rpc_io::RpcIO;
 pub use storage::LoadHandle;
