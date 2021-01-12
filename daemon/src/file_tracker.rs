@@ -678,7 +678,7 @@ impl FileTracker {
                         match events::handle_file_event(&mut txn, &self.tables, file_event, &mut scan_stack) {
                             Ok(Some(evt)) => listeners.send_event(evt),
                             Ok(None) => {},
-                            Err(err) => panic!("Error while handling file event: {}", err),
+                            Err(err) => log::error!("Error while handling file event: {}", err),
                         }
 
                         select! {
