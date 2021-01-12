@@ -6,7 +6,6 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures_core::future::{BoxFuture, Future};
 use serde::{
     de::{self, Deserialize, Visitor},
-    export::Formatter,
     ser::{self, Serialize, Serializer},
 };
 use std::{
@@ -75,7 +74,7 @@ impl Hash for HandleRef {
 }
 impl Eq for HandleRef {}
 impl Debug for HandleRef {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.id.fmt(f)
     }
 }
@@ -145,7 +144,7 @@ impl<T: ?Sized> Hash for Handle<T> {
 }
 
 impl<T: ?Sized> Debug for Handle<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Handle")
             .field("handle_ref", &self.handle_ref)
             .finish()
