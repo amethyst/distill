@@ -20,8 +20,8 @@ use atelier_schema::{
     parse_db_metadata,
 };
 use bincode::config::Options;
-use futures::{channel::mpsc::unbounded, lock::Mutex};
 use futures::stream::StreamExt;
+use futures::{channel::mpsc::unbounded, lock::Mutex};
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -1239,7 +1239,7 @@ impl FileAssetSource {
                                 .rw_txn()
                                 .await
                                 .expect("failed to get cache txn");
-                                
+
                             for asset in import_output.assets.iter_mut() {
                                 if asset.is_fully_resolved() {
                                     if let Some(serialized_asset) = asset.serialized_asset.as_mut()

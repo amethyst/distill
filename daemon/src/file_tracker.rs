@@ -6,11 +6,11 @@ use crate::watcher::{self, FileEvent, FileMetadata};
 use atelier_core::utils::{self, canonicalize_path};
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use event_listener::Event;
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures::future::{Fuse, FusedFuture, FutureExt};
-use futures::lock::Mutex;
-use futures::select;
 use futures::stream::StreamExt;
+use futures::{
+    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    FutureExt,
+};
 use lmdb::Cursor;
 use log::{debug, info};
 use std::{
@@ -24,8 +24,12 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
     thread,
+    time::Duration,
 };
-use tokio::time::{self, Duration};
+use tokio::{
+    sync::{oneshot, Mutex},
+    time,
+};
 
 #[derive(Clone)]
 struct FileTrackerTables {
@@ -615,7 +619,6 @@ impl FileTracker {
             .expect("Failed registering listener")
     }
 
-    #[allow(dead_code)]
     pub async fn stop(&self) {
         if self.is_running() {
             self.stopping_event.notify(std::usize::MAX);
@@ -653,17 +656,21 @@ impl FileTracker {
         let mut listeners = ListenersList::new();
         let mut scan_stack = Vec::new();
 
+        let mut stopping = self.stopping_event.listen();
+
         let mut listener_tx_guard = self.listener_rx.lock().await;
         let listener_tx = listener_tx_guard.get_mut();
-        let mut update_debounce = Fuse::terminated();
 
-        let stopping = self.stopping_event.listen().fuse();
-        futures::pin_mut!(stopping);
+        let mut delay = time::delay_for(Duration::from_millis(40));
+        let mut dirty = false;
 
         loop {
-            select! {
+            tokio::select! {
                 new_listener = listener_tx.next() => listeners.register(new_listener),
-                _ = update_debounce => listeners.send_event(FileTrackerEvent::Update),
+                _ = &mut delay, if dirty => {
+                    listeners.send_event(FileTrackerEvent::Update);
+                    dirty = false;
+                },
                 mut maybe_file_event = watcher_rx.next() => {
                     if maybe_file_event.is_none() {
                         debug!("FileTracker: stopping due to exhausted watcher");
@@ -679,7 +686,7 @@ impl FileTracker {
                             Err(err) => panic!("Error while handling file event: {}", err),
                         }
 
-                        select! {
+                        futures::select! {
                             next_file_event = watcher_rx.next() => maybe_file_event = next_file_event,
                             default => maybe_file_event = None,
                         }
@@ -687,20 +694,17 @@ impl FileTracker {
 
                     if txn.dirty {
                         txn.commit().expect("Failed to commit");
-                        update_debounce = time::delay_for(Duration::from_millis(50)).fuse();
+                        dirty = true;
                     }
                 }
-                _ = stopping => {
-                    debug!("FileTracker: stopping to to stop() notification");
+                _ = &mut stopping => {
+                    debug!("FileTracker: stopping due to stop() notification");
                     break;
                 }
             }
         }
 
-        if !update_debounce.is_terminated() {
-            listeners.send_event(FileTrackerEvent::Update);
-        }
-
+        listeners.send_event(FileTrackerEvent::Update);
         drop(stop_handle);
         self.is_running.store(false, Ordering::Release);
     }
@@ -709,6 +713,9 @@ impl FileTracker {
 #[cfg(not(target_os = "macos"))] // FIXME: these tests fail in macos CI
 #[cfg(test)]
 pub mod tests {
+    use futures::FutureExt;
+    use tokio::time::{self, timeout};
+
     use super::*;
     use crate::capnp_db::Environment;
     use crate::file_tracker::{FileTracker, FileTrackerEvent};
@@ -746,10 +753,8 @@ pub mod tests {
         tracker.register_listener(tx);
 
         runtime.block_on(local.run_until(async move {
-            let handle = tokio::task::spawn_local({
-                let tracker = tracker.clone();
-                async move { tracker.run().await }
-            });
+            let tracker_clone = tracker.clone();
+            let handle = tokio::task::spawn_local(async move { tracker_clone.run().await });
             expect_event(&mut rx).await;
 
             f(tracker.clone(), rx, asset_dir.into_path()).await;
@@ -760,33 +765,17 @@ pub mod tests {
     }
 
     async fn expect_no_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) {
-        let mut timeout = time::delay_for(Duration::from_millis(1000)).fuse();
-        select! {
-            evt = rx.next() => {
-                if let Some(evt) = evt {
-                    panic!("Received unexpected event {:?}", evt);
-                }
-            }
-            _ = timeout => {
-                return;
-            }
-        };
-        unreachable!();
+        match timeout(Duration::from_millis(1000), rx.next()).await {
+            Err(_) => return,
+            Ok(evt) => panic!("Received unexpected event {:?}", evt),
+        }
     }
 
     async fn expect_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) -> FileTrackerEvent {
-        let mut timeout = time::delay_for(Duration::from_millis(5000)).fuse();
-        select! {
-            evt = rx.next() => {
-                if let Some(evt) = evt {
-                    return evt;
-                }
-            }
-            _ = timeout => {
-                panic!("Timed out waiting for file event");
-            }
-        };
-        unreachable!();
+        match timeout(Duration::from_millis(5000), rx.next()).await {
+            Err(_) => panic!("Timed out waiting for file event"),
+            Ok(evt) => return evt.unwrap(),
+        }
     }
 
     async fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
