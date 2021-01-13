@@ -205,23 +205,9 @@ impl AssetDaemon {
             ArtifactCache::new(&cache_db).expect("failed to create artifact cache");
         let artifact_cache = Arc::new(artifact_cache);
 
-        let work_runtime = tokio::runtime::Builder::new()
-            .threaded_scheduler()
-            .enable_all()
-            .build()
-            .unwrap();
-        let work_runtime = Arc::new(work_runtime);
-
-        let asset_source = FileAssetSource::new(
-            &tracker,
-            &hub,
-            &asset_db,
-            &importers,
-            &artifact_cache,
-            ctxs,
-            work_runtime,
-        )
-        .expect("failed to create asset source");
+        let asset_source =
+            FileAssetSource::new(&tracker, &hub, &asset_db, &importers, &artifact_cache, ctxs)
+                .expect("failed to create asset source");
 
         let asset_source = Arc::new(asset_source);
 
