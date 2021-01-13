@@ -31,7 +31,6 @@ use std::{
     path::Path,
 };
 use std::{path::PathBuf, str, sync::Arc, time::Instant};
-use tokio::runtime::Runtime;
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,

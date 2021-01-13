@@ -18,6 +18,9 @@ use crate::{
     artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
     error::Result, file_asset_source, file_tracker::FileTracker,
 };
+use asset_hub::AssetHub;
+use asset_hub_service::AssetHubService;
+use file_asset_source::FileAssetSource;
 
 #[derive(Default)]
 pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
@@ -171,10 +174,6 @@ impl AssetDaemon {
     }
 
     async fn run_rpc_runtime(self, rx: Receiver<bool>) {
-        use asset_hub::AssetHub;
-        use asset_hub_service::AssetHubService;
-        use file_asset_source::FileAssetSource;
-
         let cache_dir = self.db_dir.join("cache");
         let _ = fs::create_dir(&self.db_dir);
         let _ = fs::create_dir(&cache_dir);
