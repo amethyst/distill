@@ -41,6 +41,7 @@ mod tests {
     use futures_io::AsyncRead;
     use futures_util::io::AsyncReadExt;
     use serde::{Deserialize, Serialize};
+    use serial_test::serial;
     use std::{
         collections::HashMap, iter::FromIterator, path::PathBuf, str::FromStr,
         string::FromUtf8Error, sync::RwLock,
@@ -204,6 +205,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_connect() {
         let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
 
@@ -240,6 +242,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_load_with_dependencies() {
         let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
 
