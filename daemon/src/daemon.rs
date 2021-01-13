@@ -172,7 +172,7 @@ impl AssetDaemon {
         (handle, tx)
     }
 
-    async fn run_rpc_runtime(self, mut rx: Receiver<bool>) {
+    async fn run_rpc_runtime(self, rx: Receiver<bool>) {
         let cache_dir = self.db_dir.join("cache");
         let _ = fs::create_dir(&self.db_dir);
         let _ = fs::create_dir(&cache_dir);

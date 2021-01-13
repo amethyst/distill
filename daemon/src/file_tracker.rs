@@ -6,11 +6,8 @@ use crate::watcher::{self, FileEvent, FileMetadata};
 use atelier_core::utils::{self, canonicalize_path};
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use event_listener::Event;
+use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
-use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-    FutureExt,
-};
 use lmdb::Cursor;
 use log::{debug, info};
 use std::{
@@ -27,7 +24,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::{oneshot, Mutex},
+    sync::{mpsc, Mutex},
     time,
 };
 
@@ -640,7 +637,7 @@ impl FileTracker {
             return;
         }
 
-        let (watcher_tx, mut watcher_rx) = unbounded();
+        let (watcher_tx, mut watcher_rx) = mpsc::unbounded_channel();
         let to_watch = self
             .watch_dirs
             .iter()
@@ -664,6 +661,7 @@ impl FileTracker {
         let mut delay = time::delay_for(Duration::from_millis(40));
         let mut dirty = false;
 
+        #[allow(unused_mut)]
         loop {
             tokio::select! {
                 new_listener = listener_tx.next() => listeners.register(new_listener),
@@ -671,13 +669,14 @@ impl FileTracker {
                     listeners.send_event(FileTrackerEvent::Update);
                     dirty = false;
                 },
-                mut maybe_file_event = watcher_rx.next() => {
+                mut maybe_file_event = watcher_rx.recv() => {
                     if maybe_file_event.is_none() {
                         debug!("FileTracker: stopping due to exhausted watcher");
                         break;
                     }
 
                     let mut txn = self.get_rw_txn().await;
+
                     // batch watcher events into single transaction and update
                     while let Some(file_event) = maybe_file_event {
                         match events::handle_file_event(&mut txn, &self.tables, file_event, &mut scan_stack) {
@@ -686,10 +685,7 @@ impl FileTracker {
                             Err(err) => panic!("Error while handling file event: {}", err),
                         }
 
-                        futures::select! {
-                            next_file_event = watcher_rx.next() => maybe_file_event = next_file_event,
-                            default => maybe_file_event = None,
-                        }
+                        maybe_file_event = watcher_rx.try_recv().ok();
                     }
 
                     if txn.dirty {
@@ -713,8 +709,8 @@ impl FileTracker {
 #[cfg(not(target_os = "macos"))] // FIXME: these tests fail in macos CI
 #[cfg(test)]
 pub mod tests {
-    use futures::FutureExt;
-    use tokio::time::{self, timeout};
+
+    use tokio::time::timeout;
 
     use super::*;
     use crate::capnp_db::Environment;

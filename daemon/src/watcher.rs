@@ -1,6 +1,5 @@
 use crate::error::{Error, Result};
 use atelier_core::utils::canonicalize_path;
-use futures::channel::mpsc::UnboundedSender;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs;
 use std::io;
@@ -8,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, UNIX_EPOCH};
 use std::{collections::HashMap, path::Path};
+use tokio::sync::mpsc::UnboundedSender;
 
 /// The purpose of DirWatcher is to provide enough information to
 /// determine which files may be candidates for going through the asset import process.
@@ -96,11 +96,11 @@ impl DirWatcher {
     {
         let canonical_dir = canonicalize_path(dir);
         self.asset_tx
-            .unbounded_send(FileEvent::ScanStart(canonical_dir.clone()))
+            .send(FileEvent::ScanStart(canonical_dir.clone()))
             .map_err(|_| Error::SendError)?;
         let result = self.scan_directory_recurse(&canonical_dir, evt_create);
         self.asset_tx
-            .unbounded_send(FileEvent::ScanEnd(canonical_dir, self.dirs.clone()))
+            .send(FileEvent::ScanEnd(canonical_dir, self.dirs.clone()))
             .map_err(|_| Error::SendError)?;
         result
     }
@@ -119,9 +119,7 @@ impl DirWatcher {
                         Ok(entry) => {
                             let evt = self.handle_notify_event(evt_create(entry.path()), true)?;
                             if let Some(evt) = evt {
-                                self.asset_tx
-                                    .unbounded_send(evt)
-                                    .map_err(|_| Error::SendError)?;
+                                self.asset_tx.send(evt).map_err(|_| Error::SendError)?;
                             }
                             let metadata;
                             match entry.metadata() {
@@ -145,7 +143,7 @@ impl DirWatcher {
         for dir in &self.dirs.clone() {
             if let Err(err) = self.scan_directory(&dir, &|path| DebouncedEvent::Create(path)) {
                 self.asset_tx
-                    .unbounded_send(FileEvent::FileError(err))
+                    .send(FileEvent::FileError(err))
                     .expect("Failed to send file error event. Ironic...");
             }
         }
@@ -156,7 +154,7 @@ impl DirWatcher {
                     Ok(maybe_event) => {
                         if let Some(evt) = maybe_event {
                             log::debug!("File event: {:?}", evt);
-                            self.asset_tx.unbounded_send(evt).unwrap();
+                            self.asset_tx.send(evt).unwrap();
                         }
                     }
                     Err(err) => match err {
@@ -166,7 +164,7 @@ impl DirWatcher {
                                     self.scan_directory(&dir, &|path| DebouncedEvent::Create(path))
                                 {
                                     self.asset_tx
-                                        .unbounded_send(FileEvent::FileError(err))
+                                        .send(FileEvent::FileError(err))
                                         .expect("Failed to send file error event");
                                 }
                             }
@@ -174,13 +172,13 @@ impl DirWatcher {
                         Error::Exit => break,
                         _ => self
                             .asset_tx
-                            .unbounded_send(FileEvent::FileError(err))
+                            .send(FileEvent::FileError(err))
                             .expect("Failed to send file error event"),
                     },
                 },
                 Err(_) => {
                     self.asset_tx
-                        .unbounded_send(FileEvent::FileError(Error::RecvError))
+                        .send(FileEvent::FileError(Error::RecvError))
                         .expect("Failed to send file error event");
 
                     return;
