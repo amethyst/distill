@@ -11,7 +11,7 @@ type_uuid = ["type-uuid"]
 path_utils = ["dunce", "path-clean", "path-slash"]
 
 [dependencies]
-uuid = { version = "0.8.1", features = ["v4"] }
+uuid = { version = "0.8.2", features = ["v4"] }
 serde = { version = "1.0.118", optional = true, features = ["derive"] }
 futures-core = { version = "0.3.9", default-features = false, features = ["alloc"] }
 type-uuid = { version = "0.1.2", optional = true, default-features = false }

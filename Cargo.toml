@@ -37,7 +37,7 @@ futures-core = "0.3.9"
 futures-io = "0.3.9"
 futures-util = "0.3.9"
 serde = "1.0.118"
-uuid = "0.8.1"
+uuid = "0.8.2"
 tokio = { version = "0.2", features = ["sync"] }
 
 
