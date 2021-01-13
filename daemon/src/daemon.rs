@@ -12,7 +12,7 @@ use atelier_importer::{BoxedImporter, ImporterContext};
 use atelier_schema::data;
 use futures::select;
 use futures_util::future::FutureExt;
-use tokio::sync::oneshot::{self, error::TryRecvError, Receiver, Sender};
+use tokio::sync::oneshot::{self, Receiver, Sender};
 
 use crate::{
     artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
