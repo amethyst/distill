@@ -9,7 +9,7 @@ use atelier_importer::{
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
 use atelier_schema::data;
-use futures_core::future::{BoxFuture, Future};
+use futures::future::{BoxFuture, Future};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::io::Read;

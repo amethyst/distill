@@ -1,7 +1,7 @@
 #![allow(clippy::needless_lifetimes)]
-use futures_core::future::{BoxFuture, Future};
-use futures_util::future::FutureExt;
-use futures_util::stream::{FuturesUnordered, Stream};
+use futures::future::FutureExt;
+use futures::future::{BoxFuture, Future};
+use futures::stream::{FuturesUnordered, Stream};
 use pin_project::{pin_project, pinned_drop};
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -76,7 +76,7 @@ impl<'a, T> Scope<'a, T> {
     pub async fn collect(&mut self) -> Vec<T> {
         let mut proc_outputs = Vec::with_capacity(self.remaining);
 
-        use futures_util::stream::StreamExt;
+        use futures::stream::StreamExt;
         while let Some(item) = self.next().await {
             proc_outputs.push(item);
         }
@@ -108,7 +108,7 @@ impl<'a, T> Stream for Scope<'a, T> {
 impl<T> PinnedDrop for Scope<'_, T> {
     fn drop(mut self: Pin<&mut Self>) {
         if !self.done {
-            futures_executor::block_on(async {
+            futures::executor::block_on(async {
                 // self.cancel().await;
                 self.collect().await;
             });
@@ -169,7 +169,7 @@ pub fn scope_and_block<'a, T: Send + 'static, R, F: FnOnce(&mut Scope<'a, T>) ->
     f: F,
 ) -> (R, Vec<T>) {
     let (mut stream, block_output) = unsafe { scope(f) };
-    let proc_outputs = futures_executor::block_on(stream.collect());
+    let proc_outputs = futures::executor::block_on(stream.collect());
     (block_output, proc_outputs)
 }
 

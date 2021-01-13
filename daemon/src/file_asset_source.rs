@@ -20,9 +20,8 @@ use atelier_schema::{
     parse_db_metadata,
 };
 use bincode::config::Options;
-use futures_channel::mpsc::unbounded;
-use futures_util::lock::Mutex;
-use futures_util::stream::StreamExt;
+use futures::{channel::mpsc::unbounded, lock::Mutex};
+use futures::stream::StreamExt;
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;

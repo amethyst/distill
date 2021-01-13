@@ -6,11 +6,11 @@ use crate::watcher::{self, FileEvent, FileMetadata};
 use atelier_core::utils::{self, canonicalize_path};
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use event_listener::Event;
-use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures_util::future::{Fuse, FusedFuture, FutureExt};
-use futures_util::lock::Mutex;
-use futures_util::select;
-use futures_util::stream::StreamExt;
+use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures::future::{Fuse, FusedFuture, FutureExt};
+use futures::lock::Mutex;
+use futures::select;
+use futures::stream::StreamExt;
 use lmdb::Cursor;
 use log::{debug, info};
 use std::{
@@ -658,7 +658,7 @@ impl FileTracker {
         let mut update_debounce = Fuse::terminated();
 
         let stopping = self.stopping_event.listen().fuse();
-        futures_util::pin_mut!(stopping);
+        futures::pin_mut!(stopping);
 
         loop {
             select! {

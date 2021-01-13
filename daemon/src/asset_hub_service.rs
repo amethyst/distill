@@ -20,8 +20,8 @@ use atelier_schema::{
 };
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
+use futures::AsyncReadExt;
 use futures::TryFutureExt;
-use futures_util::AsyncReadExt;
 use std::{
     collections::{HashMap, HashSet},
     path,

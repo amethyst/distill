@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use atelier_core::utils::canonicalize_path;
-use futures_channel::mpsc::UnboundedSender;
+use futures::channel::mpsc::UnboundedSender;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs;
 use std::io;

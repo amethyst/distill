@@ -37,9 +37,9 @@ mod tests {
         LoadHandle, Loader,
     };
 
-    use futures_core::future::BoxFuture;
-    use futures_io::AsyncRead;
-    use futures_util::io::AsyncReadExt;
+    use futures::future::BoxFuture;
+    use futures::io::AsyncReadExt;
+    use futures::AsyncRead;
     use serde::{Deserialize, Serialize};
     use serial_test::serial;
     use std::{

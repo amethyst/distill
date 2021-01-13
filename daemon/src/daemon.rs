@@ -11,7 +11,7 @@ use std::{
 use atelier_importer::{BoxedImporter, ImporterContext};
 use atelier_schema::data;
 use futures::select;
-use futures_util::future::FutureExt;
+use futures::future::FutureExt;
 use tokio::sync::oneshot::{self, Receiver, Sender};
 
 use crate::{

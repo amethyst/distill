@@ -31,12 +31,7 @@ tokio = { version = "0.2", features = [
     "io-util",
 ] }
 tokio-util = { version = "0.3", features = ["compat"] }
-futures = { version = "0.3", default-features = false, features = ["std", "async-await", "executor"] }
-futures-util = { version = "0.3.9", default-features = false }
-futures-core = { version = "0.3.9", default-features = false, features = ["alloc"] }
-futures-io = { version = "0.3", default-features = false }
-futures-executor = { version = "0.3", default-features = false }
-futures-channel = { version = "0.3", default-features = false }
+futures = { version = "0.3.9" }
 async-lock = { version = "2.1" }
 async-channel = { version = "1.4" }
 event-listener = { version = "2.4.0" }
