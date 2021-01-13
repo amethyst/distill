@@ -42,4 +42,4 @@ jobs:
       - run: cargo +nightly clippy -Z unstable-options --workspace --all-targets --all-features
         if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
 
-      - run: cargo test --workspace --all-features
+      - run: cargo test --workspace --all-features -- --nocapture

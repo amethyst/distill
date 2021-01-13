@@ -629,14 +629,11 @@ impl FileTracker {
     }
 
     pub async fn run(&self) {
-        let stopping = self.stopping_event.listen().fuse();
-
-        let already_running = self
+        if self
             .is_running
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-            .is_err();
-
-        if already_running {
+            .is_err()
+        {
             return;
         }
 
@@ -660,6 +657,7 @@ impl FileTracker {
         let listener_tx = listener_tx_guard.get_mut();
         let mut update_debounce = Fuse::terminated();
 
+        let stopping = self.stopping_event.listen().fuse();
         futures_util::pin_mut!(stopping);
 
         loop {

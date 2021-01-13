@@ -42,13 +42,8 @@ mod tests {
     use futures_util::io::AsyncReadExt;
     use serde::{Deserialize, Serialize};
     use std::{
-        collections::HashMap,
-        iter::FromIterator,
-        path::PathBuf,
-        str::FromStr,
-        string::FromUtf8Error,
-        sync::RwLock,
-        thread::{self, JoinHandle},
+        collections::HashMap, iter::FromIterator, path::PathBuf, str::FromStr,
+        string::FromUtf8Error, sync::RwLock,
     };
     use uuid::Uuid;
 
@@ -191,23 +186,21 @@ mod tests {
         handle: LoadHandle,
         loader: &mut Loader,
         storage: &Storage,
-    ) {
-        loop {
-            println!(
-                "state {:?} expecting {:?}",
-                loader.get_load_status(handle),
-                status
-            );
+    ) -> bool {
+        for _ in 0..100 {
             if std::mem::discriminant(&status)
                 == std::mem::discriminant(&loader.get_load_status(handle))
             {
-                break;
+                return true;
             }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(100)); // waiting for daemon before we try again
             if let Err(e) = loader.process(storage, &DefaultIndirectionResolver) {
                 println!("err {:?}", e);
             }
+            println!("tick (100ms)");
         }
+
+        unreachable!("Never got to desired status.")
     }
 
     #[test]
@@ -217,7 +210,8 @@ mod tests {
         // Start daemon in a separate thread
         let daemon_port = 2500;
         let daemon_address = format!("127.0.0.1:{}", daemon_port);
-        let _atelier_daemon = spawn_daemon(&daemon_address);
+
+        let (daemon_handle, tx) = spawn_daemon(&daemon_address);
 
         let mut loader = Loader::new(Box::new(RpcIO::new(daemon_address).unwrap()));
         let handle = loader.add_ref(
@@ -227,9 +221,22 @@ mod tests {
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
         };
-        wait_for_status(LoadStatus::Loaded, handle, &mut loader, &storage);
+        assert!(wait_for_status(
+            LoadStatus::Loaded,
+            handle,
+            &mut loader,
+            &storage
+        ));
         loader.remove_ref(handle);
-        wait_for_status(LoadStatus::NotRequested, handle, &mut loader, &storage);
+        assert!(wait_for_status(
+            LoadStatus::NotRequested,
+            handle,
+            &mut loader,
+            &storage
+        ));
+
+        tx.send(true).unwrap();
+        daemon_handle.join().unwrap();
     }
 
     #[test]
@@ -239,7 +246,8 @@ mod tests {
         // Start daemon in a separate thread
         let daemon_port = 2505;
         let daemon_address = format!("127.0.0.1:{}", daemon_port);
-        let _atelier_daemon = spawn_daemon(&daemon_address);
+
+        let (daemon_handle, tx) = spawn_daemon(&daemon_address);
 
         let mut loader = Loader::new(Box::new(RpcIO::new(daemon_address).unwrap()));
         let handle = loader.add_ref(
@@ -290,6 +298,9 @@ mod tests {
                     &storage,
                 );
             });
+
+        tx.send(true).unwrap();
+        daemon_handle.join().unwrap();
     }
 
     fn asset_tree() -> Vec<(AssetUuid, &'static str)> {
@@ -310,22 +321,22 @@ mod tests {
         .collect::<Vec<(AssetUuid, &'static str)>>()
     }
 
-    fn spawn_daemon(daemon_address: &str) -> JoinHandle<()> {
+    fn spawn_daemon(
+        daemon_address: &str,
+    ) -> (
+        std::thread::JoinHandle<()>,
+        tokio::sync::oneshot::Sender<bool>,
+    ) {
         let daemon_address = daemon_address
             .parse()
             .expect("Failed to parse string as `SocketAddr`.");
-        thread::Builder::new()
-            .name("atelier-daemon".to_string())
-            .spawn(move || {
-                let tests_path = PathBuf::from_iter(&[env!("CARGO_MANIFEST_DIR"), "tests"]);
+        let tests_path = PathBuf::from_iter(&[env!("CARGO_MANIFEST_DIR"), "tests"]);
 
-                AssetDaemon::default()
-                    .with_db_path(tests_path.join("assets_db"))
-                    .with_address(daemon_address)
-                    .with_importer("txt", TxtImporter)
-                    .with_asset_dirs(vec![tests_path.join("assets")])
-                    .run();
-            })
-            .expect("Failed to spawn `atelier-daemon` thread.")
+        AssetDaemon::default()
+            .with_db_path(tests_path.join("assets_db"))
+            .with_address(daemon_address)
+            .with_importer("txt", TxtImporter)
+            .with_asset_dirs(vec![tests_path.join("assets")])
+            .run()
     }
 }

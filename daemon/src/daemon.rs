@@ -4,14 +4,17 @@ use crate::{
 };
 use atelier_importer::{BoxedImporter, ImporterContext};
 use atelier_schema::data;
+
 use futures_util::future::FutureExt;
+use std::thread;
 use std::{
     collections::HashMap,
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
 };
+use std::{sync::Arc, thread::JoinHandle};
+use tokio::sync::oneshot::{self, Receiver, Sender};
 
 #[derive(Default)]
 pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
@@ -147,17 +150,24 @@ impl AssetDaemon {
         self
     }
 
-    pub fn run(self) {
-        let mut rpc_runtime = tokio::runtime::Builder::new()
-            .basic_scheduler()
-            .enable_all()
-            .build()
-            .unwrap();
-        let local = tokio::task::LocalSet::new();
-        rpc_runtime.block_on(local.run_until(async { self.run_rpc_runtime().await }));
+    pub fn run(self) -> (JoinHandle<()>, Sender<bool>) {
+        let (tx, rx) = oneshot::channel();
+
+        let handle = thread::spawn(|| {
+            let mut rpc_runtime = tokio::runtime::Builder::new()
+                .basic_scheduler()
+                .enable_all()
+                .build()
+                .unwrap();
+            let local = tokio::task::LocalSet::new();
+
+            rpc_runtime.block_on(local.run_until(self.run_rpc_runtime(rx)))
+        });
+
+        (handle, tx)
     }
 
-    async fn run_rpc_runtime(self) {
+    async fn run_rpc_runtime(self, rx: Receiver<bool>) {
         use asset_hub::AssetHub;
         use asset_hub_service::AssetHubService;
         use file_asset_source::FileAssetSource;
@@ -165,6 +175,7 @@ impl AssetDaemon {
         let cache_dir = self.db_dir.join("cache");
         let _ = fs::create_dir(&self.db_dir);
         let _ = fs::create_dir(&cache_dir);
+
         for dir in self.asset_dirs.iter() {
             let _ = fs::create_dir_all(dir);
         }
@@ -218,29 +229,46 @@ impl AssetDaemon {
             tracker.clone(),
             artifact_cache.clone(),
         );
+        let service = Arc::new(service);
 
         let addr = self.address;
+
+        let shutdown_tracker = tracker.clone();
+
         let service_handle =
             tokio::task::spawn_local(async move { service.run(addr).await }).fuse();
         let tracker_handle = tokio::task::spawn_local(async move { tracker.run().await }).fuse(); // TODO: use tokio channel to make this Send
         let asset_source_handle =
             tokio::task::spawn_local(async move { asset_source.run().await }).fuse();
 
-        let mut remaining_tasks = vec![service_handle, tracker_handle, asset_source_handle];
-        loop {
-            let (done, done_idx, rest) = futures_util::future::select_all(remaining_tasks).await;
-            if done.is_err() {
-                match done_idx {
-                    0 => done.expect("ServiceHandle panicked"),
-                    1 => done.expect("FileTracker panicked"),
-                    2 => done.expect("AssetSource panicked"),
-                    _ => panic!("unknown error"),
-                }
+        let shutdown_handle = tokio::task::spawn_local(async move {
+            if rx.await.is_ok() {
+                shutdown_tracker.stop().await;
+                // shutdown_service.stop().await;
+                // shutdown_asset_source.stop().await;
+                // any value on this channel means shutdown
+                // TODO: better shutdown
             }
-            remaining_tasks = rest;
-            if remaining_tasks.is_empty() {
-                break;
+        })
+        .fuse();
+
+        let remaining_tasks = vec![
+            service_handle,
+            tracker_handle,
+            asset_source_handle,
+            shutdown_handle,
+        ];
+        let (done, done_idx, _) = futures_util::future::select_all(remaining_tasks).await;
+        if done.is_err() {
+            match done_idx {
+                0 => done.expect("ServiceHandle panicked"),
+                1 => done.expect("FileTracker panicked"),
+                2 => done.expect("AssetSource panicked"),
+                3 => done.expect("Shutdown panicked"),
+                _ => panic!("unknown error"),
             }
+        } else {
+            log::info!("Shutting Down");
         }
     }
 }
