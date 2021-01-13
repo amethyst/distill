@@ -730,34 +730,33 @@ pub mod tests {
 
         let db_dir = tempfile::tempdir().unwrap();
         let asset_dir = tempfile::tempdir().unwrap();
-        {
-            let _ = fs::create_dir(db_dir.path());
-            let asset_paths = vec![asset_dir.path().to_str().unwrap()];
-            let db = Arc::new(
-                Environment::with_map_size(db_dir.path(), 1 << 21).unwrap_or_else(|_| {
-                    panic!(
-                        "failed to create db environment {}",
-                        db_dir.path().to_string_lossy()
-                    )
-                }),
-            );
-            let tracker = Arc::new(FileTracker::new(db, asset_paths));
-            let (tx, mut rx) = unbounded();
-            tracker.register_listener(tx);
 
-            runtime.block_on(local.run_until(async move {
-                let handle = tokio::task::spawn_local({
-                    let tracker = tracker.clone();
-                    async move { tracker.run().await }
-                });
-                expect_event(&mut rx).await;
+        let _ = fs::create_dir(db_dir.path());
+        let asset_paths = vec![asset_dir.path().to_str().unwrap()];
+        let db = Arc::new(
+            Environment::with_map_size(db_dir.path(), 1 << 21).unwrap_or_else(|_| {
+                panic!(
+                    "failed to create db environment {}",
+                    db_dir.path().to_string_lossy()
+                )
+            }),
+        );
+        let tracker = Arc::new(FileTracker::new(db, asset_paths));
+        let (tx, mut rx) = unbounded();
+        tracker.register_listener(tx);
 
-                f(tracker.clone(), rx, asset_dir.into_path()).await;
+        runtime.block_on(local.run_until(async move {
+            let handle = tokio::task::spawn_local({
+                let tracker = tracker.clone();
+                async move { tracker.run().await }
+            });
+            expect_event(&mut rx).await;
 
-                tracker.stop().await;
-                handle.await.unwrap();
-            }))
-        }
+            f(tracker.clone(), rx, asset_dir.into_path()).await;
+
+            tracker.stop().await;
+            handle.await.unwrap();
+        }))
     }
 
     async fn expect_no_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) {

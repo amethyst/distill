@@ -1,20 +1,23 @@
-use crate::{
-    artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
-    error::Result, file_asset_source, file_tracker::FileTracker,
-};
-use atelier_importer::{BoxedImporter, ImporterContext};
-use atelier_schema::data;
-
-use futures_util::future::FutureExt;
-use std::thread;
 use std::{
     collections::HashMap,
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
+    sync::Arc,
+    thread,
+    thread::JoinHandle,
 };
-use std::{sync::Arc, thread::JoinHandle};
-use tokio::sync::oneshot::{self, Receiver, Sender};
+
+use atelier_importer::{BoxedImporter, ImporterContext};
+use atelier_schema::data;
+use futures::select;
+use futures_util::future::FutureExt;
+use tokio::sync::oneshot::{self, error::TryRecvError, Receiver, Sender};
+
+use crate::{
+    artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
+    error::Result, file_asset_source, file_tracker::FileTracker,
+};
 
 #[derive(Default)]
 pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
@@ -235,40 +238,34 @@ impl AssetDaemon {
 
         let shutdown_tracker = tracker.clone();
 
-        let service_handle =
+        let mut service_handle =
             tokio::task::spawn_local(async move { service.run(addr).await }).fuse();
-        let tracker_handle = tokio::task::spawn_local(async move { tracker.run().await }).fuse(); // TODO: use tokio channel to make this Send
-        let asset_source_handle =
+        let mut tracker_handle =
+            tokio::task::spawn_local(async move { tracker.run().await }).fuse(); // TODO: use tokio channel to make this Send
+        let mut asset_source_handle =
             tokio::task::spawn_local(async move { asset_source.run().await }).fuse();
 
-        let shutdown_handle = tokio::task::spawn_local(async move {
-            if rx.await.is_ok() {
-                shutdown_tracker.stop().await;
-                // shutdown_service.stop().await;
-                // shutdown_asset_source.stop().await;
-                // any value on this channel means shutdown
-                // TODO: better shutdown
-            }
-        })
-        .fuse();
+        let mut rx_handle = rx.fuse();
 
-        let remaining_tasks = vec![
-            service_handle,
-            tracker_handle,
-            asset_source_handle,
-            shutdown_handle,
-        ];
-        let (done, done_idx, _) = futures_util::future::select_all(remaining_tasks).await;
-        if done.is_err() {
-            match done_idx {
-                0 => done.expect("ServiceHandle panicked"),
-                1 => done.expect("FileTracker panicked"),
-                2 => done.expect("AssetSource panicked"),
-                3 => done.expect("Shutdown panicked"),
-                _ => panic!("unknown error"),
+        log::info!("Starting Daemon Loop");
+        loop {
+            select! {
+                done = service_handle => done.expect("ServiceHandle panicked"),
+                done = tracker_handle => done.expect("FileTracker panicked"),
+                done = asset_source_handle => done.expect("AssetSource panicked"),
+                done = rx_handle => match done {
+                    Ok(_) => {
+                        log::warn!("Shutting Down!");
+                        shutdown_tracker.stop().await;
+                        // shutdown_service.stop().await;
+                        // shutdown_asset_source.stop().await;
+                        // any value on this channel means shutdown
+                        // TODO: better shutdown
+                        return;
+                    }
+                    Err(_) => continue,
+                }
             }
-        } else {
-            log::info!("Shutting Down");
         }
     }
 }
