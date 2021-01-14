@@ -7,7 +7,7 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use capnp::message::ReaderOptions;
 
 use async_trait::async_trait;
-use futures_util::AsyncReadExt;
+use futures::AsyncReadExt;
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
 
 pub mod shell;

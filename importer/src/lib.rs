@@ -16,8 +16,8 @@ pub use serde_importable_derive::*;
 pub use serde;
 
 use atelier_core::{AssetRef, AssetUuid};
-use futures_core::future::BoxFuture;
-use futures_io::{AsyncRead, AsyncWrite};
+use futures::{future::BoxFuture, AsyncReadExt, AsyncWriteExt};
+use futures::{AsyncRead, AsyncWrite};
 use serde::Serialize;
 use std::io::{Read, Write};
 
@@ -170,7 +170,6 @@ impl<T: Importer + Sync> AsyncImporter for T {
         state: &'a mut Self::State,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
         Box::pin(async move {
-            use futures_lite::AsyncReadExt;
             let mut bytes = Vec::new();
             source.read_to_end(&mut bytes).await?;
             let mut reader = bytes.as_slice();
@@ -187,7 +186,6 @@ impl<T: Importer + Sync> AsyncImporter for T {
         assets: Vec<ExportAsset>,
     ) -> BoxFuture<'a, Result<ImporterValue>> {
         Box::pin(async move {
-            use futures_lite::io::AsyncWriteExt;
             let mut write_buf = Vec::new();
             let result = <T as Importer>::export(self, &mut write_buf, options, state, assets)?;
             output.write(&write_buf).await?;

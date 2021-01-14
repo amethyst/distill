@@ -14,18 +14,13 @@ use crate::loader::LoaderState;
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 
+/// a connection to the capnp provided rpc and an event receiver for SnapshotChange events
 struct RpcConnection {
-    _asset_hub: asset_hub::Client,
     snapshot: asset_hub::snapshot::Client,
     snapshot_rx: Receiver<SnapshotChange>,
 }
-enum InternalConnectionState {
-    None,
-    Connecting(oneshot::Receiver<Result<RpcConnection, Box<dyn Error>>>),
-    Connected(RpcConnection),
-    Error(Box<dyn Error>),
-}
 
+/// an event which represents change to the assets
 struct SnapshotChange {
     snapshot: asset_hub::snapshot::Client,
     changed_assets: Vec<AssetUuid>,
@@ -34,52 +29,26 @@ struct SnapshotChange {
     deleted_paths: Vec<PathBuf>,
 }
 
-// While capnp_rpc does not impl Send or Sync, in our usage of the API there can only be one thread
-// accessing the internal state at any time due to Mutex. The !Send constraint in capnp_rpc is because
-// of internal object lifetime management that is unsafe in the face of multiple threads accessing data
-// from separate objects.
-unsafe impl Send for RpcRuntime {}
+enum InternalConnectionState {
+    None,
+    Connecting(oneshot::Receiver<Result<RpcConnection, Box<dyn Error>>>),
+    Connected(RpcConnection),
+    Error(Box<dyn Error>),
+}
+
+/// the tokio::Runtime and tasks, as well as the connection state
 struct RpcRuntime {
     runtime: Runtime,
     local: tokio::task::LocalSet,
     connection: InternalConnectionState,
 }
 
-#[derive(Default)]
-struct QueuedRequests {
-    data_requests: Vec<DataRequest>,
-    metadata_requests: Vec<MetadataRequest>,
-    resolve_requests: Vec<ResolveRequest>,
-}
+// While capnp_rpc does not impl Send or Sync, in our usage of the API there can only be one thread
+// accessing the internal state at any time due to Mutex. The !Send constraint in capnp_rpc is because
+// of internal object lifetime management that is unsafe in the face of multiple threads accessing data
+// from separate objects.
+unsafe impl Send for RpcRuntime {}
 
-pub struct RpcIO {
-    connect_string: String,
-    runtime: Mutex<RpcRuntime>,
-    requests: QueuedRequests,
-}
-pub fn default_connect_string() -> &'static str {
-    "127.0.0.1:9999"
-}
-
-impl Default for RpcIO {
-    fn default() -> RpcIO {
-        RpcIO::new(default_connect_string().to_string()).unwrap()
-    }
-}
-
-impl RpcIO {
-    pub fn new(connect_string: String) -> std::io::Result<RpcIO> {
-        Ok(RpcIO {
-            connect_string,
-            runtime: Mutex::new(RpcRuntime {
-                runtime: Builder::new().basic_scheduler().enable_all().build()?,
-                local: tokio::task::LocalSet::new(),
-                connection: InternalConnectionState::None,
-            }),
-            requests: Default::default(),
-        })
-    }
-}
 impl RpcRuntime {
     fn check_asset_changes(&mut self, loader: &LoaderState) {
         self.connection =
@@ -170,7 +139,6 @@ impl RpcRuntime {
                     .promise
                     .await
                     .map(|_| RpcConnection {
-                        _asset_hub: hub,
                         snapshot,
                         snapshot_rx,
                     })
@@ -181,6 +149,114 @@ impl RpcRuntime {
             let _ = conn_tx.send(result);
         });
         self.connection = InternalConnectionState::Connecting(conn_rx)
+    }
+}
+
+pub struct RpcIO {
+    connect_string: String,
+    runtime: Mutex<RpcRuntime>,
+    requests: QueuedRequests,
+}
+
+#[derive(Default)]
+struct QueuedRequests {
+    data_requests: Vec<DataRequest>,
+    metadata_requests: Vec<MetadataRequest>,
+    resolve_requests: Vec<ResolveRequest>,
+}
+
+impl Default for RpcIO {
+    fn default() -> RpcIO {
+        RpcIO::new("127.0.0.1:9999".to_string()).unwrap()
+    }
+}
+
+impl RpcIO {
+    pub fn new(connect_string: String) -> std::io::Result<RpcIO> {
+        Ok(RpcIO {
+            connect_string,
+            runtime: Mutex::new(RpcRuntime {
+                runtime: Builder::new().basic_scheduler().enable_all().build()?,
+                local: tokio::task::LocalSet::new(),
+                connection: InternalConnectionState::None,
+            }),
+            requests: Default::default(),
+        })
+    }
+}
+
+impl LoaderIO for RpcIO {
+    fn get_asset_metadata_with_dependencies(&mut self, request: MetadataRequest) {
+        self.requests.metadata_requests.push(request);
+        let mut runtime = self.runtime.lock().unwrap();
+        process_requests(&mut runtime, &mut self.requests);
+    }
+
+    fn get_asset_candidates(&mut self, requests: Vec<ResolveRequest>) {
+        self.requests.resolve_requests.extend(requests);
+        let mut runtime = self.runtime.lock().unwrap();
+        process_requests(&mut runtime, &mut self.requests);
+    }
+
+    fn get_artifacts(&mut self, requests: Vec<DataRequest>) {
+        self.requests.data_requests.extend(requests);
+        let mut runtime = self.runtime.lock().unwrap();
+        process_requests(&mut runtime, &mut self.requests);
+    }
+
+    fn tick(&mut self, loader: &mut LoaderState) {
+        let mut runtime = self.runtime.lock().unwrap();
+        match &runtime.connection {
+            InternalConnectionState::Error(err) => {
+                log::error!("Error connecting RpcIO: {}", err);
+                runtime.connect(&self.connect_string);
+            }
+            InternalConnectionState::None => {
+                runtime.connect(&self.connect_string);
+            }
+            _ => {}
+        };
+        process_requests(&mut runtime, &mut self.requests);
+        runtime.connection =
+            match std::mem::replace(&mut runtime.connection, InternalConnectionState::None) {
+                // update connection state
+                InternalConnectionState::Connecting(mut pending_connection) => {
+                    match pending_connection.try_recv() {
+                        Ok(connection_result) => {
+                            match connection_result {
+                                Some(value) => match value {
+                                    Ok(conn) => InternalConnectionState::Connected(conn),
+                                    Err(err) => InternalConnectionState::Error(err),
+                                },
+                                None => {
+                                    // still waiting
+                                    InternalConnectionState::Connecting(pending_connection)
+                                }
+                            }
+                        }
+                        // Sender was closed
+                        Err(e) => InternalConnectionState::Error(Box::new(e)),
+                    }
+                }
+                c => c,
+            };
+        {
+            let RpcRuntime {
+                ref mut runtime,
+                ref mut local,
+                ..
+            } = &mut *runtime;
+            // tick the tokio runtime
+            local.block_on(runtime, async {
+                tokio::task::yield_now().await;
+            });
+        }
+        runtime.check_asset_changes(loader);
+    }
+
+    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Handle)) {
+        let runtime = self.runtime.lock().unwrap();
+        f(&runtime.runtime.handle())
     }
 }
 
@@ -300,79 +376,6 @@ fn process_requests(runtime: &mut RpcRuntime, requests: &mut QueuedRequests) {
     }
 }
 
-impl LoaderIO for RpcIO {
-    fn get_asset_metadata_with_dependencies(&mut self, request: MetadataRequest) {
-        self.requests.metadata_requests.push(request);
-        let mut runtime = self.runtime.lock().unwrap();
-        process_requests(&mut runtime, &mut self.requests);
-    }
-
-    fn get_asset_candidates(&mut self, requests: Vec<ResolveRequest>) {
-        self.requests.resolve_requests.extend(requests);
-        let mut runtime = self.runtime.lock().unwrap();
-        process_requests(&mut runtime, &mut self.requests);
-    }
-
-    fn get_artifacts(&mut self, requests: Vec<DataRequest>) {
-        self.requests.data_requests.extend(requests);
-        let mut runtime = self.runtime.lock().unwrap();
-        process_requests(&mut runtime, &mut self.requests);
-    }
-
-    fn tick(&mut self, loader: &mut LoaderState) {
-        let mut runtime = self.runtime.lock().unwrap();
-        match &runtime.connection {
-            InternalConnectionState::Error(err) => {
-                log::error!("Error connecting RpcIO: {}", err);
-                runtime.connect(&self.connect_string);
-            }
-            InternalConnectionState::None => {
-                runtime.connect(&self.connect_string);
-            }
-            _ => {}
-        };
-        process_requests(&mut runtime, &mut self.requests);
-        runtime.connection =
-            match std::mem::replace(&mut runtime.connection, InternalConnectionState::None) {
-                // update connection state
-                InternalConnectionState::Connecting(mut pending_connection) => {
-                    match pending_connection.try_recv() {
-                        Ok(connection_result) => match connection_result {
-                            Some(value) => match value {
-                                Ok(conn) => InternalConnectionState::Connected(conn),
-                                Err(err) => InternalConnectionState::Error(err),
-                            },
-                            None => {
-                                // still waiting
-                                InternalConnectionState::Connecting(pending_connection)
-                            }
-                        },
-                        // Sender was closed
-                        Err(e) => InternalConnectionState::Error(Box::new(e)),
-                    }
-                }
-                c => c,
-            };
-        {
-            let RpcRuntime {
-                ref mut runtime,
-                ref mut local,
-                ..
-            } = &mut *runtime;
-            // tick the tokio runtime
-            local.block_on(runtime, async {
-                tokio::task::yield_now().await;
-            });
-        }
-        runtime.check_asset_changes(loader);
-    }
-
-    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Handle)) {
-        let runtime = self.runtime.lock().unwrap();
-        f(&runtime.runtime.handle())
-    }
-}
-
 struct ListenerImpl {
     snapshot_channel: Sender<SnapshotChange>,
     snapshot_change: Option<u64>,
@@ -399,15 +402,16 @@ impl asset_hub::listener::Server for ListenerImpl {
             return Promise::from_future(async move {
                 let response = request.send().promise.await?;
                 let response = response.get()?;
+
                 let mut changed_assets = Vec::new();
                 let mut deleted_assets = Vec::new();
                 let mut changed_paths = Vec::new();
                 let mut deleted_paths = Vec::new();
+
                 for change in response.get_changes()? {
                     match change.get_event()?.which()? {
                         asset_change_event::ContentUpdateEvent(evt) => {
-                            let evt = evt?;
-                            let id = utils::make_array(evt.get_id()?.get_id()?);
+                            let id = utils::make_array(evt?.get_id()?.get_id()?);
                             log::trace!("ListenerImpl::update asset_change_event::ContentUpdateEvent(evt) id: {:?}", id);
                             changed_assets.push(id);
                         }
@@ -429,14 +433,16 @@ impl asset_hub::listener::Server for ListenerImpl {
                         }
                     }
                 }
-                let _ = channel.send(SnapshotChange {
-                    snapshot,
-                    changed_assets,
-                    deleted_assets,
-                    deleted_paths,
-                    changed_paths,
-                });
-                Ok(())
+
+                channel
+                    .send(SnapshotChange {
+                        snapshot,
+                        changed_assets,
+                        deleted_assets,
+                        deleted_paths,
+                        changed_paths,
+                    })
+                    .map_err(|_| capnp::Error::failed("Could not send SnapshotChange".into()))
             });
         } else {
             let _ = self.snapshot_channel.try_send(SnapshotChange {

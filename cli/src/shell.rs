@@ -7,8 +7,8 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
-use futures_util::select;
-use futures_util::{
+use futures::select;
+use futures::{
     future::{pending, FusedFuture, FutureExt},
     stream::StreamExt,
 };

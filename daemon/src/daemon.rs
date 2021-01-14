@@ -1,17 +1,25 @@
-use crate::{
-    artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
-    error::Result, file_asset_source, file_tracker::FileTracker,
-};
-use atelier_importer::{BoxedImporter, ImporterContext};
-use atelier_schema::data;
-use futures_util::future::FutureExt;
 use std::{
     collections::HashMap,
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
+    thread,
+    thread::JoinHandle,
 };
+
+use atelier_importer::{BoxedImporter, ImporterContext};
+use atelier_schema::data;
+use futures::FutureExt;
+use tokio::sync::oneshot::{self, Receiver, Sender};
+
+use crate::{
+    artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
+    error::Result, file_asset_source, file_tracker::FileTracker,
+};
+use asset_hub::AssetHub;
+use asset_hub_service::AssetHubService;
+use file_asset_source::FileAssetSource;
 
 #[derive(Default)]
 pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
@@ -147,24 +155,28 @@ impl AssetDaemon {
         self
     }
 
-    pub fn run(self) {
-        let mut rpc_runtime = tokio::runtime::Builder::new()
-            .basic_scheduler()
-            .enable_all()
-            .build()
-            .unwrap();
-        let local = tokio::task::LocalSet::new();
-        rpc_runtime.block_on(local.run_until(async { self.run_rpc_runtime().await }));
+    pub fn run(self) -> (JoinHandle<()>, Sender<bool>) {
+        let (tx, rx) = oneshot::channel();
+
+        let handle = thread::spawn(|| {
+            let mut rpc_runtime = tokio::runtime::Builder::new()
+                .basic_scheduler()
+                .enable_all()
+                .build()
+                .unwrap();
+            let local = tokio::task::LocalSet::new();
+
+            rpc_runtime.block_on(local.run_until(self.run_rpc_runtime(rx)))
+        });
+
+        (handle, tx)
     }
 
-    async fn run_rpc_runtime(self) {
-        use asset_hub::AssetHub;
-        use asset_hub_service::AssetHubService;
-        use file_asset_source::FileAssetSource;
-
+    async fn run_rpc_runtime(self, rx: Receiver<bool>) {
         let cache_dir = self.db_dir.join("cache");
         let _ = fs::create_dir(&self.db_dir);
         let _ = fs::create_dir(&cache_dir);
+
         for dir in self.asset_dirs.iter() {
             let _ = fs::create_dir_all(dir);
         }
@@ -191,23 +203,9 @@ impl AssetDaemon {
             ArtifactCache::new(&cache_db).expect("failed to create artifact cache");
         let artifact_cache = Arc::new(artifact_cache);
 
-        let work_runtime = tokio::runtime::Builder::new()
-            .threaded_scheduler()
-            .enable_all()
-            .build()
-            .unwrap();
-        let work_runtime = Arc::new(work_runtime);
-
-        let asset_source = FileAssetSource::new(
-            &tracker,
-            &hub,
-            &asset_db,
-            &importers,
-            &artifact_cache,
-            ctxs,
-            work_runtime,
-        )
-        .expect("failed to create asset source");
+        let asset_source =
+            FileAssetSource::new(&tracker, &hub, &asset_db, &importers, &artifact_cache, ctxs)
+                .expect("failed to create asset source");
 
         let asset_source = Arc::new(asset_source);
 
@@ -218,28 +216,39 @@ impl AssetDaemon {
             tracker.clone(),
             artifact_cache.clone(),
         );
+        let service = Arc::new(service);
 
         let addr = self.address;
-        let service_handle =
+
+        let shutdown_tracker = tracker.clone();
+
+        let mut service_handle =
             tokio::task::spawn_local(async move { service.run(addr).await }).fuse();
-        let tracker_handle = tokio::task::spawn_local(async move { tracker.run().await }).fuse(); // TODO: use tokio channel to make this Send
-        let asset_source_handle =
+        let mut tracker_handle =
+            tokio::task::spawn_local(async move { tracker.run().await }).fuse();
+        let mut asset_source_handle =
             tokio::task::spawn_local(async move { asset_source.run().await }).fuse();
 
-        let mut remaining_tasks = vec![service_handle, tracker_handle, asset_source_handle];
+        let mut rx_handle = rx.fuse();
+
+        log::info!("Starting Daemon Loop");
         loop {
-            let (done, done_idx, rest) = futures_util::future::select_all(remaining_tasks).await;
-            if done.is_err() {
-                match done_idx {
-                    0 => done.expect("ServiceHandle panicked"),
-                    1 => done.expect("FileTracker panicked"),
-                    2 => done.expect("AssetSource panicked"),
-                    _ => panic!("unknown error"),
+            futures::select! {
+                done = service_handle => done.expect("ServiceHandle panicked"),
+                done = tracker_handle => done.expect("FileTracker panicked"),
+                done = asset_source_handle => done.expect("AssetSource panicked"),
+                done = rx_handle => match done {
+                    Ok(_) => {
+                        log::warn!("Shutting Down!");
+                        shutdown_tracker.stop().await;
+                        // shutdown_service.stop().await;
+                        // shutdown_asset_source.stop().await;
+                        // any value on this channel means shutdown
+                        // TODO: better shutdown
+                        return;
+                    }
+                    Err(_) => continue,
                 }
-            }
-            remaining_tasks = rest;
-            if remaining_tasks.is_empty() {
-                break;
             }
         }
     }

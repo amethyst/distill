@@ -20,8 +20,8 @@ use atelier_schema::{
 };
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use futures_util::AsyncReadExt;
-use futures_util::TryFutureExt;
+use futures::AsyncReadExt;
+use futures::TryFutureExt;
 use std::{
     collections::{HashMap, HashSet},
     path,
@@ -554,27 +554,6 @@ impl AssetHubImpl {
     }
 }
 
-fn spawn_rpc<
-    R: std::marker::Unpin + futures_io::AsyncRead + Send + 'static,
-    W: std::marker::Unpin + futures_io::AsyncWrite + Send + 'static,
->(
-    reader: R,
-    writer: W,
-    ctx: Arc<ServiceContext>,
-) {
-    let service_impl = AssetHubImpl { ctx };
-    let hub_impl: asset_hub::Client = capnp_rpc::new_client(service_impl);
-
-    let network = twoparty::VatNetwork::new(
-        reader,
-        writer,
-        rpc_twoparty_capnp::Side::Server,
-        Default::default(),
-    );
-
-    let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.client));
-    tokio::task::spawn_local(rpc_system.map_err(|_| ()));
-}
 impl AssetHubService {
     pub fn new(
         db: Arc<Environment>,
@@ -607,7 +586,21 @@ impl AssetHubService {
                 stream.set_recv_buffer_size(1 << 22).unwrap();
                 use tokio_util::compat::*;
                 let (reader, writer) = stream.compat().split();
-                spawn_rpc(reader, writer, self.ctx.clone());
+
+                let service_impl = AssetHubImpl {
+                    ctx: self.ctx.clone(),
+                };
+                let hub_impl: asset_hub::Client = capnp_rpc::new_client(service_impl);
+
+                let network = twoparty::VatNetwork::new(
+                    reader,
+                    writer,
+                    rpc_twoparty_capnp::Side::Server,
+                    Default::default(),
+                );
+
+                let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.client));
+                tokio::task::spawn_local(rpc_system.map_err(|_| ()));
             }
         }
         .await;

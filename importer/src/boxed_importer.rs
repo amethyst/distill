@@ -1,8 +1,8 @@
 use crate::{error::Result, AsyncImporter, ExportAsset, ImportOp, ImporterValue, SerdeObj};
 use atelier_core::TypeUuidDynamic;
 use erased_serde::Deserializer;
-use futures_core::future::BoxFuture;
-use futures_io::{AsyncRead, AsyncWrite};
+use futures::future::BoxFuture;
+use futures::{AsyncRead, AsyncWrite};
 use serde::{Deserialize, Serialize};
 
 /// Version of the SourceMetadata struct.
