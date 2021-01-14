@@ -40,7 +40,7 @@ jobs:
       - run: rustup component add clippy
         if: matrix.toolchain == 'stable' && matrix.os == 'ubuntu-latest'
 
-      - run: cargo +stable clippy -Z unstable-options --workspace --all-targets --all-features
+      - run: cargo +stable clippy --workspace --all-targets --all-features
         if: matrix.toolchain == 'stable' && matrix.os == 'ubuntu-latest'
 
       - run: cargo test --workspace --all-features -- --nocapture
