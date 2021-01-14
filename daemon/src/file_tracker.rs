@@ -561,7 +561,7 @@ impl FileTracker {
             .expect("db: Failed to delete entry from dirty_files table")
     }
 
-    #[allow(dead_code)] // used for tests
+    #[cfg(test)]
     pub fn get_dirty_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
