@@ -237,6 +237,7 @@ impl DirWatcher {
         src: Option<&PathBuf>,
         dst: Option<&PathBuf>,
     ) -> Result<bool> {
+        let mut recognized_symlink = false;
         if let Some(src) = src {
             if self.symlink_map.contains_key(src) {
                 let to_unwatch = self.symlink_map[src].clone();
@@ -249,12 +250,12 @@ impl DirWatcher {
                         self.asset_tx
                             .send(FileEvent::Unwatch(to_unwatch))
                             .map_err(|_| Error::SendError)?;
-                        return Ok(true);
                     }
                     Err(err) => {
                         return Err(err);
                     }
                 }
+                recognized_symlink = true;
             }
         }
         if let Some(dst) = dst {
@@ -270,7 +271,6 @@ impl DirWatcher {
                         self.asset_tx
                             .send(FileEvent::Watch(link_path))
                             .map_err(|_| Error::SendError)?;
-                        return Ok(true);
                     }
                     Err(Error::Notify(notify::Error::Generic(text)))
                         if text == "Input watch path is neither a file nor a directory." =>
@@ -287,9 +287,10 @@ impl DirWatcher {
                         return Err(err);
                     }
                 }
+                recognized_symlink = true;
             }
         }
-        Ok(false)
+        Ok(recognized_symlink)
     }
 
     fn handle_notify_event(
@@ -300,55 +301,69 @@ impl DirWatcher {
         match event {
             DebouncedEvent::Create(path) | DebouncedEvent::Write(path) => {
                 let path = canonicalize_path(&path);
-                let is_symlink = self.handle_updated_symlink(Option::None, Some(&path))?;
-                if !is_symlink {
-                    match fs::metadata(&path) {
-                        Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-                        Err(e) => Err(Error::IO(e)),
-                        Ok(metadata) => {
+                self.handle_updated_symlink(Option::None, Some(&path))?;
+                let metadata_result = match fs::metadata(&path) {
+                    Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                    Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                        log::warn!(
+                            "Permission denied when fetching metadata for create event {:?}",
+                            path,
+                        );
+                        Ok(None)
+                    }
+                    Err(e) => Err(Error::IO(e)),
+                    Ok(metadata) => Ok(Some(FileEvent::Updated(
+                        path.clone(),
+                        file_metadata(&metadata),
+                    ))),
+                };
+                match metadata_result {
+                    Ok(None) => {
+                        if let Ok(metadata) = fs::symlink_metadata(&path) {
                             Ok(Some(FileEvent::Updated(path, file_metadata(&metadata))))
+                        } else {
+                            Ok(None)
                         }
                     }
-                } else {
-                    Ok(None)
+                    result => result,
                 }
             }
             DebouncedEvent::Rename(src, dest) => {
                 let src = canonicalize_path(&src);
                 let dest = canonicalize_path(&dest);
-                let is_symlink = self.handle_updated_symlink(Some(&src), Some(&dest))?;
-                if !is_symlink {
-                    match fs::metadata(&dest) {
-                        Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-                        Err(e) => Err(Error::IO(e)),
-                        Ok(metadata) => {
-                            if metadata.is_dir() && !is_scanning {
-                                self.scan_directory(&dest, &|p| {
-                                    let replaced = canonicalize_path(&src.join(
-                                        p.strip_prefix(&dest).expect("Failed to strip prefix dir"),
-                                    ));
-                                    DebouncedEvent::Rename(replaced, p)
-                                })?;
-                            }
-                            Ok(Some(FileEvent::Renamed(
-                                src,
-                                dest,
-                                file_metadata(&metadata),
-                            )))
-                        }
+                self.handle_updated_symlink(Some(&src), Some(&dest))?;
+                match fs::metadata(&dest) {
+                    Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                    Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                        log::warn!(
+                            "Permission denied when fetching metadata for rename event {:?}->{:?}",
+                            src,
+                            dest
+                        );
+                        Ok(None)
                     }
-                } else {
-                    Ok(None)
+                    Err(e) => Err(Error::IO(e)),
+                    Ok(metadata) => {
+                        if metadata.is_dir() && !is_scanning {
+                            self.scan_directory(&dest, &|p| {
+                                let replaced = canonicalize_path(&src.join(
+                                    p.strip_prefix(&dest).expect("Failed to strip prefix dir"),
+                                ));
+                                DebouncedEvent::Rename(replaced, p)
+                            })?;
+                        }
+                        Ok(Some(FileEvent::Renamed(
+                            src,
+                            dest,
+                            file_metadata(&metadata),
+                        )))
+                    }
                 }
             }
             DebouncedEvent::Remove(path) => {
                 let path = canonicalize_path(&path);
-                let is_symlink = self.handle_updated_symlink(Some(&path), Option::None)?;
-                if !is_symlink {
-                    Ok(Some(FileEvent::Removed(path)))
-                } else {
-                    Ok(None)
-                }
+                self.handle_updated_symlink(Some(&path), Option::None)?;
+                Ok(Some(FileEvent::Removed(path)))
             }
             DebouncedEvent::Rescan => Err(Error::RescanRequired),
             DebouncedEvent::Error(_, _) => Err(Error::Exit),

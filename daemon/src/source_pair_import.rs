@@ -1,7 +1,7 @@
-use crate::daemon::ImporterMap;
 use crate::error::{Error, Result};
 use crate::file_tracker::FileState;
 use crate::watcher::file_metadata;
+use crate::{daemon::ImporterMap, file_tracker};
 use atelier_core::{utils, ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportOp, ImportedAsset,
@@ -47,7 +47,7 @@ pub(crate) struct HashedSourcePair {
     pub meta: Option<FileState>,
     pub meta_hash: Option<u64>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct SourcePair {
     pub source: Option<FileState>,
     pub meta: Option<FileState>,
@@ -180,6 +180,7 @@ impl<'a> SourcePairImport<'a> {
             state: data::FileState::Exists,
             last_modified: 0,
             length: 0,
+            ty: data::FileType::None,
         };
 
         hash_file(&state)
@@ -830,6 +831,7 @@ fn get_path_file_state(path: PathBuf) -> Result<Option<FileState>> {
         state: data::FileState::Exists,
         last_modified: metadata.last_modified,
         length: metadata.length,
+        ty: file_tracker::db_file_type(metadata.file_type),
     }))
 }
 
@@ -944,6 +946,7 @@ pub(crate) fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>)> {
                     state: data::FileState::Exists,
                     last_modified: metadata.last_modified,
                     length: metadata.length,
+                    ty: file_tracker::db_file_type(metadata.file_type),
                 },
                 Some(hasher.finish()),
             ))

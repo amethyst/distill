@@ -1140,6 +1140,9 @@ impl FileAssetSource {
 
         if !dirty_files.is_empty() {
             for state in dirty_files.into_iter() {
+                if state.ty == data::FileType::Symlink {
+                    continue;
+                }
                 let mut is_meta = false;
                 if let Some(ext) = state.path.extension() {
                     if let Some("meta") = ext.to_str() {

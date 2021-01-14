@@ -57,12 +57,25 @@ pub struct FileTracker {
     stopping_event: event_listener::Event,
     watch_dirs: RwLock<Vec<PathBuf>>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct FileState {
     pub path: PathBuf,
     pub state: data::FileState,
     pub last_modified: u64,
     pub length: u64,
+    pub ty: data::FileType,
+}
+impl std::fmt::Debug for FileState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use capnp::traits::ToU16;
+        f.debug_struct("FileState")
+            .field("path", &self.path)
+            .field("state", &self.state)
+            .field("last_modified", &self.last_modified)
+            .field("length", &self.length)
+            .field("ty", &self.ty.to_u16())
+            .finish()
+    }
 }
 
 impl PartialEq for FileState {
@@ -84,7 +97,7 @@ struct ScanContext {
     files: HashMap<PathBuf, FileMetadata>,
 }
 
-fn db_file_type(t: fs::FileType) -> FileType {
+pub fn db_file_type(t: fs::FileType) -> FileType {
     if t.is_dir() {
         FileType::Directory
     } else if t.is_symlink() {
@@ -258,7 +271,6 @@ mod events {
         scan_stack: &mut Vec<ScanContext>,
         watch_dirs: &RwLock<Vec<PathBuf>>,
     ) -> Result<Option<FileTrackerEvent>> {
-        println!("event {:?}", evt);
         match evt {
             FileEvent::Updated(path, metadata) => {
                 handle_update(txn, tables, &path, &metadata, scan_stack)?;
@@ -379,12 +391,10 @@ mod events {
             }
             FileEvent::Watch(path) => {
                 let mut watch_dirs = watch_dirs.write().expect("watch_dirs lock poisoned");
-                println!("watching {:?}", path);
                 watch_dirs.push(path);
             }
             FileEvent::Unwatch(path) => {
                 let mut watch_dirs = watch_dirs.write().expect("watch_dirs lock poisoned");
-                println!("unwatching {:?}", path);
                 watch_dirs.retain(|p| p != &path);
             }
         }
@@ -551,6 +561,9 @@ impl FileTracker {
                     state: info.get_state().ok()?,
                     last_modified: source_info.get_last_modified(),
                     length: source_info.get_length(),
+                    ty: source_info
+                        .get_type()
+                        .expect("Failed to read type in source file info"),
                 })
             })
             .collect()
@@ -571,6 +584,9 @@ impl FileTracker {
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
+                    ty: info
+                        .get_type()
+                        .expect("Failed to read type in source file info"),
                 })
             })
             .collect()
@@ -608,6 +624,7 @@ impl FileTracker {
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
+                    ty: info.get_type().expect("Failed to read type in source info"),
                 }
             })
     }
@@ -630,6 +647,9 @@ impl FileTracker {
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
+                    ty: info
+                        .get_type()
+                        .expect("Failed to read type in source file info"),
                 }
             })
     }
