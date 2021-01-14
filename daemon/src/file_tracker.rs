@@ -767,7 +767,7 @@ pub mod tests {
     }
 
     async fn expect_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) -> FileTrackerEvent {
-        match timeout(Duration::from_millis(5000), rx.next()).await {
+        match timeout(Duration::from_millis(10000), rx.next()).await {
             Err(_) => panic!("Timed out waiting for file event"),
             Ok(evt) => return evt.unwrap(),
         }
