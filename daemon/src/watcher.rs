@@ -42,6 +42,10 @@ pub enum FileEvent {
     ScanStart(PathBuf),
     // ScanEnd indicates the end of a scan. The set of all watched directories is also sent
     ScanEnd(PathBuf, Vec<PathBuf>),
+    // Watch indicates that a new directory is being watched, probably due to a symlink being created
+    Watch(PathBuf),
+    // Unwatch indicates that a new directory has stopped being watched, probably due to a symlink being removed
+    Unwatch(PathBuf),
 }
 pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
     let modify_time = metadata.modified().unwrap_or(UNIX_EPOCH);
@@ -59,7 +63,7 @@ pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
 impl DirWatcher {
     pub fn from_path_iter<'a, T>(paths: T, chan: UnboundedSender<FileEvent>) -> Result<DirWatcher>
     where
-        T: IntoIterator<Item = &'a str>,
+        T: IntoIterator<Item = &'a Path>,
     {
         let (tx, rx) = channel();
         let mut asset_watcher = DirWatcher {
@@ -232,27 +236,60 @@ impl DirWatcher {
         &mut self,
         src: Option<&PathBuf>,
         dst: Option<&PathBuf>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if let Some(src) = src {
             if self.symlink_map.contains_key(src) {
                 let to_unwatch = self.symlink_map[src].clone();
-                if self.unwatch(&to_unwatch)? {
-                    self.scan_directory(&to_unwatch, &|p| DebouncedEvent::Remove(p))?;
+                match self.unwatch(&to_unwatch) {
+                    Ok(unwatched) => {
+                        if unwatched {
+                            self.scan_directory(&to_unwatch, &|p| DebouncedEvent::Remove(p))?;
+                        }
+                        self.symlink_map.remove(src);
+                        self.asset_tx
+                            .send(FileEvent::Unwatch(to_unwatch))
+                            .map_err(|_| Error::SendError)?;
+                        return Ok(true);
+                    }
+                    Err(err) => {
+                        return Err(err);
+                    }
                 }
-                self.symlink_map.remove(src);
             }
         }
         if let Some(dst) = dst {
             let link = fs::read_link(&dst);
             if let Ok(link_path) = link {
                 let link_path = canonicalize_path(&dst.join(link_path));
-                if self.watch(&link_path)? {
-                    self.scan_directory(&link_path, &|p| DebouncedEvent::Create(p))?;
+                match self.watch(&link_path) {
+                    Ok(watched) => {
+                        if watched {
+                            self.scan_directory(&link_path, &|p| DebouncedEvent::Create(p))?;
+                        }
+                        self.symlink_map.insert(dst.clone(), link_path.clone());
+                        self.asset_tx
+                            .send(FileEvent::Watch(link_path))
+                            .map_err(|_| Error::SendError)?;
+                        return Ok(true);
+                    }
+                    Err(Error::Notify(notify::Error::Generic(text)))
+                        if text == "Input watch path is neither a file nor a directory." =>
+                    {
+                        // skip the symlink if it's not a valid path
+                    }
+                    Err(Error::Notify(notify::Error::PathNotFound)) => {}
+                    Err(Error::IO(err)) | Err(Error::Notify(notify::Error::Io(err)))
+                        if err.kind() == std::io::ErrorKind::NotFound =>
+                    {
+                        // skip the symlink if it no longer exists or can't be watched
+                    }
+                    Err(err) => {
+                        return Err(err);
+                    }
                 }
-                self.symlink_map.insert(dst.clone(), link_path);
             }
         }
-        Ok(())
+        Ok(false)
     }
 
     fn handle_notify_event(
@@ -263,41 +300,55 @@ impl DirWatcher {
         match event {
             DebouncedEvent::Create(path) | DebouncedEvent::Write(path) => {
                 let path = canonicalize_path(&path);
-                self.handle_updated_symlink(Option::None, Some(&path))?;
-                match fs::metadata(&path) {
-                    Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-                    Err(e) => Err(Error::IO(e)),
-                    Ok(metadata) => Ok(Some(FileEvent::Updated(path, file_metadata(&metadata)))),
+                let is_symlink = self.handle_updated_symlink(Option::None, Some(&path))?;
+                if !is_symlink {
+                    match fs::metadata(&path) {
+                        Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                        Err(e) => Err(Error::IO(e)),
+                        Ok(metadata) => {
+                            Ok(Some(FileEvent::Updated(path, file_metadata(&metadata))))
+                        }
+                    }
+                } else {
+                    Ok(None)
                 }
             }
             DebouncedEvent::Rename(src, dest) => {
                 let src = canonicalize_path(&src);
                 let dest = canonicalize_path(&dest);
-                self.handle_updated_symlink(Some(&src), Some(&dest))?;
-                match fs::metadata(&dest) {
-                    Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-                    Err(e) => Err(Error::IO(e)),
-                    Ok(metadata) => {
-                        if metadata.is_dir() && !is_scanning {
-                            self.scan_directory(&dest, &|p| {
-                                let replaced = canonicalize_path(&src.join(
-                                    p.strip_prefix(&dest).expect("Failed to strip prefix dir"),
-                                ));
-                                DebouncedEvent::Rename(replaced, p)
-                            })?;
+                let is_symlink = self.handle_updated_symlink(Some(&src), Some(&dest))?;
+                if !is_symlink {
+                    match fs::metadata(&dest) {
+                        Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                        Err(e) => Err(Error::IO(e)),
+                        Ok(metadata) => {
+                            if metadata.is_dir() && !is_scanning {
+                                self.scan_directory(&dest, &|p| {
+                                    let replaced = canonicalize_path(&src.join(
+                                        p.strip_prefix(&dest).expect("Failed to strip prefix dir"),
+                                    ));
+                                    DebouncedEvent::Rename(replaced, p)
+                                })?;
+                            }
+                            Ok(Some(FileEvent::Renamed(
+                                src,
+                                dest,
+                                file_metadata(&metadata),
+                            )))
                         }
-                        Ok(Some(FileEvent::Renamed(
-                            src,
-                            dest,
-                            file_metadata(&metadata),
-                        )))
                     }
+                } else {
+                    Ok(None)
                 }
             }
             DebouncedEvent::Remove(path) => {
                 let path = canonicalize_path(&path);
-                self.handle_updated_symlink(Some(&path), Option::None)?;
-                Ok(Some(FileEvent::Removed(path)))
+                let is_symlink = self.handle_updated_symlink(Some(&path), Option::None)?;
+                if !is_symlink {
+                    Ok(Some(FileEvent::Removed(path)))
+                } else {
+                    Ok(None)
+                }
             }
             DebouncedEvent::Rescan => Err(Error::RescanRequired),
             DebouncedEvent::Error(_, _) => Err(Error::Exit),

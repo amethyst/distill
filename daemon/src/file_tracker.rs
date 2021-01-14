@@ -21,8 +21,11 @@ use std::{
     ops::IndexMut,
     path::{Path, PathBuf},
     str,
-    sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        RwLock,
+    },
     thread,
     time::Duration,
 };
@@ -52,7 +55,7 @@ pub struct FileTracker {
     listener_tx: UnboundedSender<UnboundedSender<FileTrackerEvent>>,
     is_running: AtomicBool,
     stopping_event: event_listener::Event,
-    watch_dirs: Vec<PathBuf>,
+    watch_dirs: RwLock<Vec<PathBuf>>,
 }
 #[derive(Clone, Debug)]
 pub struct FileState {
@@ -253,7 +256,9 @@ mod events {
         tables: &FileTrackerTables,
         evt: watcher::FileEvent,
         scan_stack: &mut Vec<ScanContext>,
+        watch_dirs: &RwLock<Vec<PathBuf>>,
     ) -> Result<Option<FileTrackerEvent>> {
+        println!("event {:?}", evt);
         match evt {
             FileEvent::Updated(path, metadata) => {
                 handle_update(txn, tables, &path, &metadata, scan_stack)?;
@@ -372,6 +377,16 @@ mod events {
                 debug!("scan end: {}", path.to_string_lossy());
                 return Ok(Some(FileTrackerEvent::Start));
             }
+            FileEvent::Watch(path) => {
+                let mut watch_dirs = watch_dirs.write().expect("watch_dirs lock poisoned");
+                println!("watching {:?}", path);
+                watch_dirs.push(path);
+            }
+            FileEvent::Unwatch(path) => {
+                let mut watch_dirs = watch_dirs.write().expect("watch_dirs lock poisoned");
+                println!("unwatching {:?}", path);
+                watch_dirs.retain(|p| p != &path);
+            }
         }
         Ok(None)
     }
@@ -423,7 +438,7 @@ impl FileTracker {
             db,
             listener_rx: Mutex::new(Cell::new(listener_rx)),
             listener_tx,
-            watch_dirs,
+            watch_dirs: RwLock::new(watch_dirs),
         }
     }
 
@@ -444,8 +459,13 @@ impl FileTracker {
         None
     }
 
-    pub fn get_watch_dirs(&self) -> impl Iterator<Item = &'_ PathBuf> {
-        self.watch_dirs.iter()
+    pub fn get_watch_dirs(&self) -> Vec<PathBuf> {
+        self.watch_dirs
+            .read()
+            .expect("watch_dirs lock poisoned")
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub async fn get_rw_txn(&self) -> RwTransaction<'_> {
@@ -642,14 +662,12 @@ impl FileTracker {
         }
 
         let (watcher_tx, mut watcher_rx) = mpsc::unbounded_channel();
-        let to_watch = self
-            .watch_dirs
-            .iter()
-            .map(|p| p.to_str().expect("Invalid path"));
+        let to_watch: Vec<PathBuf> = self.get_watch_dirs();
 
         // NOTE(happens): If we can't watch the dir, we want to abort
-        let mut watcher = watcher::DirWatcher::from_path_iter(to_watch, watcher_tx)
-            .expect("watcher: Failed to watch specified path");
+        let mut watcher =
+            watcher::DirWatcher::from_path_iter(to_watch.iter().map(|p| Path::new(p)), watcher_tx)
+                .expect("watcher: Failed to watch specified path");
 
         let stop_handle = watcher.stop_handle();
         thread::spawn(move || watcher.run());
@@ -684,7 +702,7 @@ impl FileTracker {
 
                     // batch watcher events into single transaction and update
                     while let Some(file_event) = maybe_file_event {
-                        match events::handle_file_event(&mut txn, &self.tables, file_event, &mut scan_stack) {
+                        match events::handle_file_event(&mut txn, &self.tables, file_event, &mut scan_stack, &self.watch_dirs) {
                             Ok(Some(evt)) => listeners.send_event(evt),
                             Ok(None) => {},
                             Err(err) => panic!("Error while handling file event: {}", err),
