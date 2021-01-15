@@ -443,7 +443,13 @@ impl LoaderState {
                     let time_in_state = std::time::Instant::now()
                         .duration_since(last_state_change_instant)
                         .as_secs_f32();
-                    log::debug!("process_load_states asset load state changed, Key: {:?} Old state: {:?} New state: {:?} Time in state: {}", key, log_old_state.unwrap(), log_new_state.unwrap(), time_in_state);
+                    log::debug!(
+                        "{:?} {:?} => {:?} in {}s",
+                        key,
+                        log_old_state.unwrap(),
+                        log_new_state.unwrap(),
+                        time_in_state
+                    );
 
                     entry.value_mut().last_state_change_instant = std::time::Instant::now();
                 } else {

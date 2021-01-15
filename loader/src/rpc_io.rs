@@ -3,11 +3,14 @@ use atelier_schema::{data::asset_change_event, parse_db_metadata, service::asset
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use futures_channel::oneshot;
 use futures_util::AsyncReadExt;
 use std::sync::Mutex;
 use std::{error::Error, path::PathBuf};
-use tokio::runtime::{Builder, Runtime};
+use tokio::{
+    net::TcpStream,
+    runtime::{Builder, Runtime},
+    sync::oneshot,
+};
 
 use crate::io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest};
 use crate::loader::LoaderState;
@@ -88,24 +91,24 @@ impl RpcRuntime {
             };
     }
 
-    fn connect(&mut self, connect_string: &str) {
+    fn connect(&mut self, connect_string: String) {
         match self.connection {
             InternalConnectionState::Connected(_) | InternalConnectionState::Connecting(_) => {
                 panic!("Trying to connect while already connected or connecting")
             }
             _ => {}
         };
-        use std::net::ToSocketAddrs;
-        let addr = connect_string.to_socket_addrs().unwrap().next().unwrap();
+
         let (conn_tx, conn_rx) = oneshot::channel();
+
         self.local.spawn_local(async move {
             let result = async move {
-                let stream = ::tokio::net::TcpStream::connect(&addr)
-                    .await
-                    .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
+                let stream = TcpStream::connect(connect_string).await?;
                 stream.set_nodelay(true)?;
+
                 use tokio_util::compat::*;
                 let (reader, writer) = stream.compat().split();
+
                 let rpc_network = Box::new(twoparty::VatNetwork::new(
                     reader,
                     writer,
@@ -116,15 +119,14 @@ impl RpcRuntime {
                 ));
 
                 let mut rpc_system = RpcSystem::new(rpc_network, None);
+
                 let hub: asset_hub::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+
                 let _disconnector = rpc_system.get_disconnector();
+
                 tokio::task::spawn_local(rpc_system);
-                let request = hub.get_snapshot_request();
-                let response = request
-                    .send()
-                    .promise
-                    .await
-                    .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
+
+                let response = hub.get_snapshot_request().send().promise.await?;
 
                 let snapshot = response.get()?.get_snapshot()?;
                 let (snapshot_tx, snapshot_rx) = unbounded();
@@ -132,22 +134,20 @@ impl RpcRuntime {
                     snapshot_channel: snapshot_tx,
                     snapshot_change: None,
                 });
+
                 let mut request = hub.register_listener_request();
                 request.get().set_listener(listener);
-                let rpc_conn = request
-                    .send()
-                    .promise
-                    .await
-                    .map(|_| RpcConnection {
-                        snapshot,
-                        snapshot_rx,
-                    })
-                    .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
+                let rpc_conn = request.send().promise.await.map(|_| RpcConnection {
+                    snapshot,
+                    snapshot_rx,
+                })?;
+
                 Ok(rpc_conn)
             }
             .await;
             let _ = conn_tx.send(result);
         });
+
         self.connection = InternalConnectionState::Connecting(conn_rx)
     }
 }
@@ -176,7 +176,7 @@ impl RpcIO {
         Ok(RpcIO {
             connect_string,
             runtime: Mutex::new(RpcRuntime {
-                runtime: Builder::new().basic_scheduler().enable_all().build()?,
+                runtime: Builder::new_current_thread().enable_all().build()?,
                 local: tokio::task::LocalSet::new(),
                 connection: InternalConnectionState::None,
             }),
@@ -206,57 +206,52 @@ impl LoaderIO for RpcIO {
 
     fn tick(&mut self, loader: &mut LoaderState) {
         let mut runtime = self.runtime.lock().unwrap();
+
         match &runtime.connection {
             InternalConnectionState::Error(err) => {
                 log::error!("Error connecting RpcIO: {}", err);
-                runtime.connect(&self.connect_string);
+                runtime.connect(self.connect_string.clone());
             }
             InternalConnectionState::None => {
-                runtime.connect(&self.connect_string);
+                runtime.connect(self.connect_string.clone());
             }
             _ => {}
         };
+
         process_requests(&mut runtime, &mut self.requests);
+
         runtime.connection =
             match std::mem::replace(&mut runtime.connection, InternalConnectionState::None) {
                 // update connection state
                 InternalConnectionState::Connecting(mut pending_connection) => {
                     match pending_connection.try_recv() {
-                        Ok(connection_result) => {
-                            match connection_result {
-                                Some(value) => match value {
-                                    Ok(conn) => InternalConnectionState::Connected(conn),
-                                    Err(err) => InternalConnectionState::Error(err),
-                                },
-                                None => {
-                                    // still waiting
-                                    InternalConnectionState::Connecting(pending_connection)
-                                }
-                            }
+                        Ok(connection_result) => match connection_result {
+                            Ok(conn) => InternalConnectionState::Connected(conn),
+                            Err(err) => InternalConnectionState::Error(err),
+                        },
+                        Err(oneshot::error::TryRecvError::Closed) => {
+                            InternalConnectionState::Error(Box::new(
+                                oneshot::error::TryRecvError::Closed,
+                            ))
                         }
-                        // Sender was closed
-                        Err(e) => InternalConnectionState::Error(Box::new(e)),
+                        Err(oneshot::error::TryRecvError::Empty) => {
+                            InternalConnectionState::Connecting(pending_connection)
+                        }
                     }
                 }
                 c => c,
             };
-        {
-            let RpcRuntime {
-                ref mut runtime,
-                ref mut local,
-                ..
-            } = &mut *runtime;
-            // tick the tokio runtime
-            local.block_on(runtime, async {
-                tokio::task::yield_now().await;
-            });
-        }
+
+        runtime
+            .local
+            .block_on(&runtime.runtime, tokio::task::yield_now());
+
         runtime.check_asset_changes(loader);
     }
 
-    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Handle)) {
+    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Runtime)) {
         let runtime = self.runtime.lock().unwrap();
-        f(&runtime.runtime.handle())
+        f(&runtime.runtime)
     }
 }
 

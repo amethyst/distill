@@ -7,6 +7,7 @@ exceptions = [
     { allow = ["ISC"], name = "inotify-sys", version = "*" },
     { allow = ["ISC"], name = "inotify", version = "*" },
     { allow = ["CC0-1.0"], name = "notify", version = "*" },
+    { allow = ["BSD-2-Clause"], name = "cloudabi", version = "0.0.3" },
     { allow = ["BSD-3-Clause"], name = "fuchsia-zircon", version = "*" },
     { allow = ["BSD-3-Clause"], name = "fuchsia-zircon-sys", version = "*" },
     { allow = ["BSD-3-Clause"], name = "instant", version = "*" },
@@ -18,8 +19,9 @@ multiple-versions = "deny"
 wildcards = "deny"
 
 skip = [
+    { name = "mio", version = "0.6.23" }, # upgrade notify
+    { name = "miow", version = "0.2.2" }, # upgrade notify
     { name = "cfg-if", version = "0.1.10" },
-    { name = "pin-project-lite", version = "0.1.11" }, # upgrade tokio
     { name = "winapi", version = "0.2.8" }, # upgrade tokio and notify
     { name = "redox_syscall", version = "0.1.57" }, # old version in notify
 ]

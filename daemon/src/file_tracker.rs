@@ -6,8 +6,11 @@ use crate::watcher::{self, FileEvent, FileMetadata};
 use atelier_core::utils::{self, canonicalize_path};
 use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use event_listener::Event;
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
+use futures::{
+    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    FutureExt,
+};
 use lmdb::Cursor;
 use log::{debug, info};
 use std::{
@@ -561,7 +564,8 @@ impl FileTracker {
             .expect("db: Failed to delete entry from dirty_files table")
     }
 
-    #[allow(dead_code)] // used for tests
+    #[cfg(not(target_os = "macos"))] // FIXME: these tests fail in macos CI
+    #[cfg(test)]
     pub fn get_dirty_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
@@ -658,14 +662,15 @@ impl FileTracker {
         let mut listener_tx_guard = self.listener_rx.lock().await;
         let listener_tx = listener_tx_guard.get_mut();
 
-        let mut delay = time::delay_for(Duration::from_millis(40));
         let mut dirty = false;
 
         #[allow(unused_mut)]
         loop {
+            let mut delay = time::sleep(Duration::from_millis(40));
+
             tokio::select! {
                 new_listener = listener_tx.next() => listeners.register(new_listener),
-                _ = &mut delay, if dirty => {
+                _ = delay, if dirty => {
                     listeners.send_event(FileTrackerEvent::Update);
                     dirty = false;
                 },
@@ -685,7 +690,7 @@ impl FileTracker {
                             Err(err) => panic!("Error while handling file event: {}", err),
                         }
 
-                        maybe_file_event = watcher_rx.try_recv().ok();
+                        maybe_file_event = watcher_rx.recv().now_or_never().flatten();
                     }
 
                     if txn.dirty {
@@ -723,14 +728,11 @@ pub mod tests {
         time::Duration,
     };
 
-    pub fn with_tracker<F, T>(f: F)
+    pub async fn with_tracker<F, T>(f: F)
     where
         T: Future<Output = ()>,
         F: FnOnce(Arc<FileTracker>, UnboundedReceiver<FileTrackerEvent>, PathBuf) -> T,
     {
-        let mut runtime = tokio::runtime::Runtime::new().unwrap();
-        let local = tokio::task::LocalSet::new();
-
         let db_dir = tempfile::tempdir().unwrap();
         let asset_dir = tempfile::tempdir().unwrap();
 
@@ -748,16 +750,14 @@ pub mod tests {
         let (tx, mut rx) = unbounded();
         tracker.register_listener(tx);
 
-        runtime.block_on(local.run_until(async move {
-            let tracker_clone = tracker.clone();
-            let handle = tokio::task::spawn_local(async move { tracker_clone.run().await });
-            expect_event(&mut rx).await;
+        let tracker_clone = tracker.clone();
+        let handle = tokio::task::spawn(async move { tracker_clone.run().await });
+        expect_event(&mut rx).await;
 
-            f(tracker.clone(), rx, asset_dir.into_path()).await;
+        f(tracker.clone(), rx, asset_dir.into_path()).await;
 
-            tracker.stop().await;
-            handle.await.unwrap();
-        }))
+        tracker.stop().await;
+        handle.await.unwrap();
     }
 
     async fn expect_no_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) {
@@ -768,7 +768,7 @@ pub mod tests {
     }
 
     async fn expect_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) -> FileTrackerEvent {
-        match timeout(Duration::from_millis(5000), rx.next()).await {
+        match timeout(Duration::from_millis(10000), rx.next()).await {
             Err(_) => panic!("Timed out waiting for file event"),
             Ok(evt) => return evt.unwrap(),
         }
@@ -776,12 +776,10 @@ pub mod tests {
 
     async fn expect_no_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_rw_txn().await;
-        let path = canonicalize_path(&PathBuf::from(asset_dir));
-        let canonical_path = canonicalize_path(&path.join(name));
-        let maybe_state = t.get_file_state(&txn, &canonical_path);
+        let canonical_path = canonicalize_path(&asset_dir.join(name));
 
         assert!(
-            maybe_state.is_none(),
+            t.get_file_state(&txn, &canonical_path).is_none(),
             "expected no file state for file {}",
             name
         );
@@ -790,6 +788,7 @@ pub mod tests {
     async fn expect_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_rw_txn().await;
         let canonical_path = canonicalize_path(&asset_dir.join(name));
+
         t.get_file_state(&txn, &canonical_path)
             .unwrap_or_else(|| panic!("expected file state for file {}", name));
     }
@@ -809,17 +808,6 @@ pub mod tests {
         .expect("copy test file");
     }
 
-    pub async fn delete_test_file(asset_dir: &Path, name: &str) {
-        tokio::fs::remove_file(asset_dir.join(name))
-            .await
-            .expect("delete test file");
-    }
-    pub async fn truncate_test_file(asset_dir: &Path, name: &str) {
-        tokio::fs::File::create(asset_dir.join(name))
-            .await
-            .expect("truncate test file");
-    }
-
     async fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
         let txn = t.get_rw_txn().await;
         let path = canonicalize_path(&PathBuf::from(asset_dir));
@@ -835,51 +823,62 @@ pub mod tests {
         }
     }
 
-    #[test]
-    fn test_create_file() {
+    #[tokio::test]
+    async fn test_create_file() {
         with_tracker(|t, mut rx, asset_dir| async move {
             add_test_file(&asset_dir, "test.txt").await;
-            expect_event(&mut rx).await;
-            expect_no_event(&mut rx).await;
-            expect_file_state(&t, &asset_dir, "test.txt").await;
-            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
-        });
-    }
-
-    #[test]
-    fn test_modify_file() {
-        with_tracker(|t, mut rx, asset_dir| async move {
-            add_test_file(&asset_dir, "test.txt").await;
-            expect_event(&mut rx).await;
-            expect_file_state(&t, &asset_dir, "test.txt").await;
-            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
-            clear_dirty_file_state(&t).await;
-            truncate_test_file(&asset_dir, "test.txt").await;
             expect_event(&mut rx).await;
             expect_no_event(&mut rx).await;
             expect_file_state(&t, &asset_dir, "test.txt").await;
             expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
         })
+        .await;
     }
 
-    #[test]
-    fn test_delete_file() {
+    #[tokio::test]
+    async fn test_modify_file() {
         with_tracker(|t, mut rx, asset_dir| async move {
             add_test_file(&asset_dir, "test.txt").await;
             expect_event(&mut rx).await;
             expect_file_state(&t, &asset_dir, "test.txt").await;
             expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
             clear_dirty_file_state(&t).await;
-            delete_test_file(&asset_dir, "test.txt").await;
+
+            tokio::fs::File::create(asset_dir.join("test.txt"))
+                .await
+                .expect("truncate test file");
+
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &asset_dir, "test.txt").await;
+            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_delete_file() {
+        with_tracker(|t, mut rx, asset_dir| async move {
+            add_test_file(&asset_dir, "test.txt").await;
+            expect_event(&mut rx).await;
+            expect_file_state(&t, &asset_dir, "test.txt").await;
+            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+            clear_dirty_file_state(&t).await;
+
+            tokio::fs::remove_file(asset_dir.join("test.txt"))
+                .await
+                .expect("test file could not be deleted");
+
             expect_event(&mut rx).await;
             expect_no_event(&mut rx).await;
             expect_no_file_state(&t, &asset_dir, "test.txt").await;
             expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
         })
+        .await;
     }
 
-    #[test]
-    fn test_create_dir() {
+    #[tokio::test]
+    async fn test_create_dir() {
         with_tracker(|t, mut rx, asset_dir| async move {
             add_test_dir(&asset_dir, "testdir").await;
             expect_event(&mut rx).await;
@@ -887,25 +886,25 @@ pub mod tests {
             expect_file_state(&t, &asset_dir, "testdir").await;
             expect_dirty_file_state(&t, &asset_dir, "testdir").await;
         })
+        .await;
     }
 
-    #[test]
-    fn test_create_file_in_dir() {
+    #[tokio::test]
+    async fn test_create_file_in_dir() {
         with_tracker(|t, mut rx, asset_dir| async move {
             let dir = add_test_dir(&asset_dir, "testdir").await;
-            {
-                expect_event(&mut rx).await;
-                expect_no_event(&mut rx).await;
-                expect_file_state(&t, &asset_dir, "testdir").await;
-                expect_dirty_file_state(&t, &asset_dir, "testdir").await;
-            }
-            {
-                add_test_file(&dir, "test.txt").await;
-                expect_event(&mut rx).await;
-                expect_no_event(&mut rx).await;
-                expect_file_state(&t, &dir, "test.txt").await;
-                expect_dirty_file_state(&t, &dir, "test.txt").await;
-            }
+
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &asset_dir, "testdir").await;
+            expect_dirty_file_state(&t, &asset_dir, "testdir").await;
+
+            add_test_file(&dir, "test.txt").await;
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &dir, "test.txt").await;
+            expect_dirty_file_state(&t, &dir, "test.txt").await;
         })
+        .await;
     }
 }

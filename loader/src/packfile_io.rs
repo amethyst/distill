@@ -78,9 +78,7 @@ impl PackfileReader {
             reader: message_reader,
             index_by_uuid,
             assets_by_path,
-            runtime: tokio::runtime::Builder::new()
-                .threaded_scheduler()
-                .build()?,
+            runtime: tokio::runtime::Builder::new_multi_thread().build()?,
         })))
     }
 }
@@ -157,49 +155,45 @@ impl PackfileReaderInner {
 
 impl LoaderIO for PackfileReader {
     fn get_asset_metadata_with_dependencies(&mut self, request: MetadataRequest) {
-        self.0.runtime.enter(|| {
-            let inner = self.0.clone();
-            tokio::spawn(async move {
-                match inner.get_asset_metadata_with_dependencies_impl(&request) {
-                    Ok(data) => request.complete(data),
-                    Err(err) => request.error(err),
-                }
-            });
+        self.0.runtime.enter();
+        let inner = self.0.clone();
+        tokio::spawn(async move {
+            match inner.get_asset_metadata_with_dependencies_impl(&request) {
+                Ok(data) => request.complete(data),
+                Err(err) => request.error(err),
+            }
         });
     }
 
     fn get_asset_candidates(&mut self, requests: Vec<ResolveRequest>) {
-        self.0.runtime.enter(|| {
-            for request in requests {
-                let inner = self.0.clone();
-                tokio::spawn(async move {
-                    match inner.get_asset_candidates_impl(&request) {
-                        Ok(data) => request.complete(data),
-                        Err(err) => request.error(err),
-                    }
-                });
-            }
-        });
+        self.0.runtime.enter();
+        for request in requests {
+            let inner = self.0.clone();
+            tokio::spawn(async move {
+                match inner.get_asset_candidates_impl(&request) {
+                    Ok(data) => request.complete(data),
+                    Err(err) => request.error(err),
+                }
+            });
+        }
     }
 
     fn get_artifacts(&mut self, requests: Vec<DataRequest>) {
-        self.0.runtime.enter(|| {
-            for request in requests {
-                let inner = self.0.clone();
-                tokio::spawn(async move {
-                    match inner.get_artifact_impl(&request) {
-                        Ok(data) => request.complete(data),
-                        Err(err) => request.error(err),
-                    }
-                });
-            }
-        });
+        self.0.runtime.enter();
+        for request in requests {
+            let inner = self.0.clone();
+            tokio::spawn(async move {
+                match inner.get_artifact_impl(&request) {
+                    Ok(data) => request.complete(data),
+                    Err(err) => request.error(err),
+                }
+            });
+        }
     }
 
     fn tick(&mut self, _loader: &mut LoaderState) {}
 
-    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Handle)) {
-        let runtime = self.0.runtime.handle();
-        f(runtime);
+    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Runtime)) {
+        f(&self.0.runtime);
     }
 }

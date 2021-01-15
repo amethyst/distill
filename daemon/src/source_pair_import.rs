@@ -22,7 +22,7 @@ use std::{
     path::PathBuf,
     time::Instant,
 };
-use tokio::{fs::File, prelude::*};
+use tokio::{fs::File, io::AsyncReadExt};
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 

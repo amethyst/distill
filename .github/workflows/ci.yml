@@ -36,10 +36,11 @@ jobs:
       - run: cargo +nightly fmt --all -- --check
         if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
         
+      # FIXME: clippy crashing on nightly
       - run: rustup component add clippy
-        if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
+        if: matrix.toolchain == 'stable' && matrix.os == 'ubuntu-latest'
 
-      - run: cargo +nightly clippy -Z unstable-options --workspace --all-targets --all-features
-        if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
+      - run: cargo +stable clippy --workspace --all-targets --all-features
+        if: matrix.toolchain == 'stable' && matrix.os == 'ubuntu-latest'
 
       - run: cargo test --workspace --all-features -- --nocapture
