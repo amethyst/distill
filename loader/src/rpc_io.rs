@@ -3,11 +3,14 @@ use atelier_schema::{data::asset_change_event, parse_db_metadata, service::asset
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use futures_channel::oneshot;
 use futures_util::AsyncReadExt;
 use std::sync::Mutex;
 use std::{error::Error, path::PathBuf};
-use tokio::runtime::{Builder, Runtime};
+use tokio::{
+    net::TcpStream,
+    runtime::{Builder, Runtime},
+    sync::oneshot,
+};
 
 use crate::io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest};
 use crate::loader::LoaderState;
@@ -88,7 +91,7 @@ impl RpcRuntime {
             };
     }
 
-    fn connect(&mut self, connect_string: &str) {
+    fn connect(&mut self, connect_string: String) {
         match self.connection {
             InternalConnectionState::Connected(_) | InternalConnectionState::Connecting(_) => {
                 panic!("Trying to connect while already connected or connecting")
@@ -96,13 +99,11 @@ impl RpcRuntime {
             _ => {}
         };
 
-        use std::net::ToSocketAddrs;
-        let addr = connect_string.to_socket_addrs().unwrap().next().unwrap();
         let (conn_tx, conn_rx) = oneshot::channel();
 
         self.local.spawn_local(async move {
             let result = async move {
-                let stream = ::tokio::net::TcpStream::connect(&addr).await?;
+                let stream = TcpStream::connect(connect_string).await?;
                 stream.set_nodelay(true)?;
 
                 use tokio_util::compat::*;
@@ -146,6 +147,7 @@ impl RpcRuntime {
             .await;
             let _ = conn_tx.send(result);
         });
+
         self.connection = InternalConnectionState::Connecting(conn_rx)
     }
 }
@@ -208,10 +210,10 @@ impl LoaderIO for RpcIO {
         match &runtime.connection {
             InternalConnectionState::Error(err) => {
                 log::error!("Error connecting RpcIO: {}", err);
-                runtime.connect(&self.connect_string);
+                runtime.connect(self.connect_string.clone());
             }
             InternalConnectionState::None => {
-                runtime.connect(&self.connect_string);
+                runtime.connect(self.connect_string.clone());
             }
             _ => {}
         };
@@ -223,20 +225,18 @@ impl LoaderIO for RpcIO {
                 // update connection state
                 InternalConnectionState::Connecting(mut pending_connection) => {
                     match pending_connection.try_recv() {
-                        Ok(connection_result) => {
-                            match connection_result {
-                                Some(value) => match value {
-                                    Ok(conn) => InternalConnectionState::Connected(conn),
-                                    Err(err) => InternalConnectionState::Error(err),
-                                },
-                                None => {
-                                    // still waiting
-                                    InternalConnectionState::Connecting(pending_connection)
-                                }
-                            }
+                        Ok(connection_result) => match connection_result {
+                            Ok(conn) => InternalConnectionState::Connected(conn),
+                            Err(err) => InternalConnectionState::Error(err),
+                        },
+                        Err(oneshot::error::TryRecvError::Closed) => {
+                            InternalConnectionState::Error(Box::new(
+                                oneshot::error::TryRecvError::Closed,
+                            ))
                         }
-                        // Sender was closed
-                        Err(e) => InternalConnectionState::Error(Box::new(e)),
+                        Err(oneshot::error::TryRecvError::Empty) => {
+                            InternalConnectionState::Connecting(pending_connection)
+                        }
                     }
                 }
                 c => c,
