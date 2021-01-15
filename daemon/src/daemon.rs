@@ -10,7 +10,6 @@ use std::{
 
 use atelier_importer::{BoxedImporter, ImporterContext};
 use atelier_schema::data;
-use futures::FutureExt;
 use tokio::sync::oneshot::{self, Receiver, Sender};
 
 use crate::{
