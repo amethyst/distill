@@ -95,17 +95,19 @@ impl RpcRuntime {
             }
             _ => {}
         };
+
         use std::net::ToSocketAddrs;
         let addr = connect_string.to_socket_addrs().unwrap().next().unwrap();
         let (conn_tx, conn_rx) = oneshot::channel();
+
         self.local.spawn_local(async move {
             let result = async move {
-                let stream = ::tokio::net::TcpStream::connect(&addr)
-                    .await
-                    .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
+                let stream = ::tokio::net::TcpStream::connect(&addr).await?;
                 stream.set_nodelay(true)?;
+
                 use tokio_util::compat::*;
                 let (reader, writer) = stream.compat().split();
+
                 let rpc_network = Box::new(twoparty::VatNetwork::new(
                     reader,
                     writer,
@@ -116,15 +118,14 @@ impl RpcRuntime {
                 ));
 
                 let mut rpc_system = RpcSystem::new(rpc_network, None);
+
                 let hub: asset_hub::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+
                 let _disconnector = rpc_system.get_disconnector();
+
                 tokio::task::spawn_local(rpc_system);
-                let request = hub.get_snapshot_request();
-                let response = request
-                    .send()
-                    .promise
-                    .await
-                    .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
+
+                let response = hub.get_snapshot_request().send().promise.await?;
 
                 let snapshot = response.get()?.get_snapshot()?;
                 let (snapshot_tx, snapshot_rx) = unbounded();
@@ -132,17 +133,14 @@ impl RpcRuntime {
                     snapshot_channel: snapshot_tx,
                     snapshot_change: None,
                 });
+
                 let mut request = hub.register_listener_request();
                 request.get().set_listener(listener);
-                let rpc_conn = request
-                    .send()
-                    .promise
-                    .await
-                    .map(|_| RpcConnection {
-                        snapshot,
-                        snapshot_rx,
-                    })
-                    .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
+                let rpc_conn = request.send().promise.await.map(|_| RpcConnection {
+                    snapshot,
+                    snapshot_rx,
+                })?;
+
                 Ok(rpc_conn)
             }
             .await;
@@ -206,6 +204,7 @@ impl LoaderIO for RpcIO {
 
     fn tick(&mut self, loader: &mut LoaderState) {
         let mut runtime = self.runtime.lock().unwrap();
+
         match &runtime.connection {
             InternalConnectionState::Error(err) => {
                 log::error!("Error connecting RpcIO: {}", err);
@@ -216,7 +215,9 @@ impl LoaderIO for RpcIO {
             }
             _ => {}
         };
+
         process_requests(&mut runtime, &mut self.requests);
+
         runtime.connection =
             match std::mem::replace(&mut runtime.connection, InternalConnectionState::None) {
                 // update connection state
@@ -240,17 +241,11 @@ impl LoaderIO for RpcIO {
                 }
                 c => c,
             };
-        {
-            let RpcRuntime {
-                ref mut runtime,
-                ref mut local,
-                ..
-            } = &mut *runtime;
-            // tick the tokio runtime
-            local.block_on(runtime, async {
-                tokio::task::yield_now().await;
-            });
-        }
+
+        runtime
+            .local
+            .block_on(&runtime.runtime, tokio::task::yield_now());
+
         runtime.check_asset_changes(loader);
     }
 
