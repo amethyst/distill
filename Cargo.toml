@@ -34,7 +34,7 @@ atelier-loader = { version = "0.1", path = "loader" }
 
 [dev-dependencies]
 futures = "0.3.12"
-serde = "1.0.118"
+serde = "1.0.119"
 uuid = "0.8.2"
 tokio = { version = "1.0.2", features = ["sync"] }
 serial_test = "0.5.1"

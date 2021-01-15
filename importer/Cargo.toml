@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 atelier-core = { path = "../core", version = "0.1.0", features = ["serde-1"] }
 uuid = { version = "0.8.2", features = ["v4"] }
-serde = "1.0.118"
+serde = "1.0.119"
 erased-serde = "0.3"
 ron = { version = "0.6.4", optional = true }
 typetag = { version = "0.1", optional = true }
