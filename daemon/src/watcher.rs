@@ -1,12 +1,11 @@
 use crate::error::{Error, Result};
 use atelier_core::utils::canonicalize_path;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
-use std::fs;
-use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, UNIX_EPOCH};
 use std::{collections::HashMap, path::Path};
+use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
 
 /// The purpose of DirWatcher is to provide enough information to
@@ -64,7 +63,7 @@ impl DirWatcher {
     {
         let (tx, rx) = channel();
         let mut asset_watcher = DirWatcher {
-            watcher: watcher(tx.clone(), Duration::from_millis(50))?,
+            watcher: watcher(tx.clone(), Duration::from_millis(300))?,
             symlink_map: HashMap::new(),
             watch_refs: HashMap::new(),
             dirs: Vec::new(),
@@ -72,6 +71,7 @@ impl DirWatcher {
             tx,
             asset_tx: chan,
         };
+
         for path in paths {
             let path = PathBuf::from(path);
             let path = if path.is_relative() {
@@ -82,6 +82,7 @@ impl DirWatcher {
             let path = canonicalize_path(&path);
             asset_watcher.watch(&path)?;
         }
+
         Ok(asset_watcher)
     }
 
@@ -90,6 +91,7 @@ impl DirWatcher {
             tx: self.tx.clone(),
         }
     }
+
     fn scan_directory<F>(&mut self, dir: &Path, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,

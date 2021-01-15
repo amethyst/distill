@@ -7,7 +7,6 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use capnp::message::ReaderOptions;
 
 use async_trait::async_trait;
-use futures::AsyncReadExt;
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
 
 pub mod shell;
@@ -60,10 +59,10 @@ pub async fn create_context() -> Result<Context, Box<dyn std::error::Error>> {
     let stream = tokio::net::TcpStream::connect(&addr).await?;
     stream.set_nodelay(true).unwrap();
     use tokio_util::compat::*;
-    let (reader, writer) = stream.compat().split();
+    let (reader, writer) = stream.into_split();
     let rpc_network = Box::new(twoparty::VatNetwork::new(
-        reader,
-        writer,
+        reader.compat(),
+        writer.compat_write(),
         rpc_twoparty_capnp::Side::Client,
         *ReaderOptions::new()
             .nesting_limit(64)

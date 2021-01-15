@@ -575,15 +575,12 @@ impl AssetHubService {
 
     pub async fn run(&self, addr: std::net::SocketAddr) {
         let result: std::result::Result<(), Box<dyn std::error::Error>> = async {
-            let mut listener: tokio::net::TcpListener =
-                tokio::net::TcpListener::bind(&addr).await?;
+            let listener = tokio::net::TcpListener::bind(&addr).await?;
 
             loop {
                 let (stream, _) = listener.accept().await?;
                 log::info!("tokio::net::TcpListener accepted");
                 stream.set_nodelay(true).unwrap();
-                stream.set_send_buffer_size(1 << 22).unwrap();
-                stream.set_recv_buffer_size(1 << 22).unwrap();
                 use tokio_util::compat::*;
                 let (reader, writer) = stream.compat().split();
 

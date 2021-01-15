@@ -25,13 +25,11 @@ pub fn main() {
         let num_assets = num_assets.clone();
         let byte_size = byte_size.clone();
         threads.push(thread::spawn(move || {
-            let mut runtime = Runtime::new().unwrap();
+            let runtime = Runtime::new().unwrap();
             let stream = runtime
                 .block_on(::tokio::net::TcpStream::connect(&addr))
                 .unwrap();
             stream.set_nodelay(true).unwrap();
-            stream.set_send_buffer_size(1 << 24).unwrap();
-            stream.set_recv_buffer_size(1 << 24).unwrap();
             use futures_util::AsyncReadExt;
             use tokio_util::compat::*;
             let (reader, writer) = stream.compat().split();

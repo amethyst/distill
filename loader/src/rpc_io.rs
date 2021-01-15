@@ -176,7 +176,7 @@ impl RpcIO {
         Ok(RpcIO {
             connect_string,
             runtime: Mutex::new(RpcRuntime {
-                runtime: Builder::new().basic_scheduler().enable_all().build()?,
+                runtime: Builder::new_current_thread().enable_all().build()?,
                 local: tokio::task::LocalSet::new(),
                 connection: InternalConnectionState::None,
             }),
@@ -254,9 +254,9 @@ impl LoaderIO for RpcIO {
         runtime.check_asset_changes(loader);
     }
 
-    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Handle)) {
+    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Runtime)) {
         let runtime = self.runtime.lock().unwrap();
-        f(&runtime.runtime.handle())
+        f(&runtime.runtime)
     }
 }
 

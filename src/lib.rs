@@ -43,8 +43,12 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use serial_test::serial;
     use std::{
-        collections::HashMap, iter::FromIterator, path::PathBuf, str::FromStr,
-        string::FromUtf8Error, sync::RwLock,
+        collections::HashMap,
+        iter::FromIterator,
+        path::PathBuf,
+        str::FromStr,
+        string::FromUtf8Error,
+        sync::{Once, RwLock},
     };
     use uuid::Uuid;
 
@@ -204,10 +208,14 @@ mod tests {
         unreachable!("Never got to desired status.")
     }
 
+    static INIT: Once = Once::new();
+
     #[test]
     #[serial]
     fn test_connect() {
-        let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
+        INIT.call_once(|| {
+            init_logging().unwrap();
+        });
 
         // Start daemon in a separate thread
         let daemon_port = 2500;
@@ -244,7 +252,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_load_with_dependencies() {
-        let _ = init_logging(); // Another test may have initialized logging, so we ignore errors.
+        INIT.call_once(|| {
+            init_logging().unwrap();
+        });
 
         // Start daemon in a separate thread
         let daemon_port = 2505;

@@ -159,8 +159,7 @@ impl AssetDaemon {
         let (tx, rx) = oneshot::channel();
 
         let handle = thread::spawn(|| {
-            let mut rpc_runtime = tokio::runtime::Builder::new()
-                .basic_scheduler()
+            let rpc_runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
