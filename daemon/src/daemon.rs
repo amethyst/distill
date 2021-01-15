@@ -171,7 +171,7 @@ impl AssetDaemon {
         (handle, tx)
     }
 
-    async fn run_rpc_runtime(self, rx: Receiver<bool>) {
+    async fn run_rpc_runtime(self, mut rx: Receiver<bool>) {
         let cache_dir = self.db_dir.join("cache");
         let _ = fs::create_dir(&self.db_dir);
         let _ = fs::create_dir(&cache_dir);
@@ -221,22 +221,18 @@ impl AssetDaemon {
 
         let shutdown_tracker = tracker.clone();
 
-        let mut service_handle =
-            tokio::task::spawn_local(async move { service.run(addr).await }).fuse();
-        let mut tracker_handle =
-            tokio::task::spawn_local(async move { tracker.run().await }).fuse();
+        let mut service_handle = tokio::task::spawn_local(async move { service.run(addr).await });
+        let mut tracker_handle = tokio::task::spawn_local(async move { tracker.run().await });
         let mut asset_source_handle =
-            tokio::task::spawn_local(async move { asset_source.run().await }).fuse();
-
-        let mut rx_handle = rx.fuse();
+            tokio::task::spawn_local(async move { asset_source.run().await });
 
         log::info!("Starting Daemon Loop");
         loop {
-            futures::select! {
-                done = service_handle => done.expect("ServiceHandle panicked"),
-                done = tracker_handle => done.expect("FileTracker panicked"),
-                done = asset_source_handle => done.expect("AssetSource panicked"),
-                done = rx_handle => match done {
+            tokio::select! {
+                done = &mut service_handle => done.expect("ServiceHandle panicked"),
+                done = &mut tracker_handle => done.expect("FileTracker panicked"),
+                done = &mut asset_source_handle => done.expect("AssetSource panicked"),
+                done = &mut rx => match done {
                     Ok(_) => {
                         log::warn!("Shutting Down!");
                         shutdown_tracker.stop().await;
