@@ -140,11 +140,13 @@ impl ImporterContextHandleSet {
             handle.resolve_ref(asset_ref, id);
         }
     }
+
     pub fn begin_serialize_asset(&mut self, id: AssetUuid) {
         for handle in self.0.iter_mut() {
             handle.begin_serialize_asset(id);
         }
     }
+
     pub fn end_serialize_asset(&mut self, id: AssetUuid) -> HashSet<AssetRef> {
         let mut deps = HashSet::new();
         for handle in self.0.iter_mut() {
@@ -163,15 +165,19 @@ impl<'a> SourcePairImport<'a> {
             ..Default::default()
         }
     }
+
     pub fn source_metadata(&self) -> Option<&SourceMetadata> {
         self.source_metadata.as_ref()
     }
+
     pub fn result_metadata(&self) -> Option<&ImportResultMetadata> {
         self.result_metadata.as_ref()
     }
+
     pub fn set_source_hash(&mut self, source_hash: u64) {
         self.source_hash = Some(source_hash);
     }
+
     pub fn set_meta_hash(&mut self, meta_hash: u64) {
         self.meta_hash = Some(meta_hash);
     }

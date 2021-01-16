@@ -30,6 +30,7 @@ impl PackfileMessageReader {
             message_reader: ManuallyDrop::new(ThreadLocal::new()),
         })
     }
+
     fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>> {
         let messge_reader = self.message_reader.get_or_try(|| {
             // We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here

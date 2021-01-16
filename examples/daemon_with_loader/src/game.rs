@@ -36,6 +36,7 @@ impl<A> Storage<A> {
             indirection_table,
         }
     }
+
     pub fn get_asset(&self, handle: LoadHandle) -> Option<Ref<'_, A>> {
         let handle = if handle.is_indirect() {
             self.indirection_table.resolve(handle)?
@@ -78,6 +79,7 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         load_op.complete();
         Ok(())
     }
+
     fn commit_asset_version(
         &self,
         _asset_type: &AssetTypeId,
@@ -98,6 +100,7 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         );
         log::info!("Commit {:?}", load_handle);
     }
+
     fn free(&self, _asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
         let mut uncommitted = self.uncommitted.borrow_mut();
         if let Some(asset) = uncommitted.get(&load_handle) {
@@ -141,6 +144,7 @@ impl AssetStorage for Game {
                 version,
             )
     }
+
     fn commit_asset_version(
         &self,
         asset_type: &AssetTypeId,
@@ -152,6 +156,7 @@ impl AssetStorage for Game {
             .expect("unknown asset type")
             .commit_asset_version(asset_type, load_handle, version)
     }
+
     fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
         self.storage
             .get(asset_type_id)

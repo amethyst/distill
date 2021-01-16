@@ -107,11 +107,13 @@ impl ListenersList {
             listeners: Vec::new(),
         }
     }
+
     fn register(&mut self, new_listener: Option<UnboundedSender<FileTrackerEvent>>) {
         if let Some(new_listener) = new_listener {
             self.listeners.push(new_listener);
         }
     }
+
     fn send_event(&mut self, event: FileTrackerEvent) {
         self.listeners.retain(|listener| {
             match listener.unbounded_send(event) {

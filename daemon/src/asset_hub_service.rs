@@ -136,6 +136,7 @@ impl AssetHubSnapshotImpl {
         }
         Ok(())
     }
+
     fn get_asset_metadata_with_dependencies(
         &mut self,
         params: asset_hub::snapshot::GetAssetMetadataWithDependenciesParams,
@@ -181,6 +182,7 @@ impl AssetHubSnapshotImpl {
         }
         Ok(())
     }
+
     fn get_all_asset_metadata(
         &mut self,
         _params: asset_hub::snapshot::GetAllAssetMetadataParams,
@@ -204,6 +206,7 @@ impl AssetHubSnapshotImpl {
         }
         Ok(())
     }
+
     async fn get_import_artifacts(
         snapshot: Arc<SnapshotTxn>,
         params: asset_hub::snapshot::GetImportArtifactsParams,
@@ -285,6 +288,7 @@ impl AssetHubSnapshotImpl {
         }
         Ok(())
     }
+
     fn get_latest_asset_change(
         &mut self,
         _params: asset_hub::snapshot::GetLatestAssetChangeParams,
@@ -296,6 +300,7 @@ impl AssetHubSnapshotImpl {
         results.get().set_num(change_num);
         Ok(())
     }
+
     fn get_asset_changes(
         &mut self,
         params: asset_hub::snapshot::GetAssetChangesParams,
@@ -326,6 +331,7 @@ impl AssetHubSnapshotImpl {
         }
         Ok(())
     }
+
     fn get_path_for_assets(
         &mut self,
         params: asset_hub::snapshot::GetPathForAssetsParams,
@@ -368,6 +374,7 @@ impl AssetHubSnapshotImpl {
         }
         Ok(())
     }
+
     fn get_assets_for_paths(
         &mut self,
         params: asset_hub::snapshot::GetAssetsForPathsParams,
@@ -500,6 +507,7 @@ impl asset_hub::Server for AssetHubImpl {
         log::trace!("asset_hub::Server::register_listener");
         Promise::ok(pry!(AssetHubImpl::register_listener(self, params, results)))
     }
+
     fn get_snapshot(
         &mut self,
         params: asset_hub::GetSnapshotParams,
@@ -621,6 +629,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
             self, params, results
         )))
     }
+
     fn get_asset_metadata_with_dependencies(
         &mut self,
         params: asset_hub::snapshot::GetAssetMetadataWithDependenciesParams,
@@ -631,6 +640,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
             AssetHubSnapshotImpl::get_asset_metadata_with_dependencies(self, params, results)
         ))
     }
+
     fn get_all_asset_metadata(
         &mut self,
         params: asset_hub::snapshot::GetAllAssetMetadataParams,
@@ -641,6 +651,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
             self, params, results
         )))
     }
+
     fn get_import_artifacts(
         &mut self,
         params: asset_hub::snapshot::GetImportArtifactsParams,
@@ -650,6 +661,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
         let fut = AssetHubSnapshotImpl::get_import_artifacts(self.txn.clone(), params, results);
         Promise::from_future(async { fut.await.map_err(|e| e.into()) })
     }
+
     fn get_latest_asset_change(
         &mut self,
         params: asset_hub::snapshot::GetLatestAssetChangeParams,
@@ -660,6 +672,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
             self, params, results
         )))
     }
+
     fn get_asset_changes(
         &mut self,
         params: asset_hub::snapshot::GetAssetChangesParams,
@@ -670,6 +683,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
             self, params, results
         )))
     }
+
     fn get_path_for_assets(
         &mut self,
         params: asset_hub::snapshot::GetPathForAssetsParams,
@@ -680,6 +694,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
             self, params, results
         )))
     }
+
     fn get_assets_for_paths(
         &mut self,
         params: asset_hub::snapshot::GetAssetsForPathsParams,
@@ -690,6 +705,7 @@ impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
             self, params, results
         )))
     }
+
     fn update_asset(
         &mut self,
         params: asset_hub::snapshot::UpdateAssetParams,

@@ -22,19 +22,19 @@ pub struct SimpleState(Option<AssetUuid>);
 #[uuid = "720d636b-b79c-42d4-8f46-a2d8e1ada46e"]
 pub struct ImageImporter;
 impl AsyncImporter for ImageImporter {
+    type Options = ();
+    type State = SimpleState;
+
     fn version_static() -> u32
     where
         Self: Sized,
     {
         1
     }
+
     fn version(&self) -> u32 {
         Self::version_static()
     }
-
-    type Options = ();
-
-    type State = SimpleState;
 
     /// Reads the given bytes and produces assets.
     fn import<'a>(

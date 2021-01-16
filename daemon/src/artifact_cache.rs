@@ -53,9 +53,11 @@ impl ArtifactCache {
         )
         .expect("lmdb: failed to put path ref");
     }
+
     pub async fn ro_txn(&self) -> Result<RoTransaction<'_>> {
         self.db.ro_txn().await
     }
+
     pub async fn rw_txn(&self) -> Result<RwTransaction<'_>> {
         self.db.rw_txn().await
     }

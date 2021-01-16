@@ -110,6 +110,7 @@ impl DirWatcher {
             .map_err(|_| Error::SendError)?;
         result
     }
+
     fn scan_directory_recurse<F>(&mut self, dir: &Path, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,

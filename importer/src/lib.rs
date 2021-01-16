@@ -42,9 +42,11 @@ impl ImportOp {
     pub fn error<T: Into<Box<dyn std::error::Error + Send + 'static>>>(&mut self, err: T) {
         self.errors.push(err.into());
     }
+
     pub fn warn<T: Into<Box<dyn std::error::Error + Send + 'static>>>(&mut self, err: T) {
         self.warnings.push(err.into());
     }
+
     pub fn new_asset_uuid(&self) -> AssetUuid {
         AssetUuid(*uuid::Uuid::new_v4().as_bytes())
     }

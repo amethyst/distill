@@ -212,6 +212,7 @@ impl LoaderState {
         });
         handle
     }
+
     fn add_refs(&self, id: AssetUuid, num_refs: usize) -> LoadHandle {
         let handle = self.get_or_insert(id);
         self.load_states
@@ -219,6 +220,7 @@ impl LoaderState {
             .map(|h| h.refs.fetch_add(num_refs, Ordering::Relaxed));
         handle
     }
+
     fn get_asset(&self, load: LoadHandle) -> Option<AssetTypeId> {
         let load = if load.is_indirect() {
             self.indirect_table.resolve(load)?
@@ -491,6 +493,7 @@ impl LoaderState {
             //     }
         }
     }
+
     fn process_metadata_requests(&self, io: &mut dyn LoaderIO) {
         while let Ok(mut response) = self.responses.metadata_rx.try_recv() {
             let request_data = &mut response.1;
@@ -667,6 +670,7 @@ impl LoaderState {
             io.get_artifacts(assets_to_request);
         }
     }
+
     fn process_load_ops(&self, asset_storage: &dyn AssetStorage) {
         while let Ok(op) = self.op_rx.try_recv() {
             match op {
@@ -720,6 +724,7 @@ impl LoaderState {
             }
         }
     }
+
     /// Checks for changed assets that need to be reloaded or unloaded
     fn process_asset_changes(&mut self, asset_storage: &dyn AssetStorage) {
         if self.pending_reloads.is_empty() {
@@ -897,6 +902,7 @@ impl LoaderInfoProvider for LoaderState {
     fn get_load_handle(&self, id: &AssetRef) -> Option<LoadHandle> {
         self.uuid_to_load.get(id.expect_uuid()).map(|l| *l)
     }
+
     fn get_asset_id(&self, load: LoadHandle) -> Option<AssetUuid> {
         self.load_states.get(&load).map(|l| l.asset_id)
     }
@@ -906,6 +912,7 @@ impl Loader {
     pub fn new(io: Box<dyn LoaderIO>) -> Loader {
         Self::new_with_handle_allocator(io, Arc::new(AtomicHandleAllocator::default()))
     }
+
     pub fn new_with_handle_allocator(
         io: Box<dyn LoaderIO>,
         handle_allocator: Arc<dyn HandleAllocator>,
@@ -966,6 +973,7 @@ impl Loader {
     pub fn get_load(&self, id: AssetUuid) -> Option<LoadHandle> {
         self.data.uuid_to_load.get(&id).map(|l| *l)
     }
+
     /// Returns the number of references to an asset.
     ///
     /// **Note:** The information is true at the time the `LoadInfo` is retrieved. The actual number
@@ -1055,6 +1063,7 @@ impl Loader {
     pub fn get_asset_type(&self, load: LoadHandle) -> Option<AssetTypeId> {
         self.data.get_asset(load)
     }
+
     /// Removes a reference to an asset.
     ///
     /// # Parameters

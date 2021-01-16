@@ -213,6 +213,7 @@ impl HandleAllocator for AtomicHandleAllocator {
     fn alloc(&self) -> LoadHandle {
         LoadHandle(self.0.fetch_add(1, Ordering::Relaxed))
     }
+
     fn free(&self, _handle: LoadHandle) {}
 }
 
@@ -220,6 +221,7 @@ impl HandleAllocator for &'static AtomicHandleAllocator {
     fn alloc(&self) -> LoadHandle {
         LoadHandle(self.0.fetch_add(1, Ordering::Relaxed))
     }
+
     fn free(&self, _handle: LoadHandle) {}
 }
 
@@ -238,6 +240,7 @@ impl IndirectIdentifier {
             IndirectIdentifier::Path(path) => path.as_str(),
         }
     }
+
     pub fn type_id(&self) -> Option<&AssetTypeId> {
         match self {
             IndirectIdentifier::PathWithTagAndType(_, _, ty) => Some(ty),

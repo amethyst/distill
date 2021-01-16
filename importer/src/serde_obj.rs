@@ -12,6 +12,7 @@ impl<T: Serialize + TypeUuidDynamic + Send + 'static> SerdeObj for T {
     fn any(&self) -> &dyn Any {
         self
     }
+
     fn any_mut(&mut self) -> &mut dyn Any {
         self
     }

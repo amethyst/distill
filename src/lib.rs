@@ -82,6 +82,7 @@ mod tests {
             load_op.complete();
             Ok(())
         }
+
         fn commit_asset_version(
             &self,
             _asset_type: &AssetTypeId,
@@ -96,6 +97,7 @@ mod tests {
             state.commit_version = Some(version);
             state.load_version = None;
         }
+
         fn free(&self, _asset_type: &AssetTypeId, loader_handle: LoadHandle, _version: u32) {
             println!("free asset {:?}", loader_handle);
             self.map.write().unwrap().remove(&loader_handle);
@@ -134,8 +136,8 @@ mod tests {
     #[uuid = "fa50e08c-af6c-4ada-aed1-447c116d63bc"]
     struct TxtImporter;
     impl AsyncImporter for TxtImporter {
-        type State = TxtImporterState;
         type Options = TxtFormat;
+        type State = TxtImporterState;
 
         fn version_static() -> u32
         where
@@ -143,6 +145,7 @@ mod tests {
         {
             1
         }
+
         fn version(&self) -> u32 {
             Self::version_static()
         }

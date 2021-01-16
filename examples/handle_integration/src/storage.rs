@@ -56,6 +56,7 @@ impl<A: TypeUuid> Storage<A> {
             indirection_table,
         }
     }
+
     fn get<T: AssetHandle>(&self, handle: &T) -> Option<&A> {
         let handle = if handle.load_handle().is_indirect() {
             self.indirection_table.resolve(handle.load_handle())?
@@ -64,6 +65,7 @@ impl<A: TypeUuid> Storage<A> {
         };
         self.assets.get(&handle).map(|a| &a.asset)
     }
+
     fn get_version<T: AssetHandle>(&self, handle: &T) -> Option<u32> {
         let handle = if handle.load_handle().is_indirect() {
             self.indirection_table.resolve(handle.load_handle())?
@@ -72,6 +74,7 @@ impl<A: TypeUuid> Storage<A> {
         };
         self.assets.get(&handle).map(|a| a.version)
     }
+
     fn get_asset_with_version<T: AssetHandle>(&self, handle: &T) -> Option<(&A, u32)> {
         let handle = if handle.load_handle().is_indirect() {
             self.indirection_table.resolve(handle.load_handle())?
@@ -100,6 +103,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
             )
         }
     }
+
     fn get_version<T: AssetHandle>(&self, handle: &T) -> Option<u32> {
         self.storage
             .borrow()
@@ -111,6 +115,7 @@ impl<A: TypeUuid + for<'a> serde::Deserialize<'a> + 'static> TypedAssetStorage<A
             .expect("failed to downcast")
             .get_version(handle)
     }
+
     fn get_asset_with_version<T: AssetHandle>(&self, handle: &T) -> Option<(&A, u32)> {
         // This transmute can probably be unsound, but I don't have the energy to fix it right now
         unsafe {
@@ -146,6 +151,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
     fn any(&self) -> &dyn Any {
         self
     }
+
     fn update_asset(
         &mut self,
         loader_info: &dyn LoaderInfoProvider,
@@ -169,6 +175,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         load_op.complete();
         Ok(())
     }
+
     fn commit_asset_version(&mut self, load_handle: LoadHandle, _version: u32) {
         // The commit step is done after an asset load has completed.
         // It exists to avoid frames where an asset that was loaded is unloaded, which
@@ -182,6 +189,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         );
         log::info!("Commit {:?}", load_handle);
     }
+
     fn free(&mut self, load_handle: LoadHandle, version: u32) {
         if let Some(asset) = self.uncommitted.get(&load_handle) {
             if asset.version == version {
@@ -214,6 +222,7 @@ impl AssetStorage for GenericAssetStorage {
             .expect("unknown asset type")
             .update_asset(loader_info, data, load_handle, load_op, version)
     }
+
     fn commit_asset_version(
         &self,
         asset_type: &AssetTypeId,
@@ -226,6 +235,7 @@ impl AssetStorage for GenericAssetStorage {
             .expect("unknown asset type")
             .commit_asset_version(load_handle, version)
     }
+
     fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
         self.storage
             .borrow_mut()
