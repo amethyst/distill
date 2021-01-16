@@ -1,20 +1,3 @@
-use crate::{
-    handle::{RefOp, SerdeContext},
-    io::DataRequest,
-    io::LoaderIO,
-    io::MetadataRequest,
-    io::ResolveRequest,
-    storage::{
-        AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, HandleOp,
-        IndirectIdentifier, IndirectionResolver, IndirectionTable, LoadHandle, LoadInfo,
-        LoadStatus, LoaderInfoProvider,
-    },
-    Result,
-};
-use atelier_core::{ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
-use crossbeam_channel::{unbounded, Receiver, Sender};
-use dashmap::DashMap;
-use log::error;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -22,6 +5,22 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
+};
+
+use atelier_core::{ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
+use crossbeam_channel::{unbounded, Receiver, Sender};
+use dashmap::DashMap;
+use log::error;
+
+use crate::{
+    handle::{RefOp, SerdeContext},
+    io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest},
+    storage::{
+        AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, HandleOp,
+        IndirectIdentifier, IndirectionResolver, IndirectionTable, LoadHandle, LoadInfo,
+        LoadStatus, LoaderInfoProvider,
+    },
+    Result,
 };
 
 /// Describes the state of an asset load operation
@@ -690,10 +689,12 @@ impl LoaderState {
                         load_version.state = LoadState::LoadedUncommitted;
                     }
                 }
-                HandleOp::Drop(handle, version) => panic!(
-                    "load op dropped without calling complete/error, handle {:?} version {}",
-                    handle, version
-                ),
+                HandleOp::Drop(handle, version) => {
+                    panic!(
+                        "load op dropped without calling complete/error, handle {:?} version {}",
+                        handle, version
+                    )
+                }
             }
         }
     }
@@ -979,9 +980,11 @@ impl Loader {
         } else {
             load
         };
-        self.data.load_states.get(&load).map(|s| LoadInfo {
-            asset_id: s.asset_id,
-            refs: s.refs.load(Ordering::Relaxed) as u32,
+        self.data.load_states.get(&load).map(|s| {
+            LoadInfo {
+                asset_id: s.asset_id,
+                refs: s.refs.load(Ordering::Relaxed) as u32,
+            }
         })
     }
 
@@ -1003,17 +1006,19 @@ impl Loader {
         if let Some(load) = self.data.load_states.get(&load) {
             let version = load.versions.iter().max_by_key(|v| v.version);
             version
-                .map(|v| match v.state {
-                    LoadState::None => {
-                        if load.refs.load(Ordering::Relaxed) > 0 {
-                            LoadStatus::Loading
-                        } else {
-                            LoadStatus::NotRequested
+                .map(|v| {
+                    match v.state {
+                        LoadState::None => {
+                            if load.refs.load(Ordering::Relaxed) > 0 {
+                                LoadStatus::Loading
+                            } else {
+                                LoadStatus::NotRequested
+                            }
                         }
+                        LoadState::Loaded => LoadStatus::Loaded,
+                        LoadState::UnloadRequested | LoadState::Unloading => LoadStatus::Unloading,
+                        _ => LoadStatus::Loading,
                     }
-                    LoadState::Loaded => LoadStatus::Loaded,
-                    LoadState::UnloadRequested | LoadState::Unloading => LoadStatus::Unloading,
-                    _ => LoadStatus::Loading,
                 })
                 .unwrap_or(LoadStatus::NotRequested)
         } else {

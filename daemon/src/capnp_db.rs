@@ -1,9 +1,10 @@
 #![allow(dead_code)]
-use crate::error::{Error, Result};
+use std::{path::Path, result::Result as StdResult};
+
 use async_lock::{Semaphore, SemaphoreGuard};
 use lmdb::{self, Cursor, Transaction};
-use std::path::Path;
-use std::result::Result as StdResult;
+
+use crate::error::{Error, Result};
 
 pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
@@ -201,10 +202,12 @@ impl<'a> RwTransaction<'a> {
     {
         self.dirty = true;
         match self.txn.del(db, key, Option::None) {
-            Err(err) => match err {
-                lmdb::Error::NotFound => Ok(false),
-                _ => Err(Error::Lmdb(err)),
-            },
+            Err(err) => {
+                match err {
+                    lmdb::Error::NotFound => Ok(false),
+                    _ => Err(Error::Lmdb(err)),
+                }
+            }
             Ok(_) => Ok(true),
         }
     }

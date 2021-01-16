@@ -823,15 +823,19 @@ pub mod asset_hub {
             results: ::capnp::capability::Results<::capnp::any_pointer::Owned>,
         ) -> ::capnp::capability::Promise<(), ::capnp::Error> {
             match interface_id {
-                _private::TYPE_ID => ServerDispatch::<_T>::dispatch_call_internal(
-                    &mut self.server,
-                    method_id,
-                    params,
-                    results,
-                ),
-                _ => ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
-                    "Method not implemented.".to_string(),
-                )),
+                _private::TYPE_ID => {
+                    ServerDispatch::<_T>::dispatch_call_internal(
+                        &mut self.server,
+                        method_id,
+                        params,
+                        results,
+                    )
+                }
+                _ => {
+                    ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
+                        "Method not implemented.".to_string(),
+                    ))
+                }
             }
         }
     }
@@ -843,17 +847,23 @@ pub mod asset_hub {
             results: ::capnp::capability::Results<::capnp::any_pointer::Owned>,
         ) -> ::capnp::capability::Promise<(), ::capnp::Error> {
             match method_id {
-                0 => server.register_listener(
-                    ::capnp::private::capability::internal_get_typed_params(params),
-                    ::capnp::private::capability::internal_get_typed_results(results),
-                ),
-                1 => server.get_snapshot(
-                    ::capnp::private::capability::internal_get_typed_params(params),
-                    ::capnp::private::capability::internal_get_typed_results(results),
-                ),
-                _ => ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
-                    "Method not implemented.".to_string(),
-                )),
+                0 => {
+                    server.register_listener(
+                        ::capnp::private::capability::internal_get_typed_params(params),
+                        ::capnp::private::capability::internal_get_typed_results(results),
+                    )
+                }
+                1 => {
+                    server.get_snapshot(
+                        ::capnp::private::capability::internal_get_typed_params(params),
+                        ::capnp::private::capability::internal_get_typed_results(results),
+                    )
+                }
+                _ => {
+                    ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
+                        "Method not implemented.".to_string(),
+                    ))
+                }
             }
         }
     }
@@ -1233,15 +1243,19 @@ pub mod asset_hub {
                 results: ::capnp::capability::Results<::capnp::any_pointer::Owned>,
             ) -> ::capnp::capability::Promise<(), ::capnp::Error> {
                 match interface_id {
-                    _private::TYPE_ID => ServerDispatch::<_T>::dispatch_call_internal(
-                        &mut self.server,
-                        method_id,
-                        params,
-                        results,
-                    ),
-                    _ => ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
-                        "Method not implemented.".to_string(),
-                    )),
+                    _private::TYPE_ID => {
+                        ServerDispatch::<_T>::dispatch_call_internal(
+                            &mut self.server,
+                            method_id,
+                            params,
+                            results,
+                        )
+                    }
+                    _ => {
+                        ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
+                            "Method not implemented.".to_string(),
+                        ))
+                    }
                 }
             }
         }
@@ -1253,57 +1267,83 @@ pub mod asset_hub {
                 results: ::capnp::capability::Results<::capnp::any_pointer::Owned>,
             ) -> ::capnp::capability::Promise<(), ::capnp::Error> {
                 match method_id {
-                    0 => server.get_asset_metadata(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    1 => server.get_asset_metadata_with_dependencies(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    2 => server.get_all_asset_metadata(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    3 => server.get_latest_asset_change(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    4 => server.get_asset_changes(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    5 => server.get_import_artifacts(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    6 => server.update_asset(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    7 => server.patch_asset(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    8 => server.get_path_for_assets(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    9 => server.get_assets_for_paths(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    10 => server.create_file(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    11 => server.delete_file(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    _ => ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
-                        "Method not implemented.".to_string(),
-                    )),
+                    0 => {
+                        server.get_asset_metadata(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    1 => {
+                        server.get_asset_metadata_with_dependencies(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    2 => {
+                        server.get_all_asset_metadata(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    3 => {
+                        server.get_latest_asset_change(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    4 => {
+                        server.get_asset_changes(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    5 => {
+                        server.get_import_artifacts(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    6 => {
+                        server.update_asset(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    7 => {
+                        server.patch_asset(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    8 => {
+                        server.get_path_for_assets(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    9 => {
+                        server.get_assets_for_paths(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    10 => {
+                        server.create_file(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    11 => {
+                        server.delete_file(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    _ => {
+                        ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
+                            "Method not implemented.".to_string(),
+                        ))
+                    }
                 }
             }
         }
@@ -6293,15 +6333,19 @@ pub mod asset_hub {
                 results: ::capnp::capability::Results<::capnp::any_pointer::Owned>,
             ) -> ::capnp::capability::Promise<(), ::capnp::Error> {
                 match interface_id {
-                    _private::TYPE_ID => ServerDispatch::<_T>::dispatch_call_internal(
-                        &mut self.server,
-                        method_id,
-                        params,
-                        results,
-                    ),
-                    _ => ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
-                        "Method not implemented.".to_string(),
-                    )),
+                    _private::TYPE_ID => {
+                        ServerDispatch::<_T>::dispatch_call_internal(
+                            &mut self.server,
+                            method_id,
+                            params,
+                            results,
+                        )
+                    }
+                    _ => {
+                        ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
+                            "Method not implemented.".to_string(),
+                        ))
+                    }
                 }
             }
         }
@@ -6313,13 +6357,17 @@ pub mod asset_hub {
                 results: ::capnp::capability::Results<::capnp::any_pointer::Owned>,
             ) -> ::capnp::capability::Promise<(), ::capnp::Error> {
                 match method_id {
-                    0 => server.update(
-                        ::capnp::private::capability::internal_get_typed_params(params),
-                        ::capnp::private::capability::internal_get_typed_results(results),
-                    ),
-                    _ => ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
-                        "Method not implemented.".to_string(),
-                    )),
+                    0 => {
+                        server.update(
+                            ::capnp::private::capability::internal_get_typed_params(params),
+                            ::capnp::private::capability::internal_get_typed_results(results),
+                        )
+                    }
+                    _ => {
+                        ::capnp::capability::Promise::err(::capnp::Error::unimplemented(
+                            "Method not implemented.".to_string(),
+                        ))
+                    }
                 }
             }
         }

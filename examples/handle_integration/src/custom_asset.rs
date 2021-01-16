@@ -1,5 +1,5 @@
-use atelier_assets::core::{type_uuid, type_uuid::TypeUuid};
 use atelier_assets::{
+    core::{type_uuid, type_uuid::TypeUuid},
     importer::{self as atelier_importer, typetag, SerdeImportable},
     loader::handle::Handle,
 };

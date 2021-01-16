@@ -1,14 +1,14 @@
+use std::fmt;
+#[cfg(feature = "serde-1")]
+use std::str::FromStr;
+
 #[cfg(feature = "serde-1")]
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
 };
-#[cfg(feature = "serde-1")]
-use std::str::FromStr;
 pub use uuid;
 use uuid::Uuid;
-
-use std::fmt;
 
 pub mod importer_context;
 pub mod utils;

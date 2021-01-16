@@ -1,4 +1,9 @@
-use crate::image::Image;
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+    error::Error,
+};
+
 use atelier_assets::{
     core::type_uuid::TypeUuid,
     loader::{
@@ -10,11 +15,8 @@ use atelier_assets::{
         AssetTypeId, RpcIO,
     },
 };
-use std::{
-    cell::{Ref, RefCell},
-    collections::HashMap,
-    error::Error,
-};
+
+use crate::image::Image;
 
 #[allow(dead_code)]
 struct AssetState<A> {

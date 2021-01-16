@@ -1,15 +1,16 @@
 // this is just a test crate at the moment
-use atelier_schema::service::asset_hub;
-use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
-
-use capnp::message::ReaderOptions;
-
 use std::{
-    sync::atomic::{AtomicUsize, Ordering},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     thread,
     time::Instant,
 };
+
+use atelier_schema::service::asset_hub;
+use capnp::message::ReaderOptions;
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use tokio::runtime::Runtime;
 
 pub fn main() {

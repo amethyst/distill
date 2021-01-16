@@ -1,9 +1,8 @@
 pub use atelier_core as core;
+use atelier_core::{AssetRef, AssetUuid};
 pub use atelier_daemon as daemon;
 pub use atelier_importer as importer;
 pub use atelier_loader as loader;
-
-use atelier_core::{AssetRef, AssetUuid};
 use atelier_loader::handle::{Handle, SerdeContext};
 
 pub fn make_handle<T>(uuid: AssetUuid) -> Handle<T> {
@@ -25,23 +24,6 @@ pub fn make_handle_from_str<T>(uuid_str: &str) -> Result<Handle<T>, atelier_core
 #[cfg(feature = "type_uuid")]
 #[cfg(test)]
 mod tests {
-    use atelier_core::{type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid};
-    use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{
-        AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,
-    };
-    use atelier_loader::{
-        rpc_io::RpcIO,
-        storage::DefaultIndirectionResolver,
-        storage::{AssetLoadOp, AssetStorage, LoadStatus, LoaderInfoProvider},
-        LoadHandle, Loader,
-    };
-
-    use futures::future::BoxFuture;
-    use futures::io::AsyncReadExt;
-    use futures::AsyncRead;
-    use serde::{Deserialize, Serialize};
-    use serial_test::serial;
     use std::{
         collections::HashMap,
         iter::FromIterator,
@@ -50,6 +32,22 @@ mod tests {
         string::FromUtf8Error,
         sync::{Once, RwLock},
     };
+
+    use atelier_core::{type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid};
+    use atelier_daemon::{init_logging, AssetDaemon};
+    use atelier_importer::{
+        AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,
+    };
+    use atelier_loader::{
+        rpc_io::RpcIO,
+        storage::{
+            AssetLoadOp, AssetStorage, DefaultIndirectionResolver, LoadStatus, LoaderInfoProvider,
+        },
+        LoadHandle, Loader,
+    };
+    use futures::{future::BoxFuture, io::AsyncReadExt, AsyncRead};
+    use serde::{Deserialize, Serialize};
+    use serial_test::serial;
     use uuid::Uuid;
 
     #[derive(Debug)]

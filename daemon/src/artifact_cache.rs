@@ -1,8 +1,12 @@
-use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
-use crate::error::Result;
+use std::sync::Arc;
+
 use atelier_importer::SerializedAsset;
 use atelier_schema::{build_artifact_metadata, data::artifact};
-use std::sync::Arc;
+
+use crate::{
+    capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction},
+    error::Result,
+};
 
 pub struct ArtifactCache {
     db: Arc<Environment>,

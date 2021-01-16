@@ -1,11 +1,15 @@
 #![allow(clippy::needless_lifetimes)]
-use futures::future::FutureExt;
-use futures::future::{BoxFuture, Future};
-use futures::stream::{FuturesUnordered, Stream};
+use std::{
+    marker::PhantomData,
+    pin::Pin,
+    task::{Context, Poll},
+};
+
+use futures::{
+    future::{BoxFuture, Future, FutureExt},
+    stream::{FuturesUnordered, Stream},
+};
 use pin_project::{pin_project, pinned_drop};
-use std::marker::PhantomData;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use tokio::task::JoinHandle;
 
 /// A scope to allow controlled spawning of non 'static

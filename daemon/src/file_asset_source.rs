@@ -1,12 +1,11 @@
-use crate::asset_hub::{self, AssetHub};
-use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
-use crate::daemon::ImporterMap;
-use crate::error::{Error, Result};
-use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
-use crate::source_pair_import::{
-    self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+    str,
+    sync::Arc,
+    time::Instant,
 };
-use crate::{artifact_cache::ArtifactCache, source_pair_import::ImportResultMetadata};
+
 use atelier_core::{
     utils::{self, canonicalize_path},
     ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType,
@@ -20,16 +19,23 @@ use atelier_schema::{
     parse_db_metadata,
 };
 use bincode::config::Options;
-use futures::stream::StreamExt;
-use futures::{channel::mpsc::unbounded, lock::Mutex};
+use futures::{channel::mpsc::unbounded, lock::Mutex, stream::StreamExt};
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
+
+use crate::{
+    artifact_cache::ArtifactCache,
+    asset_hub::{self, AssetHub},
+    capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction},
+    daemon::ImporterMap,
+    error::{Error, Result},
+    file_tracker::{FileState, FileTracker, FileTrackerEvent},
+    source_pair_import::{
+        self, hash_file, HashedSourcePair, ImportResultMetadata, SourceMetadata, SourcePair,
+        SourcePairImport,
+    },
 };
-use std::{path::PathBuf, str, sync::Arc, time::Instant};
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -1314,11 +1320,13 @@ impl FileAssetSource {
                     let mut txn = txn.lock().await;
                     self.ack_dirty_file_states(&mut txn, &pair);
                 }
-                Err(e) => error!(
-                    "Error processing pair at {:?}: {}",
-                    pair.source.as_ref().map(|s| &s.path),
-                    e
-                ),
+                Err(e) => {
+                    error!(
+                        "Error processing pair at {:?}: {}",
+                        pair.source.as_ref().map(|s| &s.path),
+                        e
+                    )
+                }
             }
         }
 
@@ -1354,11 +1362,13 @@ impl FileAssetSource {
 
         let hashed_files: Vec<HashedSourcePair> = hashed_files
             .into_iter()
-            .filter_map(|f| match f {
-                Ok(hashed_file) => Some(hashed_file),
-                Err(err) => {
-                    error!("Hashing error: {}", err);
-                    None
+            .filter_map(|f| {
+                match f {
+                    Ok(hashed_file) => Some(hashed_file),
+                    Err(err) => {
+                        error!("Hashing error: {}", err);
+                        None
+                    }
                 }
             })
             .collect();
@@ -1441,10 +1451,12 @@ impl FileAssetSource {
             .1
             .assets
             .into_iter()
-            .map(|a| AssetImportResultMetadata {
-                metadata: a.metadata,
-                unresolved_load_refs: a.unresolved_load_refs,
-                unresolved_build_refs: a.unresolved_build_refs,
+            .map(|a| {
+                AssetImportResultMetadata {
+                    metadata: a.metadata,
+                    unresolved_load_refs: a.unresolved_load_refs,
+                    unresolved_build_refs: a.unresolved_build_refs,
+                }
             })
             .collect();
         let asset_ids: Vec<AssetUuid> = new_asset_metadata.iter().map(|a| a.metadata.id).collect();

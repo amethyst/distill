@@ -1,17 +1,20 @@
-use crate::io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest};
-use crate::loader::LoaderState;
-use atelier_core::{utils::make_array, ArtifactMetadata, AssetMetadata, AssetRef, AssetUuid};
-use atelier_schema::pack::pack_file;
-
-use capnp::serialize::SliceSegments;
-use memmap::{Mmap, MmapOptions};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
     mem::ManuallyDrop,
     sync::Arc,
 };
+
+use atelier_core::{utils::make_array, ArtifactMetadata, AssetMetadata, AssetRef, AssetUuid};
+use atelier_schema::pack::pack_file;
+use capnp::serialize::SliceSegments;
+use memmap::{Mmap, MmapOptions};
 use thread_local::ThreadLocal;
+
+use crate::{
+    io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest},
+    loader::LoaderState,
+};
 
 struct PackfileMessageReader {
     file: ManuallyDrop<File>,

@@ -1,18 +1,3 @@
-use crate::capnp_db::{
-    CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
-};
-use crate::error::{Error, Result};
-use crate::watcher::{self, FileEvent, FileMetadata};
-use atelier_core::utils::{self, canonicalize_path};
-use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
-use event_listener::Event;
-use futures::stream::StreamExt;
-use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-    FutureExt,
-};
-use lmdb::Cursor;
-use log::{debug, info};
 use std::{
     cell::Cell,
     cmp::PartialEq,
@@ -21,14 +6,35 @@ use std::{
     ops::IndexMut,
     path::{Path, PathBuf},
     str,
-    sync::atomic::{AtomicBool, Ordering},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread,
     time::Duration,
 };
+
+use atelier_core::utils::{self, canonicalize_path};
+use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
+use event_listener::Event;
+use futures::{
+    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    stream::StreamExt,
+    FutureExt,
+};
+use lmdb::Cursor;
+use log::{debug, info};
 use tokio::{
     sync::{mpsc, Mutex},
     time,
+};
+
+use crate::{
+    capnp_db::{
+        CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
+    },
+    error::{Error, Result},
+    watcher::{self, FileEvent, FileMetadata},
 };
 
 #[derive(Clone)]
@@ -715,17 +721,20 @@ impl FileTracker {
 #[cfg(test)]
 pub mod tests {
 
-    use tokio::time::timeout;
-
-    use super::*;
-    use crate::capnp_db::Environment;
-    use crate::file_tracker::{FileTracker, FileTrackerEvent};
-    use std::future::Future;
     use std::{
         fs,
+        future::Future,
         path::{Path, PathBuf},
         sync::Arc,
         time::Duration,
+    };
+
+    use tokio::time::timeout;
+
+    use super::*;
+    use crate::{
+        capnp_db::Environment,
+        file_tracker::{FileTracker, FileTrackerEvent},
     };
 
     pub async fn with_tracker<F, T>(f: F)
@@ -825,85 +834,95 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_create_file() {
-        with_tracker(|t, mut rx, asset_dir| async move {
-            add_test_file(&asset_dir, "test.txt").await;
-            expect_event(&mut rx).await;
-            expect_no_event(&mut rx).await;
-            expect_file_state(&t, &asset_dir, "test.txt").await;
-            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                add_test_file(&asset_dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "test.txt").await;
+                expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+            }
         })
         .await;
     }
 
     #[tokio::test]
     async fn test_modify_file() {
-        with_tracker(|t, mut rx, asset_dir| async move {
-            add_test_file(&asset_dir, "test.txt").await;
-            expect_event(&mut rx).await;
-            expect_file_state(&t, &asset_dir, "test.txt").await;
-            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
-            clear_dirty_file_state(&t).await;
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                add_test_file(&asset_dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "test.txt").await;
+                expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+                clear_dirty_file_state(&t).await;
 
-            tokio::fs::File::create(asset_dir.join("test.txt"))
-                .await
-                .expect("truncate test file");
+                tokio::fs::File::create(asset_dir.join("test.txt"))
+                    .await
+                    .expect("truncate test file");
 
-            expect_event(&mut rx).await;
-            expect_no_event(&mut rx).await;
-            expect_file_state(&t, &asset_dir, "test.txt").await;
-            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "test.txt").await;
+                expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+            }
         })
         .await;
     }
 
     #[tokio::test]
     async fn test_delete_file() {
-        with_tracker(|t, mut rx, asset_dir| async move {
-            add_test_file(&asset_dir, "test.txt").await;
-            expect_event(&mut rx).await;
-            expect_file_state(&t, &asset_dir, "test.txt").await;
-            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
-            clear_dirty_file_state(&t).await;
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                add_test_file(&asset_dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "test.txt").await;
+                expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+                clear_dirty_file_state(&t).await;
 
-            tokio::fs::remove_file(asset_dir.join("test.txt"))
-                .await
-                .expect("test file could not be deleted");
+                tokio::fs::remove_file(asset_dir.join("test.txt"))
+                    .await
+                    .expect("test file could not be deleted");
 
-            expect_event(&mut rx).await;
-            expect_no_event(&mut rx).await;
-            expect_no_file_state(&t, &asset_dir, "test.txt").await;
-            expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_no_file_state(&t, &asset_dir, "test.txt").await;
+                expect_dirty_file_state(&t, &asset_dir, "test.txt").await;
+            }
         })
         .await;
     }
 
     #[tokio::test]
     async fn test_create_dir() {
-        with_tracker(|t, mut rx, asset_dir| async move {
-            add_test_dir(&asset_dir, "testdir").await;
-            expect_event(&mut rx).await;
-            expect_no_event(&mut rx).await;
-            expect_file_state(&t, &asset_dir, "testdir").await;
-            expect_dirty_file_state(&t, &asset_dir, "testdir").await;
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                add_test_dir(&asset_dir, "testdir").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "testdir").await;
+                expect_dirty_file_state(&t, &asset_dir, "testdir").await;
+            }
         })
         .await;
     }
 
     #[tokio::test]
     async fn test_create_file_in_dir() {
-        with_tracker(|t, mut rx, asset_dir| async move {
-            let dir = add_test_dir(&asset_dir, "testdir").await;
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                let dir = add_test_dir(&asset_dir, "testdir").await;
 
-            expect_event(&mut rx).await;
-            expect_no_event(&mut rx).await;
-            expect_file_state(&t, &asset_dir, "testdir").await;
-            expect_dirty_file_state(&t, &asset_dir, "testdir").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "testdir").await;
+                expect_dirty_file_state(&t, &asset_dir, "testdir").await;
 
-            add_test_file(&dir, "test.txt").await;
-            expect_event(&mut rx).await;
-            expect_no_event(&mut rx).await;
-            expect_file_state(&t, &dir, "test.txt").await;
-            expect_dirty_file_state(&t, &dir, "test.txt").await;
+                add_test_file(&dir, "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &dir, "test.txt").await;
+                expect_dirty_file_state(&t, &dir, "test.txt").await;
+            }
         })
         .await;
     }
