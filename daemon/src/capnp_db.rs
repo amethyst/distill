@@ -242,7 +242,7 @@ impl Environment {
         #[cfg(target_pointer_width = "32")]
         let map_size = 1 << 31;
         #[cfg(target_pointer_width = "64")]
-        let map_size = 1 << 31;
+        let map_size = 1 << 41;
 
         Self::with_map_size(path, map_size)
     }
