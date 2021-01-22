@@ -126,6 +126,16 @@ impl AssetDaemon {
         })
     }
 
+    pub fn with_importers_boxed<I>(mut self, importers: I) -> Self
+    where
+        I: IntoIterator<Item = (&'static str, Box<dyn BoxedImporter + 'static>)>,
+    {
+        for (ext, importer) in importers.into_iter() {
+            self.importers.insert(ext, importer)
+        }
+        self
+    }
+
     pub fn add_importers<B, I>(&mut self, importers: I)
     where
         B: BoxedImporter + 'static,
