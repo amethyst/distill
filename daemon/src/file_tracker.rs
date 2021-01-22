@@ -848,8 +848,8 @@ pub mod tests {
     }
 
     #[cfg(target_family = "windows")]
-    pub fn add_symlink_file(asset_dir: &Path, name: &str, target: &str) {
-        match std::os::windows::fs::symlink_file(target, PathBuf::from(asset_dir).join(name)) {
+    pub fn add_symlink_file<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(asset_dir: &P, name: &Q, target: &R) {
+        match std::os::windows::fs::symlink_file(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
             err => panic!("failed to create symlink file: {:?}", err),
@@ -857,8 +857,26 @@ pub mod tests {
     }
 
     #[cfg(target_family = "unix")]
-    pub fn add_symlink_file(asset_dir: &Path, name: &str, target: &str) {
-        match std::os::unix::fs::symlink(target, PathBuf::from(asset_dir).join(name)) {
+    pub fn add_symlink_file<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(asset_dir: &P, name: &Q, target: &R) {
+        match std::os::unix::fs::symlink(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            err => panic!("failed to create symlink file: {:?}", err),
+        }
+    }
+
+    #[cfg(target_family = "windows")]
+    pub fn add_symlink_dir<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(asset_dir: &P, name: &Q, target: &R) {
+        match std::os::windows::fs::symlink_dir(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            err => panic!("failed to create symlink file: {:?}", err),
+        }
+    }
+
+    #[cfg(target_family = "unix")]
+    pub fn add_symlink_dir<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(asset_dir: &P, name: &Q, target: &R) {
+        match std::os::unix::fs::symlink(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
             err => panic!("failed to create symlink file: {:?}", err),
@@ -968,11 +986,65 @@ pub mod tests {
     #[tokio::test]
     async fn test_create_emacs_lockfile() {
         with_tracker(|t, mut rx, asset_dir| async move {
-            add_symlink_file(&asset_dir, "emacs.symlink", "emacs@lock.file:buffer");
+            add_symlink_file(&asset_dir, &"emacs.symlink".to_string(), &"emacs@lock.file:buffer".to_string());
             expect_event(&mut rx).await;
             expect_no_event(&mut rx).await;
             expect_file_state(&t, &asset_dir, "emacs.symlink").await;
             expect_dirty_file_state(&t, &asset_dir, "emacs.symlink").await;
+            assert!(t.get_watch_dirs() == vec![asset_dir])
+        }).await;
+    }
+
+    #[tokio::test]
+    async fn test_create_symlink_dir() {
+        with_tracker(|t, mut rx, asset_dir| async move {
+            let watch_dir = tempfile::tempdir().unwrap();
+            add_symlink_dir(&asset_dir, &"dir_symlink".to_string(), &watch_dir);
+            expect_event(&mut rx).await;
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &asset_dir, "dir_symlink").await;
+            expect_dirty_file_state(&t, &asset_dir, "dir_symlink").await;
+            assert!(t.get_watch_dirs() == vec![asset_dir, watch_dir.path().to_path_buf()]);
+
+            // add file in the newly watched dir
+            add_test_file(watch_dir.path(), "test.txt").await;
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &watch_dir.path(), "test.txt").await;
+            expect_dirty_file_state(&t, &watch_dir.path(), "test.txt").await;
+
+        }).await;
+    }
+
+    #[tokio::test]
+    async fn test_delete_symlink_dir() {
+        with_tracker(|t, mut rx, asset_dir| async move {
+            let watch_dir = tempfile::tempdir().unwrap();
+            add_symlink_dir(&asset_dir, &"dir_symlink".to_string(), &watch_dir);
+            expect_event(&mut rx).await;
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &asset_dir, "dir_symlink").await;
+            expect_dirty_file_state(&t, &asset_dir, "dir_symlink").await;
+            assert!(t.get_watch_dirs() == vec![asset_dir.clone(), watch_dir.path().to_path_buf()]);
+
+            #[cfg(target_family = "windows")]
+            tokio::fs::remove_dir(asset_dir.join("dir_symlink"))
+                .await
+                .expect("test file could not be deleted");
+            #[cfg(target_family = "unix")]
+            tokio::fs::remove_file(asset_dir.join("dir_symlink"))
+                .await
+                .expect("test file could not be deleted");
+
+            expect_event(&mut rx).await;
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_no_file_state(&t, &asset_dir, "dir_symlink").await;
+            expect_dirty_file_state(&t, &asset_dir, "dir_symlink").await;
+            assert!(t.get_watch_dirs() == vec![asset_dir]);
+
         }).await;
     }
 }
