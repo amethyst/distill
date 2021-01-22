@@ -927,14 +927,14 @@ pub mod tests {
         .await;
     }
 
-    #[test]
-    fn test_create_emacs_lockfile() {
+    #[tokio::test]
+    async fn test_create_emacs_lockfile() {
         with_tracker(|t, mut rx, asset_dir| async move {
             add_symlink_file(&asset_dir, "emacs.symlink", "emacs@lock.file:buffer");
             expect_event(&mut rx).await;
             expect_no_event(&mut rx).await;
             expect_file_state(&t, &asset_dir, "emacs.symlink").await;
             expect_dirty_file_state(&t, &asset_dir, "emacs.symlink").await;
-        })
+        }).await;
     }
 }
