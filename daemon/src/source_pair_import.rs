@@ -387,6 +387,10 @@ impl<'a> SourcePairImport<'a> {
         self.import_hash = Some(import_hash);
         for mut asset in assets {
             asset.search_tags.push((
+                "path".to_string(),
+                Some(self.source.to_string_lossy().to_string()),
+            ));
+            asset.search_tags.push((
                 "file_name".to_string(),
                 Some(
                     self.source
