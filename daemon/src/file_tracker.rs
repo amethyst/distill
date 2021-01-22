@@ -733,6 +733,7 @@ pub mod tests {
         T: Future<Output = ()>,
         F: FnOnce(Arc<FileTracker>, UnboundedReceiver<FileTrackerEvent>, PathBuf) -> T,
     {
+        let _ = crate::init_logging();
         let db_dir = tempfile::tempdir().unwrap();
         let asset_dir = tempfile::tempdir().unwrap();
 
@@ -806,6 +807,24 @@ pub mod tests {
         )
         .await
         .expect("copy test file");
+    }
+
+    #[cfg(target_family = "windows")]
+    pub fn add_symlink_file(asset_dir: &Path, name: &str, target: &str) {
+        match std::os::windows::fs::symlink_file(target, PathBuf::from(asset_dir).join(name)) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            err => panic!("failed to create symlink file: {:?}", err),
+        }
+    }
+
+    #[cfg(target_family = "unix")]
+    pub fn add_symlink_file(asset_dir: &Path, name: &str, target: &str) {
+        match std::os::unix::fs::symlink(target, PathBuf::from(asset_dir).join(name)) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            err => panic!("failed to create symlink file: {:?}", err),
+        }
     }
 
     async fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
@@ -906,5 +925,16 @@ pub mod tests {
             expect_dirty_file_state(&t, &dir, "test.txt").await;
         })
         .await;
+    }
+
+    #[test]
+    fn test_create_emacs_lockfile() {
+        with_tracker(|t, mut rx, asset_dir| async move {
+            add_symlink_file(&asset_dir, "emacs.symlink", "emacs@lock.file:buffer");
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &asset_dir, "emacs.symlink").await;
+            expect_dirty_file_state(&t, &asset_dir, "emacs.symlink").await;
+        })
     }
 }
