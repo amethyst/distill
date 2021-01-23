@@ -212,7 +212,13 @@ impl AssetDaemon {
 
         let importers = Arc::new(self.importers);
         let ctxs = Arc::new(self.importer_contexts);
-        let cache_db = Environment::new(&cache_dir).expect("failed to create asset db");
+        let cache_db = match Environment::new(&cache_dir) {
+            Ok(db) => db,
+            Err(crate::Error::Lmdb(lmdb::Error::Other(1455))) => {
+                Environment::with_map_size(&cache_dir, 1 << 31).expect("failed to create cache db")
+            }
+            Err(err) => panic!("failed to create cache db: {:?}", err),
+        };
         let cache_db = Arc::new(cache_db);
         let artifact_cache =
             ArtifactCache::new(&cache_db).expect("failed to create artifact cache");
