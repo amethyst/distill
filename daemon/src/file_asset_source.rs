@@ -105,31 +105,34 @@ where
     I: IntoIterator<Item = &'a SourcePair, IntoIter = T>,
     T: Iterator<Item = &'a SourcePair>,
 {
-    pairs.into_iter().map(|s| {
-        let mut hashed_pair = HashedSourcePair {
-            meta: s.meta.clone(),
-            source: s.source.clone(),
-            source_hash: None,
-            meta_hash: None,
-        };
-        match s.meta {
-            Some(ref state) if state.state == data::FileState::Exists => {
-                let (state, hash) = hash_file(state)?;
-                hashed_pair.meta = Some(state);
-                hashed_pair.meta_hash = hash;
-            }
-            _ => {}
-        };
-        match s.source {
-            Some(ref state) if state.state == data::FileState::Exists => {
-                let (state, hash) = hash_file(state)?;
-                hashed_pair.source = Some(state);
-                hashed_pair.source_hash = hash;
-            }
-            _ => {}
-        };
-        Ok(hashed_pair)
-    }).collect()
+    pairs
+        .into_iter()
+        .map(|s| {
+            let mut hashed_pair = HashedSourcePair {
+                meta: s.meta.clone(),
+                source: s.source.clone(),
+                source_hash: None,
+                meta_hash: None,
+            };
+            match s.meta {
+                Some(ref state) if state.state == data::FileState::Exists => {
+                    let (state, hash) = hash_file(state)?;
+                    hashed_pair.meta = Some(state);
+                    hashed_pair.meta_hash = hash;
+                }
+                _ => {}
+            };
+            match s.source {
+                Some(ref state) if state.state == data::FileState::Exists => {
+                    let (state, hash) = hash_file(state)?;
+                    hashed_pair.source = Some(state);
+                    hashed_pair.source_hash = hash;
+                }
+                _ => {}
+            };
+            Ok(hashed_pair)
+        })
+        .collect()
 }
 
 fn resolve_source_path(abs_source_path: &Path, path: &Path) -> PathBuf {
