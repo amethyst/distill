@@ -105,8 +105,7 @@ where
     I: IntoIterator<Item = &'a SourcePair, IntoIter = T>,
     T: Iterator<Item = &'a SourcePair>,
 {
-    use std::iter::FromIterator;
-    Vec::from_iter(pairs.into_iter().map(|s| {
+    pairs.into_iter().map(|s| {
         let mut hashed_pair = HashedSourcePair {
             meta: s.meta.clone(),
             source: s.source.clone(),
@@ -130,7 +129,7 @@ where
             _ => {}
         };
         Ok(hashed_pair)
-    }))
+    }).collect()
 }
 
 fn resolve_source_path(abs_source_path: &Path, path: &Path) -> PathBuf {

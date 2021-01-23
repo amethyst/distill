@@ -848,8 +848,15 @@ pub mod tests {
     }
 
     #[cfg(target_family = "windows")]
-    pub fn add_symlink_file<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(asset_dir: &P, name: &Q, target: &R) {
-        match std::os::windows::fs::symlink_file(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
+    pub fn add_symlink_file<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
+        asset_dir: &P,
+        name: &Q,
+        target: &R,
+    ) {
+        match std::os::windows::fs::symlink_file(
+            target,
+            PathBuf::from(asset_dir.as_ref()).join(name),
+        ) {
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
             err => panic!("failed to create symlink file: {:?}", err),
@@ -857,7 +864,11 @@ pub mod tests {
     }
 
     #[cfg(target_family = "unix")]
-    pub fn add_symlink_file<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(asset_dir: &P, name: &Q, target: &R) {
+    pub fn add_symlink_file<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
+        asset_dir: &P,
+        name: &Q,
+        target: &R,
+    ) {
         match std::os::unix::fs::symlink(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -866,8 +877,15 @@ pub mod tests {
     }
 
     #[cfg(target_family = "windows")]
-    pub fn add_symlink_dir<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(asset_dir: &P, name: &Q, target: &R) {
-        match std::os::windows::fs::symlink_dir(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
+    pub fn add_symlink_dir<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
+        asset_dir: &P,
+        name: &Q,
+        target: &R,
+    ) {
+        match std::os::windows::fs::symlink_dir(
+            target,
+            PathBuf::from(asset_dir.as_ref()).join(name),
+        ) {
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
             err => panic!("failed to create symlink file: {:?}", err),
@@ -875,7 +893,11 @@ pub mod tests {
     }
 
     #[cfg(target_family = "unix")]
-    pub fn add_symlink_dir<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(asset_dir: &P, name: &Q, target: &R) {
+    pub fn add_symlink_dir<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
+        asset_dir: &P,
+        name: &Q,
+        target: &R,
+    ) {
         match std::os::unix::fs::symlink(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -986,13 +1008,18 @@ pub mod tests {
     #[tokio::test]
     async fn test_create_emacs_lockfile() {
         with_tracker(|t, mut rx, asset_dir| async move {
-            add_symlink_file(&asset_dir, &"emacs.symlink".to_string(), &"emacs@lock.file:buffer".to_string());
+            add_symlink_file(
+                &asset_dir,
+                &"emacs.symlink".to_string(),
+                &"emacs@lock.file:buffer".to_string(),
+            );
             expect_event(&mut rx).await;
             expect_no_event(&mut rx).await;
             expect_file_state(&t, &asset_dir, "emacs.symlink").await;
             expect_dirty_file_state(&t, &asset_dir, "emacs.symlink").await;
             assert!(t.get_watch_dirs() == vec![asset_dir])
-        }).await;
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -1013,8 +1040,8 @@ pub mod tests {
             expect_no_event(&mut rx).await;
             expect_file_state(&t, &watch_dir.path(), "test.txt").await;
             expect_dirty_file_state(&t, &watch_dir.path(), "test.txt").await;
-
-        }).await;
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -1044,7 +1071,7 @@ pub mod tests {
             expect_no_file_state(&t, &asset_dir, "dir_symlink").await;
             expect_dirty_file_state(&t, &asset_dir, "dir_symlink").await;
             assert!(t.get_watch_dirs() == vec![asset_dir]);
-
-        }).await;
+        })
+        .await;
     }
 }

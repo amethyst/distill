@@ -189,7 +189,14 @@ impl AssetDaemon {
             let _ = fs::create_dir_all(dir);
         }
 
-        let asset_db = Environment::new(&self.db_dir).expect("failed to create asset db");
+        let asset_db = match Environment::new(&self.db_dir) {
+            Ok(db) => db,
+            Err(crate::Error::Lmdb(lmdb::Error::Other(1455))) => {
+                Environment::with_map_size(&self.db_dir, 1 << 31)
+                    .expect("failed to create asset db")
+            }
+            Err(err) => panic!("failed to create asset db: {:?}", err),
+        };
         let asset_db = Arc::new(asset_db);
 
         check_db_version(&asset_db)
