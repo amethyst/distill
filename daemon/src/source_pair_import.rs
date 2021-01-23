@@ -923,7 +923,7 @@ pub(crate) fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>)> {
             file_metadata(&m)
         }
     };
-    Ok(fs::OpenOptions::new()
+    fs::OpenOptions::new()
         .read(true)
         .open(&state.path)
         .and_then(|f| {
@@ -951,5 +951,5 @@ pub(crate) fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>)> {
                 Some(hasher.finish()),
             ))
         })
-        .map_err(Error::IO)?)
+        .map_err(Error::IO)
 }

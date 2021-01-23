@@ -165,7 +165,7 @@ impl AssetHub {
         txn: &'a V,
         id: &AssetUuid,
     ) -> Result<Option<MessageReader<'a, data::asset_uuid_list::Owned>>> {
-        Ok(txn.get::<data::asset_uuid_list::Owned, _>(self.tables.build_dep_reverse, &id)?)
+        txn.get::<data::asset_uuid_list::Owned, _>(self.tables.build_dep_reverse, &id)
     }
 
     fn put_build_deps_reverse(

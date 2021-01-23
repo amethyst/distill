@@ -209,7 +209,7 @@ impl FileAssetSource {
                             .and_then(|id| id.get_id())
                             .map_err(Error::Capnp)
                             .and_then(|slice| {
-                                Ok(utils::uuid_from_slice(slice).ok_or(Error::UuidLength)?)
+                                utils::uuid_from_slice(slice).ok_or(Error::UuidLength)
                             })
                             .expect("capnp: Failed to read uuid")
                     })
@@ -382,7 +382,7 @@ impl FileAssetSource {
                             .and_then(|id| id.get_id())
                             .map_err(Error::Capnp)
                             .and_then(|slice| {
-                                Ok(utils::uuid_from_slice(slice).ok_or(Error::UuidLength)?)
+                                utils::uuid_from_slice(slice).ok_or(Error::UuidLength)
                             })
                             .expect("capnp: Failed to read uuid")
                     })
