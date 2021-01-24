@@ -1,5 +1,6 @@
-use crate::{AssetRef, AssetUuid};
 use futures_core::future::BoxFuture;
+
+use crate::{AssetRef, AssetUuid};
 
 pub trait ImporterContextHandle: Send + Sync {
     fn scope<'a>(&'a self, fut: BoxFuture<'a, ()>) -> BoxFuture<'a, ()>;

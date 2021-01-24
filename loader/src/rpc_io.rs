@@ -1,19 +1,21 @@
+use std::{error::Error, path::PathBuf, sync::Mutex};
+
 use atelier_core::{utils, ArtifactMetadata, AssetMetadata, AssetUuid};
 use atelier_schema::{data::asset_change_event, parse_db_metadata, service::asset_hub};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures_util::AsyncReadExt;
-use std::sync::Mutex;
-use std::{error::Error, path::PathBuf};
 use tokio::{
     net::TcpStream,
     runtime::{Builder, Runtime},
     sync::oneshot,
 };
 
-use crate::io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest};
-use crate::loader::LoaderState;
+use crate::{
+    io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest},
+    loader::LoaderState,
+};
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 
@@ -141,9 +143,11 @@ impl RpcRuntime {
 
                 let mut request = hub.register_listener_request();
                 request.get().set_listener(listener);
-                let rpc_conn = request.send().promise.await.map(|_| RpcConnection {
-                    snapshot,
-                    snapshot_rx,
+                let rpc_conn = request.send().promise.await.map(|_| {
+                    RpcConnection {
+                        snapshot,
+                        snapshot_rx,
+                    }
                 })?;
                 log::trace!("Registered listener, done connecting RPC loader.");
 
@@ -230,10 +234,12 @@ impl LoaderIO for RpcIO {
                 // update connection state
                 InternalConnectionState::Connecting(mut pending_connection) => {
                     match pending_connection.try_recv() {
-                        Ok(connection_result) => match connection_result {
-                            Ok(conn) => InternalConnectionState::Connected(conn),
-                            Err(err) => InternalConnectionState::Error(err),
-                        },
+                        Ok(connection_result) => {
+                            match connection_result {
+                                Ok(conn) => InternalConnectionState::Connected(conn),
+                                Err(err) => InternalConnectionState::Error(err),
+                            }
+                        }
                         Err(oneshot::error::TryRecvError::Closed) => {
                             InternalConnectionState::Error(Box::new(
                                 oneshot::error::TryRecvError::Closed,

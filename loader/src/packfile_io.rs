@@ -1,17 +1,20 @@
-use crate::io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest};
-use crate::loader::LoaderState;
-use atelier_core::{utils::make_array, ArtifactMetadata, AssetMetadata, AssetRef, AssetUuid};
-use atelier_schema::pack::pack_file;
-
-use capnp::serialize::SliceSegments;
-use memmap::{Mmap, MmapOptions};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
     mem::ManuallyDrop,
     sync::Arc,
 };
+
+use atelier_core::{utils::make_array, ArtifactMetadata, AssetMetadata, AssetRef, AssetUuid};
+use atelier_schema::pack::pack_file;
+use capnp::serialize::SliceSegments;
+use memmap::{Mmap, MmapOptions};
 use thread_local::ThreadLocal;
+
+use crate::{
+    io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest},
+    loader::LoaderState,
+};
 
 struct PackfileMessageReader {
     file: ManuallyDrop<File>,
@@ -27,6 +30,7 @@ impl PackfileMessageReader {
             message_reader: ManuallyDrop::new(ThreadLocal::new()),
         })
     }
+
     fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>> {
         let messge_reader = self.message_reader.get_or_try(|| {
             // We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here

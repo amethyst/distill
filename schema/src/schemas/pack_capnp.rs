@@ -6,12 +6,12 @@ pub mod pack_file_entry {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -66,6 +66,7 @@ pub mod pack_file_entry {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_artifact(self) -> ::capnp::Result<crate::data_capnp::artifact::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -73,9 +74,11 @@ pub mod pack_file_entry {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_artifact(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_asset_metadata(
             self,
@@ -85,9 +88,11 @@ pub mod pack_file_entry {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_asset_metadata(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_path(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -95,6 +100,7 @@ pub mod pack_file_entry {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_path(&self) -> bool {
             !self.reader.get_pointer_field(2).is_null()
         }
@@ -135,6 +141,7 @@ pub mod pack_file_entry {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -159,9 +166,11 @@ pub mod pack_file_entry {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -169,6 +178,7 @@ pub mod pack_file_entry {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_artifact(self) -> ::capnp::Result<crate::data_capnp::artifact::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -176,6 +186,7 @@ pub mod pack_file_entry {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_artifact(
             &mut self,
@@ -187,13 +198,16 @@ pub mod pack_file_entry {
                 false,
             )
         }
+
         #[inline]
         pub fn init_artifact(self) -> crate::data_capnp::artifact::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_artifact(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_asset_metadata(
             self,
@@ -203,6 +217,7 @@ pub mod pack_file_entry {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_asset_metadata(
             &mut self,
@@ -214,13 +229,16 @@ pub mod pack_file_entry {
                 false,
             )
         }
+
         #[inline]
         pub fn init_asset_metadata(self) -> crate::data_capnp::asset_metadata::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(1), 0)
         }
+
         pub fn has_asset_metadata(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_path(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -228,14 +246,17 @@ pub mod pack_file_entry {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_path(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(2).set_data(value);
         }
+
         #[inline]
         pub fn init_path(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(2).init_data(size)
         }
+
         pub fn has_path(&self) -> bool {
             !self.builder.get_pointer_field(2).is_null()
         }
@@ -255,6 +276,7 @@ pub mod pack_file_entry {
         pub fn get_artifact(&self) -> crate::data_capnp::artifact::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(0))
         }
+
         pub fn get_asset_metadata(&self) -> crate::data_capnp::asset_metadata::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(1))
         }
@@ -273,12 +295,12 @@ pub mod pack_file {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -333,6 +355,7 @@ pub mod pack_file {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_entries(
             self,
@@ -344,6 +367,7 @@ pub mod pack_file {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_entries(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -384,6 +408,7 @@ pub mod pack_file {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -408,9 +433,11 @@ pub mod pack_file {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -418,6 +445,7 @@ pub mod pack_file {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_entries(
             self,
@@ -429,6 +457,7 @@ pub mod pack_file {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_entries(
             &mut self,
@@ -440,6 +469,7 @@ pub mod pack_file {
                 false,
             )
         }
+
         #[inline]
         pub fn init_entries(
             self,
@@ -450,6 +480,7 @@ pub mod pack_file {
                 size,
             )
         }
+
         pub fn has_entries(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }

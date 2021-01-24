@@ -1,5 +1,13 @@
-use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
-use crate::error::{Error, Result};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    hash::{Hash, Hasher},
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+};
+
 use async_channel::Sender;
 use atelier_core::{utils, AssetRef, AssetUuid};
 use atelier_importer::AssetMetadata;
@@ -11,14 +19,10 @@ use atelier_schema::{
     },
     parse_db_asset_ref,
 };
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    hash::{Hash, Hasher},
-    path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
-    },
+
+use crate::{
+    capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction},
+    error::{Error, Result},
 };
 
 pub type ListenerID = u64;

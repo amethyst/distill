@@ -1,7 +1,12 @@
-use crate::error::{Error, Result};
-use crate::file_tracker::FileState;
-use crate::watcher::file_metadata;
-use crate::{daemon::ImporterMap, file_tracker};
+use std::{
+    collections::HashSet,
+    fs,
+    hash::{Hash, Hasher},
+    io::{BufRead, Read, Write},
+    path::{Path, PathBuf},
+    time::Instant,
+};
+
 use atelier_core::{utils, ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportOp, ImportedAsset,
@@ -12,17 +17,15 @@ use atelier_schema::data;
 use futures::future::{BoxFuture, Future};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::io::Read;
-use std::path::Path;
-use std::{
-    collections::HashSet,
-    fs,
-    hash::{Hash, Hasher},
-    io::{BufRead, Write},
-    path::PathBuf,
-    time::Instant,
-};
 use tokio::{fs::File, io::AsyncReadExt};
+
+use crate::{
+    daemon::ImporterMap,
+    error::{Error, Result},
+    file_tracker,
+    file_tracker::FileState,
+    watcher::file_metadata,
+};
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -138,11 +141,13 @@ impl ImporterContextHandleSet {
             handle.resolve_ref(asset_ref, id);
         }
     }
+
     pub fn begin_serialize_asset(&mut self, id: AssetUuid) {
         for handle in self.0.iter_mut() {
             handle.begin_serialize_asset(id);
         }
     }
+
     pub fn end_serialize_asset(&mut self, id: AssetUuid) -> HashSet<AssetRef> {
         let mut deps = HashSet::new();
         for handle in self.0.iter_mut() {
@@ -161,15 +166,19 @@ impl<'a> SourcePairImport<'a> {
             ..Default::default()
         }
     }
+
     pub fn source_metadata(&self) -> Option<&SourceMetadata> {
         self.source_metadata.as_ref()
     }
+
     pub fn result_metadata(&self) -> Option<&ImportResultMetadata> {
         self.result_metadata.as_ref()
     }
+
     pub fn set_source_hash(&mut self, source_hash: u64) {
         self.source_hash = Some(source_hash);
     }
+
     pub fn set_meta_hash(&mut self, meta_hash: u64) {
         self.meta_hash = Some(meta_hash);
     }
@@ -826,12 +835,14 @@ fn get_path_file_state(path: PathBuf) -> Result<Option<FileState>> {
         Err(e) => return Err(Error::IO(e)),
         Ok(metadata) => Some(crate::watcher::file_metadata(&metadata)),
     };
-    Ok(state.map(|metadata| FileState {
-        path,
-        state: data::FileState::Exists,
-        last_modified: metadata.last_modified,
-        length: metadata.length,
-        ty: file_tracker::db_file_type(metadata.file_type),
+    Ok(state.map(|metadata| {
+        FileState {
+            path,
+            state: data::FileState::Exists,
+            last_modified: metadata.last_modified,
+            length: metadata.length,
+            ty: file_tracker::db_file_type(metadata.file_type),
+        }
     }))
 }
 
@@ -876,9 +887,11 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
             meta: Some(_meta),
             meta_hash: None,
             ..
-        } => Err(Error::Custom(
-            "Export target .meta path is a directory".into(),
-        )),
+        } => {
+            Err(Error::Custom(
+                "Export target .meta path is a directory".into(),
+            ))
+        }
         HashedSourcePair {
             source_hash,
             meta_hash,

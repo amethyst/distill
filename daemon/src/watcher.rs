@@ -1,12 +1,16 @@
-use crate::error::{Error, Result};
+use std::{
+    collections::HashMap,
+    fs, io,
+    path::{Path, PathBuf},
+    sync::mpsc::{channel, Receiver, Sender},
+    time::{Duration, UNIX_EPOCH},
+};
+
 use atelier_core::utils::canonicalize_path;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::time::{Duration, UNIX_EPOCH};
-use std::{collections::HashMap, path::Path};
-use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
+
+use crate::error::{Error, Result};
 
 /// The purpose of DirWatcher is to provide enough information to
 /// determine which files may be candidates for going through the asset import process.
@@ -110,6 +114,7 @@ impl DirWatcher {
             .map_err(|_| Error::SendError)?;
         result
     }
+
     fn scan_directory_recurse<F>(&mut self, dir: &Path, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
@@ -156,32 +161,37 @@ impl DirWatcher {
 
         loop {
             match self.rx.recv() {
-                Ok(event) => match self.handle_notify_event(event, false) {
-                    Ok(maybe_event) => {
-                        if let Some(evt) = maybe_event {
-                            log::debug!("File event: {:?}", evt);
-                            self.asset_tx.send(evt).unwrap();
+                Ok(event) => {
+                    match self.handle_notify_event(event, false) {
+                        Ok(maybe_event) => {
+                            if let Some(evt) = maybe_event {
+                                log::debug!("File event: {:?}", evt);
+                                self.asset_tx.send(evt).unwrap();
+                            }
                         }
-                    }
-                    Err(err) => match err {
-                        Error::RescanRequired => {
-                            for dir in &self.dirs.clone() {
-                                if let Err(err) =
-                                    self.scan_directory(&dir, &|path| DebouncedEvent::Create(path))
-                                {
+                        Err(err) => {
+                            match err {
+                                Error::RescanRequired => {
+                                    for dir in &self.dirs.clone() {
+                                        if let Err(err) = self.scan_directory(&dir, &|path| {
+                                            DebouncedEvent::Create(path)
+                                        }) {
+                                            self.asset_tx
+                                                .send(FileEvent::FileError(err))
+                                                .expect("Failed to send file error event");
+                                        }
+                                    }
+                                }
+                                Error::Exit => break,
+                                _ => {
                                     self.asset_tx
                                         .send(FileEvent::FileError(err))
-                                        .expect("Failed to send file error event");
+                                        .expect("Failed to send file error event")
                                 }
                             }
                         }
-                        Error::Exit => break,
-                        _ => self
-                            .asset_tx
-                            .send(FileEvent::FileError(err))
-                            .expect("Failed to send file error event"),
-                    },
-                },
+                    }
+                }
                 Err(_) => {
                     self.asset_tx
                         .send(FileEvent::FileError(Error::RecvError))
@@ -312,10 +322,12 @@ impl DirWatcher {
                         Ok(None)
                     }
                     Err(e) => Err(Error::IO(e)),
-                    Ok(metadata) => Ok(Some(FileEvent::Updated(
-                        path.clone(),
-                        file_metadata(&metadata),
-                    ))),
+                    Ok(metadata) => {
+                        Ok(Some(FileEvent::Updated(
+                            path.clone(),
+                            file_metadata(&metadata),
+                        )))
+                    }
                 };
                 match metadata_result {
                     Ok(None) => {

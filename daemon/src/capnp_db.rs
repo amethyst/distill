@@ -1,9 +1,10 @@
 #![allow(dead_code)]
-use crate::error::{Error, Result};
+use std::{path::Path, result::Result as StdResult};
+
 use async_lock::{Semaphore, SemaphoreGuard};
 use lmdb::{self, Cursor, Transaction};
-use std::path::Path;
-use std::result::Result as StdResult;
+
+use crate::error::{Error, Result};
 
 pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
@@ -53,6 +54,7 @@ impl<'txn> CapnpCursor<'txn> for lmdb::RoCursor<'txn> {
             _marker: std::marker::PhantomData,
         }
     }
+
     fn capnp_iter_from<'cursor, K>(mut self, key: &K) -> Iter<'cursor, 'txn>
     where
         K: AsRef<[u8]>,
@@ -70,6 +72,7 @@ impl<'cursor, 'txn> Iterator for Iter<'cursor, 'txn> {
         &'txn [u8],
         StdResult<capnp::message::Reader<capnp::serialize::SliceSegments<'txn>>, capnp::Error>,
     );
+
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             Some(Ok((key_bytes, value_bytes))) => {
@@ -186,6 +189,7 @@ impl<'a> RwTransaction<'a> {
         self.dirty = true;
         Ok(())
     }
+
     pub fn put_bytes<K, V>(&mut self, db: lmdb::Database, key: &K, value: &V) -> Result<()>
     where
         K: AsRef<[u8]>,
@@ -195,16 +199,19 @@ impl<'a> RwTransaction<'a> {
         self.dirty = true;
         Ok(())
     }
+
     pub fn delete<K>(&mut self, db: lmdb::Database, key: &K) -> Result<bool>
     where
         K: AsRef<[u8]>,
     {
         self.dirty = true;
         match self.txn.del(db, key, Option::None) {
-            Err(err) => match err {
-                lmdb::Error::NotFound => Ok(false),
-                _ => Err(Error::Lmdb(err)),
-            },
+            Err(err) => {
+                match err {
+                    lmdb::Error::NotFound => Ok(false),
+                    _ => Err(Error::Lmdb(err)),
+                }
+            }
             Ok(_) => Ok(true),
         }
     }

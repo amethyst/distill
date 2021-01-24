@@ -8,17 +8,17 @@ use std::{
     thread::JoinHandle,
 };
 
+use asset_hub::AssetHub;
+use asset_hub_service::AssetHubService;
 use atelier_importer::{BoxedImporter, ImporterContext};
 use atelier_schema::data;
+use file_asset_source::FileAssetSource;
 use tokio::sync::oneshot::{self, Receiver, Sender};
 
 use crate::{
     artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
     error::Result, file_asset_source, file_tracker::FileTracker,
 };
-use asset_hub::AssetHub;
-use asset_hub_service::AssetHubService;
-use file_asset_source::FileAssetSource;
 
 #[derive(Default)]
 pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);

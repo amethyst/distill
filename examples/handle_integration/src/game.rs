@@ -1,11 +1,13 @@
-use crate::{custom_asset::BigPerf, image::Image, storage::GenericAssetStorage};
+use std::sync::Arc;
+
 use atelier_assets::loader::{
     crossbeam_channel::{unbounded, Receiver},
     handle::{self, AssetHandle, Handle, RefOp, WeakHandle},
     storage::{DefaultIndirectionResolver, IndirectIdentifier, LoadStatus},
     Loader, RpcIO,
 };
-use std::sync::Arc;
+
+use crate::{custom_asset::BigPerf, image::Image, storage::GenericAssetStorage};
 
 struct Game {
     storage: GenericAssetStorage,

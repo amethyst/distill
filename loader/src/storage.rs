@@ -1,6 +1,3 @@
-use atelier_core::{AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
-use crossbeam_channel::Sender;
-use dashmap::DashMap;
 use std::{
     error::Error,
     path::PathBuf,
@@ -9,6 +6,10 @@ use std::{
         Arc,
     },
 };
+
+use atelier_core::{AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
+use crossbeam_channel::Sender;
+use dashmap::DashMap;
 
 /// Loading ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset
 /// or an indirect reference to an asset.
@@ -212,6 +213,7 @@ impl HandleAllocator for AtomicHandleAllocator {
     fn alloc(&self) -> LoadHandle {
         LoadHandle(self.0.fetch_add(1, Ordering::Relaxed))
     }
+
     fn free(&self, _handle: LoadHandle) {}
 }
 
@@ -219,6 +221,7 @@ impl HandleAllocator for &'static AtomicHandleAllocator {
     fn alloc(&self) -> LoadHandle {
         LoadHandle(self.0.fetch_add(1, Ordering::Relaxed))
     }
+
     fn free(&self, _handle: LoadHandle) {}
 }
 
@@ -237,6 +240,7 @@ impl IndirectIdentifier {
             IndirectIdentifier::Path(path) => path.as_str(),
         }
     }
+
     pub fn type_id(&self) -> Option<&AssetTypeId> {
         match self {
             IndirectIdentifier::PathWithTagAndType(_, _, ty) => Some(ty),

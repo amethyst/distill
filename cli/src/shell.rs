@@ -1,4 +1,5 @@
-use crate::DynResult;
+use std::{collections::HashMap, io::Write, pin::Pin};
+
 use async_trait::async_trait;
 use crossterm::{
     cursor::{MoveLeft, MoveToColumn, MoveUp},
@@ -7,12 +8,13 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
-use futures::select;
 use futures::{
     future::{pending, FusedFuture, FutureExt},
+    select,
     stream::StreamExt,
 };
-use std::{collections::HashMap, io::Write, pin::Pin};
+
+use crate::DynResult;
 
 #[async_trait(?Send)]
 pub trait Command<C> {
