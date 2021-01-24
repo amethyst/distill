@@ -1,8 +1,9 @@
 mod game;
 mod image;
+use std::path::PathBuf;
+
 use atelier_assets::daemon::{init_logging, AssetDaemon};
 pub use game::Storage;
-use std::path::PathBuf;
 
 fn main() {
     init_logging().expect("failed to init logging");

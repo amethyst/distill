@@ -1,8 +1,12 @@
-use crate::capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction};
-use crate::error::Result;
+use std::sync::Arc;
+
 use atelier_importer::SerializedAsset;
 use atelier_schema::{build_artifact_metadata, data::artifact};
-use std::sync::Arc;
+
+use crate::{
+    capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction},
+    error::Result,
+};
 
 pub struct ArtifactCache {
     db: Arc<Environment>,
@@ -49,9 +53,11 @@ impl ArtifactCache {
         )
         .expect("lmdb: failed to put path ref");
     }
+
     pub async fn ro_txn(&self) -> Result<RoTransaction<'_>> {
         self.db.ro_txn().await
     }
+
     pub async fn rw_txn(&self) -> Result<RwTransaction<'_>> {
         self.db.rw_txn().await
     }

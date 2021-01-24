@@ -1,8 +1,10 @@
-use crate::{ImportOp, ImportedAsset, Importer, ImporterValue, Result, SerdeImportable};
+use std::io::Read;
+
 use atelier_core::{type_uuid, type_uuid::TypeUuid, AssetUuid};
 use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+
+use crate::{ImportOp, ImportedAsset, Importer, ImporterValue, Result, SerdeImportable};
 
 #[derive(Default, Deserialize, Serialize, TypeUuid, Clone, Copy)]
 #[uuid = "f3cd048a-2c98-4e4b-95a2-d7c0ee6f7beb"]
@@ -58,10 +60,11 @@ impl Importer for RonImporter {
 }
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate as atelier_importer;
     use crate::*;
-    use std::collections::HashMap;
 
     #[derive(Serialize, Deserialize, TypeUuid, SerdeImportable, PartialEq, Eq)]
     #[uuid = "36fb2083-7195-4583-8af9-0965f10ae60d"]

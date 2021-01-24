@@ -1,18 +1,3 @@
-use crate::capnp_db::{
-    CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
-};
-use crate::error::{Error, Result};
-use crate::watcher::{self, FileEvent, FileMetadata};
-use atelier_core::utils::{self, canonicalize_path};
-use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
-use event_listener::Event;
-use futures::stream::StreamExt;
-use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-    FutureExt,
-};
-use lmdb::Cursor;
-use log::{debug, info};
 use std::{
     cell::Cell,
     cmp::PartialEq,
@@ -21,14 +6,35 @@ use std::{
     ops::IndexMut,
     path::{Path, PathBuf},
     str,
-    sync::atomic::{AtomicBool, Ordering},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
     thread,
     time::Duration,
 };
+
+use atelier_core::utils::{self, canonicalize_path};
+use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
+use event_listener::Event;
+use futures::{
+    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    stream::StreamExt,
+    FutureExt,
+};
+use lmdb::Cursor;
+use log::{debug, info};
 use tokio::{
     sync::{mpsc, Mutex},
     time,
+};
+
+use crate::{
+    capnp_db::{
+        CapnpCursor, DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction,
+    },
+    error::{Error, Result},
+    watcher::{self, FileEvent, FileMetadata},
 };
 
 #[derive(Clone)]
@@ -52,14 +58,27 @@ pub struct FileTracker {
     listener_tx: UnboundedSender<UnboundedSender<FileTrackerEvent>>,
     is_running: AtomicBool,
     stopping_event: event_listener::Event,
-    watch_dirs: Vec<PathBuf>,
+    watch_dirs: RwLock<Vec<PathBuf>>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct FileState {
     pub path: PathBuf,
     pub state: data::FileState,
     pub last_modified: u64,
     pub length: u64,
+    pub ty: data::FileType,
+}
+impl std::fmt::Debug for FileState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use capnp::traits::ToU16;
+        f.debug_struct("FileState")
+            .field("path", &self.path)
+            .field("state", &self.state)
+            .field("last_modified", &self.last_modified)
+            .field("length", &self.length)
+            .field("ty", &self.ty.to_u16())
+            .finish()
+    }
 }
 
 impl PartialEq for FileState {
@@ -81,7 +100,7 @@ struct ScanContext {
     files: HashMap<PathBuf, FileMetadata>,
 }
 
-fn db_file_type(t: fs::FileType) -> FileType {
+pub fn db_file_type(t: fs::FileType) -> FileType {
     if t.is_dir() {
         FileType::Directory
     } else if t.is_symlink() {
@@ -101,11 +120,13 @@ impl ListenersList {
             listeners: Vec::new(),
         }
     }
+
     fn register(&mut self, new_listener: Option<UnboundedSender<FileTrackerEvent>>) {
         if let Some(new_listener) = new_listener {
             self.listeners.push(new_listener);
         }
     }
+
     fn send_event(&mut self, event: FileTrackerEvent) {
         self.listeners.retain(|listener| {
             match listener.unbounded_send(event) {
@@ -253,6 +274,7 @@ mod events {
         tables: &FileTrackerTables,
         evt: watcher::FileEvent,
         scan_stack: &mut Vec<ScanContext>,
+        watch_dirs: &RwLock<Vec<PathBuf>>,
     ) -> Result<Option<FileTrackerEvent>> {
         match evt {
             FileEvent::Updated(path, metadata) => {
@@ -372,6 +394,14 @@ mod events {
                 debug!("scan end: {}", path.to_string_lossy());
                 return Ok(Some(FileTrackerEvent::Start));
             }
+            FileEvent::Watch(path) => {
+                let mut watch_dirs = watch_dirs.write().expect("watch_dirs lock poisoned");
+                watch_dirs.push(path);
+            }
+            FileEvent::Unwatch(path) => {
+                let mut watch_dirs = watch_dirs.write().expect("watch_dirs lock poisoned");
+                watch_dirs.retain(|p| p != &path);
+            }
         }
         Ok(None)
     }
@@ -423,7 +453,7 @@ impl FileTracker {
             db,
             listener_rx: Mutex::new(Cell::new(listener_rx)),
             listener_tx,
-            watch_dirs,
+            watch_dirs: RwLock::new(watch_dirs),
         }
     }
 
@@ -444,8 +474,13 @@ impl FileTracker {
         None
     }
 
-    pub fn get_watch_dirs(&self) -> impl Iterator<Item = &'_ PathBuf> {
-        self.watch_dirs.iter()
+    pub fn get_watch_dirs(&self) -> Vec<PathBuf> {
+        self.watch_dirs
+            .read()
+            .expect("watch_dirs lock poisoned")
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub async fn get_rw_txn(&self) -> RwTransaction<'_> {
@@ -531,6 +566,9 @@ impl FileTracker {
                     state: info.get_state().ok()?,
                     last_modified: source_info.get_last_modified(),
                     length: source_info.get_length(),
+                    ty: source_info
+                        .get_type()
+                        .expect("Failed to read type in source file info"),
                 })
             })
             .collect()
@@ -551,6 +589,9 @@ impl FileTracker {
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
+                    ty: info
+                        .get_type()
+                        .expect("Failed to read type in source file info"),
                 })
             })
             .collect()
@@ -588,6 +629,7 @@ impl FileTracker {
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
+                    ty: info.get_type().expect("Failed to read type in source info"),
                 }
             })
     }
@@ -610,6 +652,9 @@ impl FileTracker {
                     state: data::FileState::Exists,
                     last_modified: info.get_last_modified(),
                     length: info.get_length(),
+                    ty: info
+                        .get_type()
+                        .expect("Failed to read type in source file info"),
                 }
             })
     }
@@ -642,14 +687,12 @@ impl FileTracker {
         }
 
         let (watcher_tx, mut watcher_rx) = mpsc::unbounded_channel();
-        let to_watch = self
-            .watch_dirs
-            .iter()
-            .map(|p| p.to_str().expect("Invalid path"));
+        let to_watch: Vec<PathBuf> = self.get_watch_dirs();
 
         // NOTE(happens): If we can't watch the dir, we want to abort
-        let mut watcher = watcher::DirWatcher::from_path_iter(to_watch, watcher_tx)
-            .expect("watcher: Failed to watch specified path");
+        let mut watcher =
+            watcher::DirWatcher::from_path_iter(to_watch.iter().map(|p| Path::new(p)), watcher_tx)
+                .expect("watcher: Failed to watch specified path");
 
         let stop_handle = watcher.stop_handle();
         thread::spawn(move || watcher.run());
@@ -659,8 +702,8 @@ impl FileTracker {
 
         let mut stopping = self.stopping_event.listen();
 
-        let mut listener_tx_guard = self.listener_rx.lock().await;
-        let listener_tx = listener_tx_guard.get_mut();
+        let mut listener_rx_guard = self.listener_rx.lock().await;
+        let listener_rx = listener_rx_guard.get_mut();
 
         let mut dirty = false;
 
@@ -669,7 +712,7 @@ impl FileTracker {
             let mut delay = time::sleep(Duration::from_millis(40));
 
             tokio::select! {
-                new_listener = listener_tx.next() => listeners.register(new_listener),
+                new_listener = listener_rx.next() => listeners.register(new_listener),
                 _ = delay, if dirty => {
                     listeners.send_event(FileTrackerEvent::Update);
                     dirty = false;
@@ -684,7 +727,7 @@ impl FileTracker {
 
                     // batch watcher events into single transaction and update
                     while let Some(file_event) = maybe_file_event {
-                        match events::handle_file_event(&mut txn, &self.tables, file_event, &mut scan_stack) {
+                        match events::handle_file_event(&mut txn, &self.tables, file_event, &mut scan_stack, &self.watch_dirs) {
                             Ok(Some(evt)) => listeners.send_event(evt),
                             Ok(None) => {},
                             Err(err) => panic!("Error while handling file event: {}", err),
@@ -715,17 +758,20 @@ impl FileTracker {
 #[cfg(test)]
 pub mod tests {
 
-    use tokio::time::timeout;
-
-    use super::*;
-    use crate::capnp_db::Environment;
-    use crate::file_tracker::{FileTracker, FileTrackerEvent};
-    use std::future::Future;
     use std::{
         fs,
+        future::Future,
         path::{Path, PathBuf},
         sync::Arc,
         time::Duration,
+    };
+
+    use tokio::time::timeout;
+
+    use super::*;
+    use crate::{
+        capnp_db::Environment,
+        file_tracker::{FileTracker, FileTrackerEvent},
     };
 
     pub async fn with_tracker<F, T>(f: F)
@@ -733,6 +779,7 @@ pub mod tests {
         T: Future<Output = ()>,
         F: FnOnce(Arc<FileTracker>, UnboundedReceiver<FileTrackerEvent>, PathBuf) -> T,
     {
+        let _ = crate::init_logging();
         let db_dir = tempfile::tempdir().unwrap();
         let asset_dir = tempfile::tempdir().unwrap();
 
@@ -806,6 +853,64 @@ pub mod tests {
         )
         .await
         .expect("copy test file");
+    }
+
+    #[cfg(target_family = "windows")]
+    pub fn add_symlink_file<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
+        asset_dir: &P,
+        name: &Q,
+        target: &R,
+    ) {
+        match std::os::windows::fs::symlink_file(
+            target,
+            PathBuf::from(asset_dir.as_ref()).join(name),
+        ) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            err => panic!("failed to create symlink file: {:?}", err),
+        }
+    }
+
+    #[cfg(target_family = "unix")]
+    pub fn add_symlink_file<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
+        asset_dir: &P,
+        name: &Q,
+        target: &R,
+    ) {
+        match std::os::unix::fs::symlink(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            err => panic!("failed to create symlink file: {:?}", err),
+        }
+    }
+
+    #[cfg(target_family = "windows")]
+    pub fn add_symlink_dir<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
+        asset_dir: &P,
+        name: &Q,
+        target: &R,
+    ) {
+        match std::os::windows::fs::symlink_dir(
+            target,
+            PathBuf::from(asset_dir.as_ref()).join(name),
+        ) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            err => panic!("failed to create symlink file: {:?}", err),
+        }
+    }
+
+    #[cfg(target_family = "unix")]
+    pub fn add_symlink_dir<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
+        asset_dir: &P,
+        name: &Q,
+        target: &R,
+    ) {
+        match std::os::unix::fs::symlink(target, PathBuf::from(asset_dir.as_ref()).join(name)) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            err => panic!("failed to create symlink file: {:?}", err),
+        }
     }
 
     async fn expect_dirty_file_state(t: &FileTracker, asset_dir: &Path, name: &str) {
@@ -904,6 +1009,78 @@ pub mod tests {
             expect_no_event(&mut rx).await;
             expect_file_state(&t, &dir, "test.txt").await;
             expect_dirty_file_state(&t, &dir, "test.txt").await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_create_emacs_lockfile() {
+        with_tracker(|t, mut rx, asset_dir| async move {
+            add_symlink_file(
+                &asset_dir,
+                &"emacs.symlink".to_string(),
+                &"emacs@lock.file:buffer".to_string(),
+            );
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &asset_dir, "emacs.symlink").await;
+            expect_dirty_file_state(&t, &asset_dir, "emacs.symlink").await;
+            assert!(t.get_watch_dirs() == vec![asset_dir])
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_create_symlink_dir() {
+        with_tracker(|t, mut rx, asset_dir| {
+            async move {
+                let watch_dir = tempfile::tempdir().unwrap();
+                add_symlink_dir(&asset_dir, &"dir_symlink".to_string(), &watch_dir);
+                expect_event(&mut rx).await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &asset_dir, "dir_symlink").await;
+                expect_dirty_file_state(&t, &asset_dir, "dir_symlink").await;
+                assert!(t.get_watch_dirs() == vec![asset_dir, watch_dir.path().to_path_buf()]);
+
+                // add file in the newly watched dir
+                add_test_file(watch_dir.path(), "test.txt").await;
+                expect_event(&mut rx).await;
+                expect_no_event(&mut rx).await;
+                expect_file_state(&t, &watch_dir.path(), "test.txt").await;
+                expect_dirty_file_state(&t, &watch_dir.path(), "test.txt").await;
+            }
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_delete_symlink_dir() {
+        with_tracker(|t, mut rx, asset_dir| async move {
+            let watch_dir = tempfile::tempdir().unwrap();
+            add_symlink_dir(&asset_dir, &"dir_symlink".to_string(), &watch_dir);
+            expect_event(&mut rx).await;
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_file_state(&t, &asset_dir, "dir_symlink").await;
+            expect_dirty_file_state(&t, &asset_dir, "dir_symlink").await;
+            assert!(t.get_watch_dirs() == vec![asset_dir.clone(), watch_dir.path().to_path_buf()]);
+
+            #[cfg(target_family = "windows")]
+            tokio::fs::remove_dir(asset_dir.join("dir_symlink"))
+                .await
+                .expect("test file could not be deleted");
+            #[cfg(target_family = "unix")]
+            tokio::fs::remove_file(asset_dir.join("dir_symlink"))
+                .await
+                .expect("test file could not be deleted");
+
+            expect_event(&mut rx).await;
+            expect_event(&mut rx).await;
+            expect_no_event(&mut rx).await;
+            expect_no_file_state(&t, &asset_dir, "dir_symlink").await;
+            expect_dirty_file_state(&t, &asset_dir, "dir_symlink").await;
+            assert!(t.get_watch_dirs() == vec![asset_dir]);
         })
         .await;
     }

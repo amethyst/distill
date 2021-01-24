@@ -49,13 +49,19 @@ static LOGGER: simple_logger::SimpleLogger = simple_logger::SimpleLogger;
 
 #[cfg(not(feature = "pretty_log"))]
 pub fn init_logging() -> Result<()> {
+    let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "".to_string());
+    let log_level = <log::LevelFilter as std::str::FromStr>::from_str(&rust_log)
+        .unwrap_or(DEFAULT_LOGGING_LEVEL);
     log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(DEFAULT_LOGGING_LEVEL))
+        .map(|()| log::set_max_level(log_level))
         .map_err(Error::SetLoggerError)
 }
 #[cfg(feature = "pretty_log")]
 pub fn init_logging() -> Result<()> {
     use chrono::Local;
+    let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "".to_string());
+    let log_level = <log::LevelFilter as std::str::FromStr>::from_str(&rust_log)
+        .unwrap_or(DEFAULT_LOGGING_LEVEL);
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -67,7 +73,7 @@ pub fn init_logging() -> Result<()> {
             ))
         })
         .chain(std::io::stdout())
-        .level(DEFAULT_LOGGING_LEVEL)
+        .level(log_level)
         .level_for("mio", log::LevelFilter::Info)
         .level_for("tokio_core", log::LevelFilter::Info)
         // .chain(fern::log_file("output.log")?)

@@ -1,9 +1,10 @@
-use crate::{AssetTypeId, AssetUuid};
 use std::{
     ffi::OsStr,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
 };
+
+use crate::{AssetTypeId, AssetUuid};
 
 pub fn make_array<A, T>(slice: &[T]) -> A
 where

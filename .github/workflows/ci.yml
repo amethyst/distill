@@ -33,7 +33,7 @@ jobs:
       - run: rustup component add rustfmt
         if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
 
-      - run: cargo +nightly fmt --all -- --check
+      - run: cargo +stable fmt --all -- --check
         if: matrix.toolchain == 'nightly' && matrix.os == 'ubuntu-latest'
         
       # FIXME: clippy crashing on nightly
@@ -43,4 +43,6 @@ jobs:
       - run: cargo +stable clippy --workspace --all-targets --all-features
         if: matrix.toolchain == 'stable' && matrix.os == 'ubuntu-latest'
 
-      - run: cargo test --workspace --all-features -- --nocapture
+      - run: cargo test --workspace --all-features -- --nocapture --test-threads=1
+        env:
+          RUST_LOG: TRACE

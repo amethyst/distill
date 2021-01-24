@@ -8,17 +8,17 @@ use std::{
     thread::JoinHandle,
 };
 
+use asset_hub::AssetHub;
+use asset_hub_service::AssetHubService;
 use atelier_importer::{BoxedImporter, ImporterContext};
 use atelier_schema::data;
+use file_asset_source::FileAssetSource;
 use tokio::sync::oneshot::{self, Receiver, Sender};
 
 use crate::{
     artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
     error::Result, file_asset_source, file_tracker::FileTracker,
 };
-use asset_hub::AssetHub;
-use asset_hub_service::AssetHubService;
-use file_asset_source::FileAssetSource;
 
 #[derive(Default)]
 pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
@@ -189,7 +189,14 @@ impl AssetDaemon {
             let _ = fs::create_dir_all(dir);
         }
 
-        let asset_db = Environment::new(&self.db_dir).expect("failed to create asset db");
+        let asset_db = match Environment::new(&self.db_dir) {
+            Ok(db) => db,
+            Err(crate::Error::Lmdb(lmdb::Error::Other(1455))) => {
+                Environment::with_map_size(&self.db_dir, 1 << 31)
+                    .expect("failed to create asset db")
+            }
+            Err(err) => panic!("failed to create asset db: {:?}", err),
+        };
         let asset_db = Arc::new(asset_db);
 
         check_db_version(&asset_db)
@@ -205,7 +212,13 @@ impl AssetDaemon {
 
         let importers = Arc::new(self.importers);
         let ctxs = Arc::new(self.importer_contexts);
-        let cache_db = Environment::new(&cache_dir).expect("failed to create asset db");
+        let cache_db = match Environment::new(&cache_dir) {
+            Ok(db) => db,
+            Err(crate::Error::Lmdb(lmdb::Error::Other(1455))) => {
+                Environment::with_map_size(&cache_dir, 1 << 31).expect("failed to create cache db")
+            }
+            Err(err) => panic!("failed to create cache db: {:?}", err),
+        };
         let cache_db = Arc::new(cache_db);
         let artifact_cache =
             ArtifactCache::new(&cache_db).expect("failed to create artifact cache");

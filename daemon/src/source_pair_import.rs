@@ -1,7 +1,12 @@
-use crate::daemon::ImporterMap;
-use crate::error::{Error, Result};
-use crate::file_tracker::FileState;
-use crate::watcher::file_metadata;
+use std::{
+    collections::HashSet,
+    fs,
+    hash::{Hash, Hasher},
+    io::{BufRead, Read, Write},
+    path::{Path, PathBuf},
+    time::Instant,
+};
+
 use atelier_core::{utils, ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use atelier_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportOp, ImportedAsset,
@@ -12,17 +17,15 @@ use atelier_schema::data;
 use futures::future::{BoxFuture, Future};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::io::Read;
-use std::path::Path;
-use std::{
-    collections::HashSet,
-    fs,
-    hash::{Hash, Hasher},
-    io::{BufRead, Write},
-    path::PathBuf,
-    time::Instant,
-};
 use tokio::{fs::File, io::AsyncReadExt};
+
+use crate::{
+    daemon::ImporterMap,
+    error::{Error, Result},
+    file_tracker,
+    file_tracker::FileState,
+    watcher::file_metadata,
+};
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -47,7 +50,7 @@ pub(crate) struct HashedSourcePair {
     pub meta: Option<FileState>,
     pub meta_hash: Option<u64>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct SourcePair {
     pub source: Option<FileState>,
     pub meta: Option<FileState>,
@@ -138,11 +141,13 @@ impl ImporterContextHandleSet {
             handle.resolve_ref(asset_ref, id);
         }
     }
+
     pub fn begin_serialize_asset(&mut self, id: AssetUuid) {
         for handle in self.0.iter_mut() {
             handle.begin_serialize_asset(id);
         }
     }
+
     pub fn end_serialize_asset(&mut self, id: AssetUuid) -> HashSet<AssetRef> {
         let mut deps = HashSet::new();
         for handle in self.0.iter_mut() {
@@ -161,15 +166,19 @@ impl<'a> SourcePairImport<'a> {
             ..Default::default()
         }
     }
+
     pub fn source_metadata(&self) -> Option<&SourceMetadata> {
         self.source_metadata.as_ref()
     }
+
     pub fn result_metadata(&self) -> Option<&ImportResultMetadata> {
         self.result_metadata.as_ref()
     }
+
     pub fn set_source_hash(&mut self, source_hash: u64) {
         self.source_hash = Some(source_hash);
     }
+
     pub fn set_meta_hash(&mut self, meta_hash: u64) {
         self.meta_hash = Some(meta_hash);
     }
@@ -180,6 +189,7 @@ impl<'a> SourcePairImport<'a> {
             state: data::FileState::Exists,
             last_modified: 0,
             length: 0,
+            ty: data::FileType::None,
         };
 
         hash_file(&state)
@@ -386,6 +396,10 @@ impl<'a> SourcePairImport<'a> {
         )?;
         self.import_hash = Some(import_hash);
         for mut asset in assets {
+            asset.search_tags.push((
+                "path".to_string(),
+                Some(self.source.to_string_lossy().to_string()),
+            ));
             asset.search_tags.push((
                 "file_name".to_string(),
                 Some(
@@ -826,6 +840,7 @@ fn get_path_file_state(path: PathBuf) -> Result<Option<FileState>> {
         state: data::FileState::Exists,
         last_modified: metadata.last_modified,
         length: metadata.length,
+        ty: file_tracker::db_file_type(metadata.file_type),
     }))
 }
 
@@ -917,7 +932,7 @@ pub(crate) fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>)> {
             file_metadata(&m)
         }
     };
-    Ok(fs::OpenOptions::new()
+    fs::OpenOptions::new()
         .read(true)
         .open(&state.path)
         .and_then(|f| {
@@ -940,9 +955,10 @@ pub(crate) fn hash_file(state: &FileState) -> Result<(FileState, Option<u64>)> {
                     state: data::FileState::Exists,
                     last_modified: metadata.last_modified,
                     length: metadata.length,
+                    ty: file_tracker::db_file_type(metadata.file_type),
                 },
                 Some(hasher.finish()),
             ))
         })
-        .map_err(Error::IO)?)
+        .map_err(Error::IO)
 }

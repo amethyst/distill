@@ -1,12 +1,11 @@
-use crate::asset_hub::{self, AssetHub};
-use crate::capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction};
-use crate::daemon::ImporterMap;
-use crate::error::{Error, Result};
-use crate::file_tracker::{FileState, FileTracker, FileTrackerEvent};
-use crate::source_pair_import::{
-    self, hash_file, HashedSourcePair, SourceMetadata, SourcePair, SourcePairImport,
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+    str,
+    sync::Arc,
+    time::Instant,
 };
-use crate::{artifact_cache::ArtifactCache, source_pair_import::ImportResultMetadata};
+
 use atelier_core::{
     utils::{self, canonicalize_path},
     ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType,
@@ -20,16 +19,23 @@ use atelier_schema::{
     parse_db_metadata,
 };
 use bincode::config::Options;
-use futures::stream::StreamExt;
-use futures::{channel::mpsc::unbounded, lock::Mutex};
+use futures::{channel::mpsc::unbounded, lock::Mutex, stream::StreamExt};
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
+
+use crate::{
+    artifact_cache::ArtifactCache,
+    asset_hub::{self, AssetHub},
+    capnp_db::{CapnpCursor, DBTransaction, Environment, MessageReader, RwTransaction},
+    daemon::ImporterMap,
+    error::{Error, Result},
+    file_tracker::{FileState, FileTracker, FileTrackerEvent},
+    source_pair_import::{
+        self, hash_file, HashedSourcePair, ImportResultMetadata, SourceMetadata, SourcePair,
+        SourcePairImport,
+    },
 };
-use std::{path::PathBuf, str, sync::Arc, time::Instant};
 
 pub(crate) struct FileAssetSource {
     hub: Arc<AssetHub>,
@@ -105,32 +111,34 @@ where
     I: IntoIterator<Item = &'a SourcePair, IntoIter = T>,
     T: Iterator<Item = &'a SourcePair>,
 {
-    use std::iter::FromIterator;
-    Vec::from_iter(pairs.into_iter().map(|s| {
-        let mut hashed_pair = HashedSourcePair {
-            meta: s.meta.clone(),
-            source: s.source.clone(),
-            source_hash: None,
-            meta_hash: None,
-        };
-        match s.meta {
-            Some(ref state) if state.state == data::FileState::Exists => {
-                let (state, hash) = hash_file(state)?;
-                hashed_pair.meta = Some(state);
-                hashed_pair.meta_hash = hash;
-            }
-            _ => {}
-        };
-        match s.source {
-            Some(ref state) if state.state == data::FileState::Exists => {
-                let (state, hash) = hash_file(state)?;
-                hashed_pair.source = Some(state);
-                hashed_pair.source_hash = hash;
-            }
-            _ => {}
-        };
-        Ok(hashed_pair)
-    }))
+    pairs
+        .into_iter()
+        .map(|s| {
+            let mut hashed_pair = HashedSourcePair {
+                meta: s.meta.clone(),
+                source: s.source.clone(),
+                source_hash: None,
+                meta_hash: None,
+            };
+            match s.meta {
+                Some(ref state) if state.state == data::FileState::Exists => {
+                    let (state, hash) = hash_file(state)?;
+                    hashed_pair.meta = Some(state);
+                    hashed_pair.meta_hash = hash;
+                }
+                _ => {}
+            };
+            match s.source {
+                Some(ref state) if state.state == data::FileState::Exists => {
+                    let (state, hash) = hash_file(state)?;
+                    hashed_pair.source = Some(state);
+                    hashed_pair.source_hash = hash;
+                }
+                _ => {}
+            };
+            Ok(hashed_pair)
+        })
+        .collect()
 }
 
 fn resolve_source_path(abs_source_path: &Path, path: &Path) -> PathBuf {
@@ -207,7 +215,7 @@ impl FileAssetSource {
                             .and_then(|id| id.get_id())
                             .map_err(Error::Capnp)
                             .and_then(|slice| {
-                                Ok(utils::uuid_from_slice(slice).ok_or(Error::UuidLength)?)
+                                utils::uuid_from_slice(slice).ok_or(Error::UuidLength)
                             })
                             .expect("capnp: Failed to read uuid")
                     })
@@ -380,7 +388,7 @@ impl FileAssetSource {
                             .and_then(|id| id.get_id())
                             .map_err(Error::Capnp)
                             .and_then(|slice| {
-                                Ok(utils::uuid_from_slice(slice).ok_or(Error::UuidLength)?)
+                                utils::uuid_from_slice(slice).ok_or(Error::UuidLength)
                             })
                             .expect("capnp: Failed to read uuid")
                     })
@@ -1121,6 +1129,10 @@ impl FileAssetSource {
         };
         let has_changed_paths = !changed_paths.is_empty();
         if has_changed_paths {
+            log::debug!(
+                "Found {} paths with importer changes, marking as dirty",
+                changed_paths.len()
+            );
             let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
             for p in changed_paths.iter() {
                 self.tracker
@@ -1137,9 +1149,13 @@ impl FileAssetSource {
     fn handle_dirty_files(&self, txn: &mut RwTransaction<'_>) -> HashMap<PathBuf, SourcePair> {
         let dirty_files = self.tracker.read_dirty_files(txn);
         let mut source_meta_pairs: HashMap<PathBuf, SourcePair> = HashMap::new();
+        log::trace!("Found {} dirty files", dirty_files.len());
 
         if !dirty_files.is_empty() {
             for state in dirty_files.into_iter() {
+                if state.ty == data::FileType::Symlink {
+                    continue;
+                }
                 let mut is_meta = false;
                 if let Some(ext) = state.path.extension() {
                     if let Some("meta") = ext.to_str() {
@@ -1314,11 +1330,13 @@ impl FileAssetSource {
                     let mut txn = txn.lock().await;
                     self.ack_dirty_file_states(&mut txn, &pair);
                 }
-                Err(e) => error!(
-                    "Error processing pair at {:?}: {}",
-                    pair.source.as_ref().map(|s| &s.path),
-                    e
-                ),
+                Err(e) => {
+                    error!(
+                        "Error processing pair at {:?}: {}",
+                        pair.source.as_ref().map(|s| &s.path),
+                        e
+                    )
+                }
             }
         }
 
@@ -1337,17 +1355,22 @@ impl FileAssetSource {
         let start_time = Instant::now();
         let mut changed_files = Vec::new();
 
+        log::trace!("handle_update acquiring rw txn");
         let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
+        log::trace!("handle_update acquired rw txn, checking rename events");
 
         // Before reading the filesystem state we need to process rename events.
         // This must be done in the same transaction to guarantee database consistency.
         self.handle_rename_events(&mut txn);
+        log::trace!("handle_update handle_dirty_files");
         let source_meta_pairs = self.handle_dirty_files(&mut txn);
 
         // This looks a little stupid, since there is no `into_values`
         changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
 
+        log::trace!("handle_update committing");
         txn.commit().expect("Failed to commit txn");
+        log::trace!("handle_update committed");
 
         let hashed_files = hash_files(&changed_files);
         debug!("Hashed {}", hashed_files.len());
@@ -1394,6 +1417,7 @@ impl FileAssetSource {
         self.tracker.register_listener(tx);
 
         while let Some(evt) = rx.next().await {
+            log::debug!("Received file tracker event {:?}", evt);
             match evt {
                 FileTrackerEvent::Start => {
                     started = true;
@@ -1540,6 +1564,7 @@ where
         }
         Ok(())
     }
+
     fn get_cached_metadata(&self, path: &Path) -> Result<Option<ImportResultMetadata>> {
         let saved_metadata = self.file_asset_source.get_metadata(self.txn, path);
         if let Some(saved_metadata) = saved_metadata {

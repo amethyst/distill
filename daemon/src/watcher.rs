@@ -1,12 +1,16 @@
-use crate::error::{Error, Result};
+use std::{
+    collections::HashMap,
+    fs, io,
+    path::{Path, PathBuf},
+    sync::mpsc::{channel, Receiver, Sender},
+    time::{Duration, UNIX_EPOCH},
+};
+
 use atelier_core::utils::canonicalize_path;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::time::{Duration, UNIX_EPOCH};
-use std::{collections::HashMap, path::Path};
-use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
+
+use crate::error::{Error, Result};
 
 /// The purpose of DirWatcher is to provide enough information to
 /// determine which files may be candidates for going through the asset import process.
@@ -42,6 +46,10 @@ pub enum FileEvent {
     ScanStart(PathBuf),
     // ScanEnd indicates the end of a scan. The set of all watched directories is also sent
     ScanEnd(PathBuf, Vec<PathBuf>),
+    // Watch indicates that a new directory is being watched, probably due to a symlink being created
+    Watch(PathBuf),
+    // Unwatch indicates that a new directory has stopped being watched, probably due to a symlink being removed
+    Unwatch(PathBuf),
 }
 pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
     let modify_time = metadata.modified().unwrap_or(UNIX_EPOCH);
@@ -59,7 +67,7 @@ pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
 impl DirWatcher {
     pub fn from_path_iter<'a, T>(paths: T, chan: UnboundedSender<FileEvent>) -> Result<DirWatcher>
     where
-        T: IntoIterator<Item = &'a str>,
+        T: IntoIterator<Item = &'a Path>,
     {
         let (tx, rx) = channel();
         let mut asset_watcher = DirWatcher {
@@ -106,6 +114,7 @@ impl DirWatcher {
             .map_err(|_| Error::SendError)?;
         result
     }
+
     fn scan_directory_recurse<F>(&mut self, dir: &Path, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
@@ -232,27 +241,61 @@ impl DirWatcher {
         &mut self,
         src: Option<&PathBuf>,
         dst: Option<&PathBuf>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        let mut recognized_symlink = false;
         if let Some(src) = src {
             if self.symlink_map.contains_key(src) {
                 let to_unwatch = self.symlink_map[src].clone();
-                if self.unwatch(&to_unwatch)? {
-                    self.scan_directory(&to_unwatch, &|p| DebouncedEvent::Remove(p))?;
+                match self.unwatch(&to_unwatch) {
+                    Ok(unwatched) => {
+                        if unwatched {
+                            self.scan_directory(&to_unwatch, &|p| DebouncedEvent::Remove(p))?;
+                        }
+                        self.symlink_map.remove(src);
+                        self.asset_tx
+                            .send(FileEvent::Unwatch(to_unwatch))
+                            .map_err(|_| Error::SendError)?;
+                    }
+                    Err(err) => {
+                        return Err(err);
+                    }
                 }
-                self.symlink_map.remove(src);
+                recognized_symlink = true;
             }
         }
         if let Some(dst) = dst {
             let link = fs::read_link(&dst);
             if let Ok(link_path) = link {
                 let link_path = canonicalize_path(&dst.join(link_path));
-                if self.watch(&link_path)? {
-                    self.scan_directory(&link_path, &|p| DebouncedEvent::Create(p))?;
+                match self.watch(&link_path) {
+                    Ok(watched) => {
+                        if watched {
+                            self.scan_directory(&link_path, &|p| DebouncedEvent::Create(p))?;
+                        }
+                        self.symlink_map.insert(dst.clone(), link_path.clone());
+                        self.asset_tx
+                            .send(FileEvent::Watch(link_path))
+                            .map_err(|_| Error::SendError)?;
+                    }
+                    Err(Error::Notify(notify::Error::Generic(text)))
+                        if text == "Input watch path is neither a file nor a directory." =>
+                    {
+                        // skip the symlink if it's not a valid path
+                    }
+                    Err(Error::Notify(notify::Error::PathNotFound)) => {}
+                    Err(Error::IO(err)) | Err(Error::Notify(notify::Error::Io(err)))
+                        if err.kind() == std::io::ErrorKind::NotFound =>
+                    {
+                        // skip the symlink if it no longer exists or can't be watched
+                    }
+                    Err(err) => {
+                        return Err(err);
+                    }
                 }
-                self.symlink_map.insert(dst.clone(), link_path);
+                recognized_symlink = true;
             }
         }
-        Ok(())
+        Ok(recognized_symlink)
     }
 
     fn handle_notify_event(
@@ -264,10 +307,30 @@ impl DirWatcher {
             DebouncedEvent::Create(path) | DebouncedEvent::Write(path) => {
                 let path = canonicalize_path(&path);
                 self.handle_updated_symlink(Option::None, Some(&path))?;
-                match fs::metadata(&path) {
+                let metadata_result = match fs::metadata(&path) {
                     Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                    Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                        log::warn!(
+                            "Permission denied when fetching metadata for create event {:?}",
+                            path,
+                        );
+                        Ok(None)
+                    }
                     Err(e) => Err(Error::IO(e)),
-                    Ok(metadata) => Ok(Some(FileEvent::Updated(path, file_metadata(&metadata)))),
+                    Ok(metadata) => Ok(Some(FileEvent::Updated(
+                        path.clone(),
+                        file_metadata(&metadata),
+                    ))),
+                };
+                match metadata_result {
+                    Ok(None) => {
+                        if let Ok(metadata) = fs::symlink_metadata(&path) {
+                            Ok(Some(FileEvent::Updated(path, file_metadata(&metadata))))
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    result => result,
                 }
             }
             DebouncedEvent::Rename(src, dest) => {
@@ -276,6 +339,14 @@ impl DirWatcher {
                 self.handle_updated_symlink(Some(&src), Some(&dest))?;
                 match fs::metadata(&dest) {
                     Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                    Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                        log::warn!(
+                            "Permission denied when fetching metadata for rename event {:?}->{:?}",
+                            src,
+                            dest
+                        );
+                        Ok(None)
+                    }
                     Err(e) => Err(Error::IO(e)),
                     Ok(metadata) => {
                         if metadata.is_dir() && !is_scanning {

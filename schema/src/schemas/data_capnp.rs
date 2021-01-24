@@ -6,12 +6,12 @@ pub mod asset_uuid {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -66,6 +66,7 @@ pub mod asset_uuid {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_id(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -73,6 +74,7 @@ pub mod asset_uuid {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_id(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -113,6 +115,7 @@ pub mod asset_uuid {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -137,9 +140,11 @@ pub mod asset_uuid {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -147,6 +152,7 @@ pub mod asset_uuid {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_id(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -154,14 +160,17 @@ pub mod asset_uuid {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_id(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(0).set_data(value);
         }
+
         #[inline]
         pub fn init_id(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(0).init_data(size)
         }
+
         pub fn has_id(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -194,12 +203,12 @@ pub mod asset_ref {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -254,18 +263,21 @@ pub mod asset_ref {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         pub fn has_uuid(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 0 {
                 return false;
             }
             !self.reader.get_pointer_field(0).is_null()
         }
+
         pub fn has_path(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 1 {
                 return false;
             }
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(0) {
@@ -321,6 +333,7 @@ pub mod asset_ref {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -345,9 +358,11 @@ pub mod asset_ref {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -355,6 +370,7 @@ pub mod asset_ref {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn set_uuid(
             &mut self,
@@ -367,33 +383,39 @@ pub mod asset_ref {
                 false,
             )
         }
+
         #[inline]
         pub fn init_uuid(self) -> crate::data_capnp::asset_uuid::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 0);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_uuid(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 0 {
                 return false;
             }
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn set_path(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.set_data_field::<u16>(0, 1);
             self.builder.get_pointer_field(0).set_data(value);
         }
+
         #[inline]
         pub fn init_path(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 1);
             self.builder.get_pointer_field(0).init_data(size)
         }
+
         pub fn has_path(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 1 {
                 return false;
             }
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(0) {
@@ -451,12 +473,12 @@ pub mod asset_uuid_list {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -511,6 +533,7 @@ pub mod asset_uuid_list {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_list(
             self,
@@ -521,6 +544,7 @@ pub mod asset_uuid_list {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_list(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -561,6 +585,7 @@ pub mod asset_uuid_list {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -585,9 +610,11 @@ pub mod asset_uuid_list {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -595,6 +622,7 @@ pub mod asset_uuid_list {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_list(
             self,
@@ -605,6 +633,7 @@ pub mod asset_uuid_list {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_list(
             &mut self,
@@ -616,6 +645,7 @@ pub mod asset_uuid_list {
                 false,
             )
         }
+
         #[inline]
         pub fn init_list(
             self,
@@ -626,6 +656,7 @@ pub mod asset_uuid_list {
                 size,
             )
         }
+
         pub fn has_list(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -656,12 +687,12 @@ pub mod key_value {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -716,6 +747,7 @@ pub mod key_value {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_key(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -723,9 +755,11 @@ pub mod key_value {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_key(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_value(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -733,6 +767,7 @@ pub mod key_value {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_value(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
@@ -773,6 +808,7 @@ pub mod key_value {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -797,9 +833,11 @@ pub mod key_value {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -807,6 +845,7 @@ pub mod key_value {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_key(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -814,17 +853,21 @@ pub mod key_value {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_key(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(0).set_data(value);
         }
+
         #[inline]
         pub fn init_key(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(0).init_data(size)
         }
+
         pub fn has_key(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_value(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -832,14 +875,17 @@ pub mod key_value {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_value(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(1).set_data(value);
         }
+
         #[inline]
         pub fn init_value(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(1).init_data(size)
         }
+
         pub fn has_value(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
@@ -932,12 +978,12 @@ pub mod dirty_file_info {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -992,12 +1038,14 @@ pub mod dirty_file_info {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_state(
             self,
         ) -> ::core::result::Result<crate::data_capnp::FileState, ::capnp::NotInSchema> {
             ::capnp::traits::FromU16::from_u16(self.reader.get_data_field::<u16>(0))
         }
+
         #[inline]
         pub fn get_source_info(
             self,
@@ -1007,6 +1055,7 @@ pub mod dirty_file_info {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_source_info(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -1047,6 +1096,7 @@ pub mod dirty_file_info {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -1071,9 +1121,11 @@ pub mod dirty_file_info {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -1081,16 +1133,19 @@ pub mod dirty_file_info {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_state(
             self,
         ) -> ::core::result::Result<crate::data_capnp::FileState, ::capnp::NotInSchema> {
             ::capnp::traits::FromU16::from_u16(self.builder.get_data_field::<u16>(0))
         }
+
         #[inline]
         pub fn set_state(&mut self, value: crate::data_capnp::FileState) {
             self.builder.set_data_field::<u16>(0, value as u16)
         }
+
         #[inline]
         pub fn get_source_info(
             self,
@@ -1100,6 +1155,7 @@ pub mod dirty_file_info {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_source_info(
             &mut self,
@@ -1111,10 +1167,12 @@ pub mod dirty_file_info {
                 false,
             )
         }
+
         #[inline]
         pub fn init_source_info(self) -> crate::data_capnp::source_file_info::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_source_info(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -1149,12 +1207,12 @@ pub mod source_file_info {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -1209,16 +1267,19 @@ pub mod source_file_info {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_type(
             self,
         ) -> ::core::result::Result<crate::data_capnp::FileType, ::capnp::NotInSchema> {
             ::capnp::traits::FromU16::from_u16(self.reader.get_data_field::<u16>(0))
         }
+
         #[inline]
         pub fn get_last_modified(self) -> u64 {
             self.reader.get_data_field::<u64>(1)
         }
+
         #[inline]
         pub fn get_length(self) -> u64 {
             self.reader.get_data_field::<u64>(2)
@@ -1260,6 +1321,7 @@ pub mod source_file_info {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -1284,9 +1346,11 @@ pub mod source_file_info {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -1294,28 +1358,34 @@ pub mod source_file_info {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_type(
             self,
         ) -> ::core::result::Result<crate::data_capnp::FileType, ::capnp::NotInSchema> {
             ::capnp::traits::FromU16::from_u16(self.builder.get_data_field::<u16>(0))
         }
+
         #[inline]
         pub fn set_type(&mut self, value: crate::data_capnp::FileType) {
             self.builder.set_data_field::<u16>(0, value as u16)
         }
+
         #[inline]
         pub fn get_last_modified(self) -> u64 {
             self.builder.get_data_field::<u64>(1)
         }
+
         #[inline]
         pub fn set_last_modified(&mut self, value: u64) {
             self.builder.set_data_field::<u64>(1, value);
         }
+
         #[inline]
         pub fn get_length(self) -> u64 {
             self.builder.get_data_field::<u64>(2)
         }
+
         #[inline]
         pub fn set_length(&mut self, value: u64) {
             self.builder.set_data_field::<u64>(2, value);
@@ -1347,12 +1417,12 @@ pub mod rename_file_event {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -1407,6 +1477,7 @@ pub mod rename_file_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_src(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1414,9 +1485,11 @@ pub mod rename_file_event {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_src(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_dst(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1424,6 +1497,7 @@ pub mod rename_file_event {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_dst(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
@@ -1464,6 +1538,7 @@ pub mod rename_file_event {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -1488,9 +1563,11 @@ pub mod rename_file_event {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -1498,6 +1575,7 @@ pub mod rename_file_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_src(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -1505,17 +1583,21 @@ pub mod rename_file_event {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_src(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(0).set_data(value);
         }
+
         #[inline]
         pub fn init_src(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(0).init_data(size)
         }
+
         pub fn has_src(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_dst(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -1523,14 +1605,17 @@ pub mod rename_file_event {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_dst(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(1).set_data(value);
         }
+
         #[inline]
         pub fn init_dst(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(1).init_data(size)
         }
+
         pub fn has_dst(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
@@ -1588,12 +1673,12 @@ pub mod asset_uuid_pair {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -1648,6 +1733,7 @@ pub mod asset_uuid_pair {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_key(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1655,9 +1741,11 @@ pub mod asset_uuid_pair {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_key(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_value(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1665,6 +1753,7 @@ pub mod asset_uuid_pair {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_value(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
@@ -1705,6 +1794,7 @@ pub mod asset_uuid_pair {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -1729,9 +1819,11 @@ pub mod asset_uuid_pair {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -1739,6 +1831,7 @@ pub mod asset_uuid_pair {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_key(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -1746,6 +1839,7 @@ pub mod asset_uuid_pair {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_key(
             &mut self,
@@ -1757,13 +1851,16 @@ pub mod asset_uuid_pair {
                 false,
             )
         }
+
         #[inline]
         pub fn init_key(self) -> crate::data_capnp::asset_uuid::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_key(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_value(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -1771,6 +1868,7 @@ pub mod asset_uuid_pair {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_value(
             &mut self,
@@ -1782,10 +1880,12 @@ pub mod asset_uuid_pair {
                 false,
             )
         }
+
         #[inline]
         pub fn init_value(self) -> crate::data_capnp::asset_uuid::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(1), 0)
         }
+
         pub fn has_value(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
@@ -1805,6 +1905,7 @@ pub mod asset_uuid_pair {
         pub fn get_key(&self) -> crate::data_capnp::asset_uuid::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(0))
         }
+
         pub fn get_value(&self) -> crate::data_capnp::asset_uuid::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(1))
         }
@@ -1825,12 +1926,12 @@ pub mod source_metadata {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -1885,6 +1986,7 @@ pub mod source_metadata {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_assets(
             self,
@@ -1896,13 +1998,16 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_assets(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_importer_version(self) -> u32 {
             self.reader.get_data_field::<u32>(0)
         }
+
         #[inline]
         pub fn get_importer_options_type(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1910,9 +2015,11 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_importer_options_type(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_importer_options(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1920,9 +2027,11 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_importer_options(&self) -> bool {
             !self.reader.get_pointer_field(2).is_null()
         }
+
         #[inline]
         pub fn get_importer_state_type(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1930,9 +2039,11 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_importer_state_type(&self) -> bool {
             !self.reader.get_pointer_field(3).is_null()
         }
+
         #[inline]
         pub fn get_importer_state(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1940,9 +2051,11 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_importer_state(&self) -> bool {
             !self.reader.get_pointer_field(4).is_null()
         }
+
         #[inline]
         pub fn get_build_pipelines(
             self,
@@ -1954,9 +2067,11 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_build_pipelines(&self) -> bool {
             !self.reader.get_pointer_field(5).is_null()
         }
+
         #[inline]
         pub fn get_importer_type(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1964,15 +2079,18 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_importer_type(&self) -> bool {
             !self.reader.get_pointer_field(6).is_null()
         }
+
         pub fn has_error(&self) -> bool {
             if self.reader.get_data_field::<u16>(2) != 0 {
                 return false;
             }
             !self.reader.get_pointer_field(7).is_null()
         }
+
         #[inline]
         pub fn get_path_refs(self) -> ::capnp::Result<::capnp::data_list::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1980,9 +2098,11 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_path_refs(&self) -> bool {
             !self.reader.get_pointer_field(8).is_null()
         }
+
         #[inline]
         pub fn get_import_hash(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -1990,13 +2110,16 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_import_hash(&self) -> bool {
             !self.reader.get_pointer_field(9).is_null()
         }
+
         #[inline]
         pub fn get_version(self) -> u32 {
             self.reader.get_data_field::<u32>(2)
         }
+
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(2) {
@@ -2047,6 +2170,7 @@ pub mod source_metadata {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -2071,9 +2195,11 @@ pub mod source_metadata {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -2081,6 +2207,7 @@ pub mod source_metadata {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_assets(
             self,
@@ -2092,6 +2219,7 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_assets(
             &mut self,
@@ -2103,6 +2231,7 @@ pub mod source_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_assets(
             self,
@@ -2113,17 +2242,21 @@ pub mod source_metadata {
                 size,
             )
         }
+
         pub fn has_assets(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_importer_version(self) -> u32 {
             self.builder.get_data_field::<u32>(0)
         }
+
         #[inline]
         pub fn set_importer_version(&mut self, value: u32) {
             self.builder.set_data_field::<u32>(0, value);
         }
+
         #[inline]
         pub fn get_importer_options_type(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2131,17 +2264,21 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_importer_options_type(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(1).set_data(value);
         }
+
         #[inline]
         pub fn init_importer_options_type(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(1).init_data(size)
         }
+
         pub fn has_importer_options_type(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_importer_options(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2149,17 +2286,21 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_importer_options(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(2).set_data(value);
         }
+
         #[inline]
         pub fn init_importer_options(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(2).init_data(size)
         }
+
         pub fn has_importer_options(&self) -> bool {
             !self.builder.get_pointer_field(2).is_null()
         }
+
         #[inline]
         pub fn get_importer_state_type(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2167,17 +2308,21 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_importer_state_type(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(3).set_data(value);
         }
+
         #[inline]
         pub fn init_importer_state_type(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(3).init_data(size)
         }
+
         pub fn has_importer_state_type(&self) -> bool {
             !self.builder.get_pointer_field(3).is_null()
         }
+
         #[inline]
         pub fn get_importer_state(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2185,17 +2330,21 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_importer_state(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(4).set_data(value);
         }
+
         #[inline]
         pub fn init_importer_state(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(4).init_data(size)
         }
+
         pub fn has_importer_state(&self) -> bool {
             !self.builder.get_pointer_field(4).is_null()
         }
+
         #[inline]
         pub fn get_build_pipelines(
             self,
@@ -2207,6 +2356,7 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_build_pipelines(
             &mut self,
@@ -2218,6 +2368,7 @@ pub mod source_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_build_pipelines(
             self,
@@ -2228,9 +2379,11 @@ pub mod source_metadata {
                 size,
             )
         }
+
         pub fn has_build_pipelines(&self) -> bool {
             !self.builder.get_pointer_field(5).is_null()
         }
+
         #[inline]
         pub fn get_importer_type(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2238,17 +2391,21 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_importer_type(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(6).set_data(value);
         }
+
         #[inline]
         pub fn init_importer_type(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(6).init_data(size)
         }
+
         pub fn has_importer_type(&self) -> bool {
             !self.builder.get_pointer_field(6).is_null()
         }
+
         #[inline]
         pub fn set_error(
             &mut self,
@@ -2261,21 +2418,25 @@ pub mod source_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_error(self) -> crate::data_capnp::error::Builder<'a> {
             self.builder.set_data_field::<u16>(2, 0);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(7), 0)
         }
+
         pub fn has_error(&self) -> bool {
             if self.builder.get_data_field::<u16>(2) != 0 {
                 return false;
             }
             !self.builder.get_pointer_field(7).is_null()
         }
+
         #[inline]
         pub fn set_no_error(&mut self, _value: ()) {
             self.builder.set_data_field::<u16>(2, 1);
         }
+
         #[inline]
         pub fn get_path_refs(self) -> ::capnp::Result<::capnp::data_list::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2283,6 +2444,7 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_path_refs(
             &mut self,
@@ -2294,6 +2456,7 @@ pub mod source_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_path_refs(self, size: u32) -> ::capnp::data_list::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(
@@ -2301,9 +2464,11 @@ pub mod source_metadata {
                 size,
             )
         }
+
         pub fn has_path_refs(&self) -> bool {
             !self.builder.get_pointer_field(8).is_null()
         }
+
         #[inline]
         pub fn get_import_hash(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2311,25 +2476,31 @@ pub mod source_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_import_hash(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(9).set_data(value);
         }
+
         #[inline]
         pub fn init_import_hash(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(9).init_data(size)
         }
+
         pub fn has_import_hash(&self) -> bool {
             !self.builder.get_pointer_field(9).is_null()
         }
+
         #[inline]
         pub fn get_version(self) -> u32 {
             self.builder.get_data_field::<u32>(2)
         }
+
         #[inline]
         pub fn set_version(&mut self, value: u32) {
             self.builder.set_data_field::<u32>(2, value);
         }
+
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(2) {
@@ -2376,12 +2547,12 @@ pub mod path_refs {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -2436,6 +2607,7 @@ pub mod path_refs {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_paths(self) -> ::capnp::Result<::capnp::data_list::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -2443,6 +2615,7 @@ pub mod path_refs {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_paths(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -2483,6 +2656,7 @@ pub mod path_refs {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -2507,9 +2681,11 @@ pub mod path_refs {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -2517,6 +2693,7 @@ pub mod path_refs {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_paths(self) -> ::capnp::Result<::capnp::data_list::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2524,6 +2701,7 @@ pub mod path_refs {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_paths(&mut self, value: ::capnp::data_list::Reader<'a>) -> ::capnp::Result<()> {
             ::capnp::traits::SetPointerBuilder::set_pointer_builder(
@@ -2532,6 +2710,7 @@ pub mod path_refs {
                 false,
             )
         }
+
         #[inline]
         pub fn init_paths(self, size: u32) -> ::capnp::data_list::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(
@@ -2539,6 +2718,7 @@ pub mod path_refs {
                 size,
             )
         }
+
         pub fn has_paths(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -2569,12 +2749,12 @@ pub mod error {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -2629,6 +2809,7 @@ pub mod error {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_text(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -2636,6 +2817,7 @@ pub mod error {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_text(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -2676,6 +2858,7 @@ pub mod error {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -2700,9 +2883,11 @@ pub mod error {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -2710,6 +2895,7 @@ pub mod error {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_text(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2717,14 +2903,17 @@ pub mod error {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_text(&mut self, value: ::capnp::text::Reader<'_>) {
             self.builder.get_pointer_field(0).set_text(value);
         }
+
         #[inline]
         pub fn init_text(self, size: u32) -> ::capnp::text::Builder<'a> {
             self.builder.get_pointer_field(0).init_text(size)
         }
+
         pub fn has_text(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -2755,12 +2944,12 @@ pub mod artifact_metadata {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -2815,6 +3004,7 @@ pub mod artifact_metadata {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_asset_id(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -2822,9 +3012,11 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_asset_id(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_hash(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -2832,9 +3024,11 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_hash(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_load_deps(
             self,
@@ -2845,9 +3039,11 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_load_deps(&self) -> bool {
             !self.reader.get_pointer_field(2).is_null()
         }
+
         #[inline]
         pub fn get_build_deps(
             self,
@@ -2858,9 +3054,11 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_build_deps(&self) -> bool {
             !self.reader.get_pointer_field(3).is_null()
         }
+
         #[inline]
         pub fn get_compression(
             self,
@@ -2868,14 +3066,17 @@ pub mod artifact_metadata {
         {
             ::capnp::traits::FromU16::from_u16(self.reader.get_data_field::<u16>(0))
         }
+
         #[inline]
         pub fn get_compressed_size(self) -> u64 {
             self.reader.get_data_field::<u64>(1)
         }
+
         #[inline]
         pub fn get_uncompressed_size(self) -> u64 {
             self.reader.get_data_field::<u64>(2)
         }
+
         #[inline]
         pub fn get_type_id(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -2883,6 +3084,7 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_type_id(&self) -> bool {
             !self.reader.get_pointer_field(4).is_null()
         }
@@ -2923,6 +3125,7 @@ pub mod artifact_metadata {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -2947,9 +3150,11 @@ pub mod artifact_metadata {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -2957,6 +3162,7 @@ pub mod artifact_metadata {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_asset_id(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2964,6 +3170,7 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_asset_id(
             &mut self,
@@ -2975,13 +3182,16 @@ pub mod artifact_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_asset_id(self) -> crate::data_capnp::asset_uuid::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_asset_id(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_hash(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -2989,17 +3199,21 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_hash(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(1).set_data(value);
         }
+
         #[inline]
         pub fn init_hash(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(1).init_data(size)
         }
+
         pub fn has_hash(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_load_deps(
             self,
@@ -3010,6 +3224,7 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_load_deps(
             &mut self,
@@ -3021,6 +3236,7 @@ pub mod artifact_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_load_deps(
             self,
@@ -3031,9 +3247,11 @@ pub mod artifact_metadata {
                 size,
             )
         }
+
         pub fn has_load_deps(&self) -> bool {
             !self.builder.get_pointer_field(2).is_null()
         }
+
         #[inline]
         pub fn get_build_deps(
             self,
@@ -3044,6 +3262,7 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_build_deps(
             &mut self,
@@ -3055,6 +3274,7 @@ pub mod artifact_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_build_deps(
             self,
@@ -3065,9 +3285,11 @@ pub mod artifact_metadata {
                 size,
             )
         }
+
         pub fn has_build_deps(&self) -> bool {
             !self.builder.get_pointer_field(3).is_null()
         }
+
         #[inline]
         pub fn get_compression(
             self,
@@ -3075,26 +3297,32 @@ pub mod artifact_metadata {
         {
             ::capnp::traits::FromU16::from_u16(self.builder.get_data_field::<u16>(0))
         }
+
         #[inline]
         pub fn set_compression(&mut self, value: crate::data_capnp::CompressionType) {
             self.builder.set_data_field::<u16>(0, value as u16)
         }
+
         #[inline]
         pub fn get_compressed_size(self) -> u64 {
             self.builder.get_data_field::<u64>(1)
         }
+
         #[inline]
         pub fn set_compressed_size(&mut self, value: u64) {
             self.builder.set_data_field::<u64>(1, value);
         }
+
         #[inline]
         pub fn get_uncompressed_size(self) -> u64 {
             self.builder.get_data_field::<u64>(2)
         }
+
         #[inline]
         pub fn set_uncompressed_size(&mut self, value: u64) {
             self.builder.set_data_field::<u64>(2, value);
         }
+
         #[inline]
         pub fn get_type_id(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -3102,14 +3330,17 @@ pub mod artifact_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_type_id(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(4).set_data(value);
         }
+
         #[inline]
         pub fn init_type_id(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(4).init_data(size)
         }
+
         pub fn has_type_id(&self) -> bool {
             !self.builder.get_pointer_field(4).is_null()
         }
@@ -3146,12 +3377,12 @@ pub mod asset_metadata {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -3206,6 +3437,7 @@ pub mod asset_metadata {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_id(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -3213,9 +3445,11 @@ pub mod asset_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_id(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_search_tags(
             self,
@@ -3226,9 +3460,11 @@ pub mod asset_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_search_tags(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_build_pipeline(
             self,
@@ -3238,27 +3474,32 @@ pub mod asset_metadata {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_build_pipeline(&self) -> bool {
             !self.reader.get_pointer_field(2).is_null()
         }
+
         #[inline]
         pub fn get_latest_artifact(
             self,
         ) -> crate::data_capnp::asset_metadata::latest_artifact::Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.reader)
         }
+
         #[inline]
         pub fn get_source(
             self,
         ) -> ::core::result::Result<crate::data_capnp::AssetSource, ::capnp::NotInSchema> {
             ::capnp::traits::FromU16::from_u16(self.reader.get_data_field::<u16>(1))
         }
+
         pub fn has_error(&self) -> bool {
             if self.reader.get_data_field::<u16>(2) != 0 {
                 return false;
             }
             !self.reader.get_pointer_field(4).is_null()
         }
+
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(2) {
@@ -3309,6 +3550,7 @@ pub mod asset_metadata {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -3333,9 +3575,11 @@ pub mod asset_metadata {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -3343,6 +3587,7 @@ pub mod asset_metadata {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_id(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -3350,6 +3595,7 @@ pub mod asset_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_id(
             &mut self,
@@ -3361,13 +3607,16 @@ pub mod asset_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_id(self) -> crate::data_capnp::asset_uuid::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_id(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_search_tags(
             self,
@@ -3378,6 +3627,7 @@ pub mod asset_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_search_tags(
             &mut self,
@@ -3389,6 +3639,7 @@ pub mod asset_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_search_tags(
             self,
@@ -3399,9 +3650,11 @@ pub mod asset_metadata {
                 size,
             )
         }
+
         pub fn has_search_tags(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_build_pipeline(
             self,
@@ -3411,6 +3664,7 @@ pub mod asset_metadata {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_build_pipeline(
             &mut self,
@@ -3422,19 +3676,23 @@ pub mod asset_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_build_pipeline(self) -> crate::data_capnp::asset_uuid::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(2), 0)
         }
+
         pub fn has_build_pipeline(&self) -> bool {
             !self.builder.get_pointer_field(2).is_null()
         }
+
         #[inline]
         pub fn get_latest_artifact(
             self,
         ) -> crate::data_capnp::asset_metadata::latest_artifact::Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(self.builder)
         }
+
         #[inline]
         pub fn init_latest_artifact(
             self,
@@ -3443,16 +3701,19 @@ pub mod asset_metadata {
             self.builder.get_pointer_field(3).clear();
             ::capnp::traits::FromStructBuilder::new(self.builder)
         }
+
         #[inline]
         pub fn get_source(
             self,
         ) -> ::core::result::Result<crate::data_capnp::AssetSource, ::capnp::NotInSchema> {
             ::capnp::traits::FromU16::from_u16(self.builder.get_data_field::<u16>(1))
         }
+
         #[inline]
         pub fn set_source(&mut self, value: crate::data_capnp::AssetSource) {
             self.builder.set_data_field::<u16>(1, value as u16)
         }
+
         #[inline]
         pub fn set_error(
             &mut self,
@@ -3465,21 +3726,25 @@ pub mod asset_metadata {
                 false,
             )
         }
+
         #[inline]
         pub fn init_error(self) -> crate::data_capnp::error::Builder<'a> {
             self.builder.set_data_field::<u16>(2, 0);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(4), 0)
         }
+
         pub fn has_error(&self) -> bool {
             if self.builder.get_data_field::<u16>(2) != 0 {
                 return false;
             }
             !self.builder.get_pointer_field(4).is_null()
         }
+
         #[inline]
         pub fn set_no_error(&mut self, _value: ()) {
             self.builder.set_data_field::<u16>(2, 1);
         }
+
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(2) {
@@ -3509,9 +3774,11 @@ pub mod asset_metadata {
         pub fn get_id(&self) -> crate::data_capnp::asset_uuid::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(0))
         }
+
         pub fn get_build_pipeline(&self) -> crate::data_capnp::asset_uuid::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(2))
         }
+
         pub fn get_latest_artifact(
             &self,
         ) -> crate::data_capnp::asset_metadata::latest_artifact::Pipeline {
@@ -3539,12 +3806,12 @@ pub mod asset_metadata {
         #[derive(Copy, Clone)]
         pub struct Owned(());
         impl<'a> ::capnp::traits::Owned<'a> for Owned {
-            type Reader = Reader<'a>;
             type Builder = Builder<'a>;
+            type Reader = Reader<'a>;
         }
         impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-            type Reader = Reader<'a>;
             type Builder = Builder<'a>;
+            type Reader = Reader<'a>;
         }
         impl ::capnp::traits::Pipelined for Owned {
             type Pipeline = Pipeline;
@@ -3599,12 +3866,14 @@ pub mod asset_metadata {
             pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
                 self.reader.total_size()
             }
+
             pub fn has_artifact(&self) -> bool {
                 if self.reader.get_data_field::<u16>(0) != 0 {
                     return false;
                 }
                 !self.reader.get_pointer_field(3).is_null()
             }
+
             #[inline]
             pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
                 match self.reader.get_data_field::<u16>(0) {
@@ -3655,6 +3924,7 @@ pub mod asset_metadata {
             ) -> Builder<'a> {
                 ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
             }
+
             fn get_from_pointer(
                 builder: ::capnp::private::layout::PointerBuilder<'a>,
                 default: ::core::option::Option<&'a [capnp::Word]>,
@@ -3679,9 +3949,11 @@ pub mod asset_metadata {
             pub fn into_reader(self) -> Reader<'a> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
+
             pub fn reborrow(&mut self) -> Builder<'_> {
                 Builder { ..*self }
             }
+
             pub fn reborrow_as_reader(&self) -> Reader<'_> {
                 ::capnp::traits::FromStructReader::new(self.builder.into_reader())
             }
@@ -3689,6 +3961,7 @@ pub mod asset_metadata {
             pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
                 self.builder.into_reader().total_size()
             }
+
             #[inline]
             pub fn set_artifact(
                 &mut self,
@@ -3701,6 +3974,7 @@ pub mod asset_metadata {
                     false,
                 )
             }
+
             #[inline]
             pub fn init_artifact(self) -> crate::data_capnp::artifact_metadata::Builder<'a> {
                 self.builder.set_data_field::<u16>(0, 0);
@@ -3709,16 +3983,19 @@ pub mod asset_metadata {
                     0,
                 )
             }
+
             pub fn has_artifact(&self) -> bool {
                 if self.builder.get_data_field::<u16>(0) != 0 {
                     return false;
                 }
                 !self.builder.get_pointer_field(3).is_null()
             }
+
             #[inline]
             pub fn set_none(&mut self, _value: ()) {
                 self.builder.set_data_field::<u16>(0, 1);
             }
+
             #[inline]
             pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
                 match self.builder.get_data_field::<u16>(0) {
@@ -3768,12 +4045,12 @@ pub mod artifact {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -3828,6 +4105,7 @@ pub mod artifact {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_metadata(
             self,
@@ -3837,9 +4115,11 @@ pub mod artifact {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_metadata(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_data(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -3847,6 +4127,7 @@ pub mod artifact {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_data(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
@@ -3887,6 +4168,7 @@ pub mod artifact {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -3911,9 +4193,11 @@ pub mod artifact {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -3921,6 +4205,7 @@ pub mod artifact {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_metadata(
             self,
@@ -3930,6 +4215,7 @@ pub mod artifact {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_metadata(
             &mut self,
@@ -3941,13 +4227,16 @@ pub mod artifact {
                 false,
             )
         }
+
         #[inline]
         pub fn init_metadata(self) -> crate::data_capnp::artifact_metadata::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_metadata(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_data(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -3955,14 +4244,17 @@ pub mod artifact {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_data(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(1).set_data(value);
         }
+
         #[inline]
         pub fn init_data(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(1).init_data(size)
         }
+
         pub fn has_data(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
@@ -3997,12 +4289,12 @@ pub mod build_parameters {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -4094,6 +4386,7 @@ pub mod build_parameters {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -4118,9 +4411,11 @@ pub mod build_parameters {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -4155,12 +4450,12 @@ pub mod asset_change_log_entry {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -4215,10 +4510,12 @@ pub mod asset_change_log_entry {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_num(self) -> u64 {
             self.reader.get_data_field::<u64>(0)
         }
+
         #[inline]
         pub fn get_event(
             self,
@@ -4228,6 +4525,7 @@ pub mod asset_change_log_entry {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_event(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -4268,6 +4566,7 @@ pub mod asset_change_log_entry {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -4292,9 +4591,11 @@ pub mod asset_change_log_entry {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -4302,14 +4603,17 @@ pub mod asset_change_log_entry {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_num(self) -> u64 {
             self.builder.get_data_field::<u64>(0)
         }
+
         #[inline]
         pub fn set_num(&mut self, value: u64) {
             self.builder.set_data_field::<u64>(0, value);
         }
+
         #[inline]
         pub fn get_event(
             self,
@@ -4319,6 +4623,7 @@ pub mod asset_change_log_entry {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_event(
             &mut self,
@@ -4330,10 +4635,12 @@ pub mod asset_change_log_entry {
                 false,
             )
         }
+
         #[inline]
         pub fn init_event(self) -> crate::data_capnp::asset_change_event::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_event(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -4370,12 +4677,12 @@ pub mod asset_change_event {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -4430,30 +4737,35 @@ pub mod asset_change_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         pub fn has_content_update_event(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 0 {
                 return false;
             }
             !self.reader.get_pointer_field(0).is_null()
         }
+
         pub fn has_remove_event(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 1 {
                 return false;
             }
             !self.reader.get_pointer_field(0).is_null()
         }
+
         pub fn has_path_update_event(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 2 {
                 return false;
             }
             !self.reader.get_pointer_field(0).is_null()
         }
+
         pub fn has_path_remove_event(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 3 {
                 return false;
             }
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(0) {
@@ -4521,6 +4833,7 @@ pub mod asset_change_event {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -4545,9 +4858,11 @@ pub mod asset_change_event {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -4555,6 +4870,7 @@ pub mod asset_change_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn set_content_update_event(
             &mut self,
@@ -4567,6 +4883,7 @@ pub mod asset_change_event {
                 false,
             )
         }
+
         #[inline]
         pub fn init_content_update_event(
             self,
@@ -4574,12 +4891,14 @@ pub mod asset_change_event {
             self.builder.set_data_field::<u16>(0, 0);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_content_update_event(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 0 {
                 return false;
             }
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn set_remove_event(
             &mut self,
@@ -4592,17 +4911,20 @@ pub mod asset_change_event {
                 false,
             )
         }
+
         #[inline]
         pub fn init_remove_event(self) -> crate::data_capnp::asset_remove_event::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 1);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_remove_event(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 1 {
                 return false;
             }
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn set_path_update_event(
             &mut self,
@@ -4615,17 +4937,20 @@ pub mod asset_change_event {
                 false,
             )
         }
+
         #[inline]
         pub fn init_path_update_event(self) -> crate::data_capnp::path_update_event::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 2);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_path_update_event(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 2 {
                 return false;
             }
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn set_path_remove_event(
             &mut self,
@@ -4638,17 +4963,20 @@ pub mod asset_change_event {
                 false,
             )
         }
+
         #[inline]
         pub fn init_path_remove_event(self) -> crate::data_capnp::path_remove_event::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 3);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_path_remove_event(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 3 {
                 return false;
             }
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(0) {
@@ -4724,12 +5052,12 @@ pub mod asset_content_update_event {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -4784,6 +5112,7 @@ pub mod asset_content_update_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_id(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -4791,9 +5120,11 @@ pub mod asset_content_update_event {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_id(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_import_hash(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -4801,9 +5132,11 @@ pub mod asset_content_update_event {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_import_hash(&self) -> bool {
             !self.reader.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_build_dep_hash(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -4811,6 +5144,7 @@ pub mod asset_content_update_event {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_build_dep_hash(&self) -> bool {
             !self.reader.get_pointer_field(2).is_null()
         }
@@ -4851,6 +5185,7 @@ pub mod asset_content_update_event {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -4875,9 +5210,11 @@ pub mod asset_content_update_event {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -4885,6 +5222,7 @@ pub mod asset_content_update_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_id(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -4892,6 +5230,7 @@ pub mod asset_content_update_event {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_id(
             &mut self,
@@ -4903,13 +5242,16 @@ pub mod asset_content_update_event {
                 false,
             )
         }
+
         #[inline]
         pub fn init_id(self) -> crate::data_capnp::asset_uuid::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_id(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
+
         #[inline]
         pub fn get_import_hash(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -4917,17 +5259,21 @@ pub mod asset_content_update_event {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_import_hash(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(1).set_data(value);
         }
+
         #[inline]
         pub fn init_import_hash(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(1).init_data(size)
         }
+
         pub fn has_import_hash(&self) -> bool {
             !self.builder.get_pointer_field(1).is_null()
         }
+
         #[inline]
         pub fn get_build_dep_hash(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -4935,14 +5281,17 @@ pub mod asset_content_update_event {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_build_dep_hash(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(2).set_data(value);
         }
+
         #[inline]
         pub fn init_build_dep_hash(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(2).init_data(size)
         }
+
         pub fn has_build_dep_hash(&self) -> bool {
             !self.builder.get_pointer_field(2).is_null()
         }
@@ -4977,12 +5326,12 @@ pub mod path_update_event {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -5037,6 +5386,7 @@ pub mod path_update_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_path(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -5044,6 +5394,7 @@ pub mod path_update_event {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_path(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -5084,6 +5435,7 @@ pub mod path_update_event {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -5108,9 +5460,11 @@ pub mod path_update_event {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -5118,6 +5472,7 @@ pub mod path_update_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_path(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -5125,14 +5480,17 @@ pub mod path_update_event {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_path(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(0).set_data(value);
         }
+
         #[inline]
         pub fn init_path(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(0).init_data(size)
         }
+
         pub fn has_path(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -5163,12 +5521,12 @@ pub mod asset_remove_event {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -5223,6 +5581,7 @@ pub mod asset_remove_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_id(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -5230,6 +5589,7 @@ pub mod asset_remove_event {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_id(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -5270,6 +5630,7 @@ pub mod asset_remove_event {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -5294,9 +5655,11 @@ pub mod asset_remove_event {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -5304,6 +5667,7 @@ pub mod asset_remove_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_id(self) -> ::capnp::Result<crate::data_capnp::asset_uuid::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -5311,6 +5675,7 @@ pub mod asset_remove_event {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_id(
             &mut self,
@@ -5322,10 +5687,12 @@ pub mod asset_remove_event {
                 false,
             )
         }
+
         #[inline]
         pub fn init_id(self) -> crate::data_capnp::asset_uuid::Builder<'a> {
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
+
         pub fn has_id(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -5360,12 +5727,12 @@ pub mod path_remove_event {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -5420,6 +5787,7 @@ pub mod path_remove_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_path(self) -> ::capnp::Result<::capnp::data::Reader<'a>> {
             ::capnp::traits::FromPointerReader::get_from_pointer(
@@ -5427,6 +5795,7 @@ pub mod path_remove_event {
                 ::core::option::Option::None,
             )
         }
+
         pub fn has_path(&self) -> bool {
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -5467,6 +5836,7 @@ pub mod path_remove_event {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -5491,9 +5861,11 @@ pub mod path_remove_event {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -5501,6 +5873,7 @@ pub mod path_remove_event {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_path(self) -> ::capnp::Result<::capnp::data::Builder<'a>> {
             ::capnp::traits::FromPointerBuilder::get_from_pointer(
@@ -5508,14 +5881,17 @@ pub mod path_remove_event {
                 ::core::option::Option::None,
             )
         }
+
         #[inline]
         pub fn set_path(&mut self, value: ::capnp::data::Reader<'_>) {
             self.builder.get_pointer_field(0).set_data(value);
         }
+
         #[inline]
         pub fn init_path(self, size: u32) -> ::capnp::data::Builder<'a> {
             self.builder.get_pointer_field(0).init_data(size)
         }
+
         pub fn has_path(&self) -> bool {
             !self.builder.get_pointer_field(0).is_null()
         }
@@ -5575,12 +5951,12 @@ pub mod daemon_info {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl<'a> ::capnp::traits::Owned<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl<'a> ::capnp::traits::OwnedStruct<'a> for Owned {
-        type Reader = Reader<'a>;
         type Builder = Builder<'a>;
+        type Reader = Reader<'a>;
     }
     impl ::capnp::traits::Pipelined for Owned {
         type Pipeline = Pipeline;
@@ -5635,6 +6011,7 @@ pub mod daemon_info {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.reader.total_size()
         }
+
         #[inline]
         pub fn get_version(self) -> u32 {
             self.reader.get_data_field::<u32>(0)
@@ -5676,6 +6053,7 @@ pub mod daemon_info {
         ) -> Builder<'a> {
             ::capnp::traits::FromStructBuilder::new(builder.init_struct(_private::STRUCT_SIZE))
         }
+
         fn get_from_pointer(
             builder: ::capnp::private::layout::PointerBuilder<'a>,
             default: ::core::option::Option<&'a [capnp::Word]>,
@@ -5700,9 +6078,11 @@ pub mod daemon_info {
         pub fn into_reader(self) -> Reader<'a> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
+
         pub fn reborrow(&mut self) -> Builder<'_> {
             Builder { ..*self }
         }
+
         pub fn reborrow_as_reader(&self) -> Reader<'_> {
             ::capnp::traits::FromStructReader::new(self.builder.into_reader())
         }
@@ -5710,10 +6090,12 @@ pub mod daemon_info {
         pub fn total_size(&self) -> ::capnp::Result<::capnp::MessageSize> {
             self.builder.into_reader().total_size()
         }
+
         #[inline]
         pub fn get_version(self) -> u32 {
             self.builder.get_data_field::<u32>(0)
         }
+
         #[inline]
         pub fn set_version(&mut self, value: u32) {
             self.builder.set_data_field::<u32>(0, value);

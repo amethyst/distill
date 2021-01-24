@@ -1,19 +1,21 @@
+use std::{error::Error, path::PathBuf, sync::Mutex};
+
 use atelier_core::{utils, ArtifactMetadata, AssetMetadata, AssetUuid};
 use atelier_schema::{data::asset_change_event, parse_db_metadata, service::asset_hub};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures_util::AsyncReadExt;
-use std::sync::Mutex;
-use std::{error::Error, path::PathBuf};
 use tokio::{
     net::TcpStream,
     runtime::{Builder, Runtime},
     sync::oneshot,
 };
 
-use crate::io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest};
-use crate::loader::LoaderState;
+use crate::{
+    io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest},
+    loader::LoaderState,
+};
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 
@@ -103,12 +105,14 @@ impl RpcRuntime {
 
         self.local.spawn_local(async move {
             let result = async move {
+                log::trace!("Tcp connect to {:?}", connect_string);
                 let stream = TcpStream::connect(connect_string).await?;
                 stream.set_nodelay(true)?;
 
                 use tokio_util::compat::*;
                 let (reader, writer) = stream.compat().split();
 
+                log::trace!("Creating capnp VatNetwork");
                 let rpc_network = Box::new(twoparty::VatNetwork::new(
                     reader,
                     writer,
@@ -126,9 +130,11 @@ impl RpcRuntime {
 
                 tokio::task::spawn_local(rpc_system);
 
+                log::trace!("Requesting RPC snapshot..");
                 let response = hub.get_snapshot_request().send().promise.await?;
 
                 let snapshot = response.get()?.get_snapshot()?;
+                log::trace!("Received snapshot, registering listener..");
                 let (snapshot_tx, snapshot_rx) = unbounded();
                 let listener: asset_hub::listener::Client = capnp_rpc::new_client(ListenerImpl {
                     snapshot_channel: snapshot_tx,
@@ -141,6 +147,7 @@ impl RpcRuntime {
                     snapshot,
                     snapshot_rx,
                 })?;
+                log::trace!("Registered listener, done connecting RPC loader.");
 
                 Ok(rpc_conn)
             }
