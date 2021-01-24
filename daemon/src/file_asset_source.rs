@@ -1129,7 +1129,10 @@ impl FileAssetSource {
         };
         let has_changed_paths = !changed_paths.is_empty();
         if has_changed_paths {
-            log::debug!("Found {} paths with importer changes, marking as dirty", changed_paths.len());
+            log::debug!(
+                "Found {} paths with importer changes, marking as dirty",
+                changed_paths.len()
+            );
             let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
             for p in changed_paths.iter() {
                 self.tracker
