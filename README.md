@@ -68,8 +68,8 @@ The Loader module loads assets and their dependencies for a user-implemented `As
 # Cross-Platform Support
 The project aims to support as many platforms as possible with the `Loader` module, while the `Daemon` may never be able to run on platforms without solid filesystem support such as WASM.
 Current known supported platforms:
-Linux/Mac/Windows: Loader + Daemon
-iOS: Loader
+<p>Linux/Mac/Windows: Loader + Daemon</p>
+<p>iOS: Loader</p>
 
 # Examples
 To run:
