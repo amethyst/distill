@@ -21,7 +21,7 @@ pub use crate::{
 };
 
 #[cfg(debug_assertions)]
-const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
+const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Trace;
 #[cfg(not(debug_assertions))]
 const DEFAULT_LOGGING_LEVEL: log::LevelFilter = log::LevelFilter::Info;
 

@@ -8,7 +8,6 @@ on:
 
 env:
   RUSTFLAGS: -Cdebuginfo=0 -Dwarnings
-  RUST_LOG: TRACE
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
 
@@ -44,4 +43,4 @@ jobs:
       - run: cargo +stable clippy --workspace --all-targets --all-features
         if: matrix.toolchain == 'stable' && matrix.os == 'ubuntu-latest'
 
-      - run: cargo test --workspace --all-features -- --nocapture --test-threads=1
+      - run: RUST_LOG=TRACE cargo test --workspace --all-features -- --nocapture --test-threads=1
