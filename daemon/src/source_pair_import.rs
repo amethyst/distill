@@ -835,14 +835,12 @@ fn get_path_file_state(path: PathBuf) -> Result<Option<FileState>> {
         Err(e) => return Err(Error::IO(e)),
         Ok(metadata) => Some(crate::watcher::file_metadata(&metadata)),
     };
-    Ok(state.map(|metadata| {
-        FileState {
-            path,
-            state: data::FileState::Exists,
-            last_modified: metadata.last_modified,
-            length: metadata.length,
-            ty: file_tracker::db_file_type(metadata.file_type),
-        }
+    Ok(state.map(|metadata| FileState {
+        path,
+        state: data::FileState::Exists,
+        last_modified: metadata.last_modified,
+        length: metadata.length,
+        ty: file_tracker::db_file_type(metadata.file_type),
     }))
 }
 
@@ -887,11 +885,9 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
             meta: Some(_meta),
             meta_hash: None,
             ..
-        } => {
-            Err(Error::Custom(
-                "Export target .meta path is a directory".into(),
-            ))
-        }
+        } => Err(Error::Custom(
+            "Export target .meta path is a directory".into(),
+        )),
         HashedSourcePair {
             source_hash,
             meta_hash,

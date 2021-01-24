@@ -545,12 +545,10 @@ impl<'de> Visitor<'de> for AssetRefVisitor {
                     Ok(AssetRef::Path(path))
                 }
             }
-            Err(err) => {
-                Err(E::custom(format!(
-                    "failed to parse Handle string: {:?}",
-                    err
-                )))
-            }
+            Err(err) => Err(E::custom(format!(
+                "failed to parse Handle string: {:?}",
+                err
+            ))),
         }
     }
 

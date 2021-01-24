@@ -60,18 +60,14 @@ fn set_assetref_list(
 
 pub fn parse_db_asset_ref(asset_ref: &data::asset_ref::Reader<'_>) -> AssetRef {
     match asset_ref.which().expect("capnp: failed to read asset ref") {
-        data::asset_ref::Path(p) => {
-            AssetRef::Path(PathBuf::from(
-                std::str::from_utf8(p.expect("capnp: failed to read asset ref path"))
-                    .expect("capnp: failed to parse utf8 string"),
-            ))
-        }
-        data::asset_ref::Uuid(uuid) => {
-            AssetRef::Uuid(make_array(
-                uuid.and_then(|id| id.get_id())
-                    .expect("capnp: failed to read asset ref uuid"),
-            ))
-        }
+        data::asset_ref::Path(p) => AssetRef::Path(PathBuf::from(
+            std::str::from_utf8(p.expect("capnp: failed to read asset ref path"))
+                .expect("capnp: failed to parse utf8 string"),
+        )),
+        data::asset_ref::Uuid(uuid) => AssetRef::Uuid(make_array(
+            uuid.and_then(|id| id.get_id())
+                .expect("capnp: failed to read asset ref uuid"),
+        )),
     }
 }
 

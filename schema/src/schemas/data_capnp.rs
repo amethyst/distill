@@ -281,22 +281,18 @@ pub mod asset_ref {
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(0) {
-                0 => {
-                    ::core::result::Result::Ok(Uuid(
-                        ::capnp::traits::FromPointerReader::get_from_pointer(
-                            &self.reader.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
-                1 => {
-                    ::core::result::Result::Ok(Path(
-                        ::capnp::traits::FromPointerReader::get_from_pointer(
-                            &self.reader.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
+                0 => ::core::result::Result::Ok(Uuid(
+                    ::capnp::traits::FromPointerReader::get_from_pointer(
+                        &self.reader.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
+                1 => ::core::result::Result::Ok(Path(
+                    ::capnp::traits::FromPointerReader::get_from_pointer(
+                        &self.reader.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
                 x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
             }
         }
@@ -423,22 +419,18 @@ pub mod asset_ref {
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(0) {
-                0 => {
-                    ::core::result::Result::Ok(Uuid(
-                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                            self.builder.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
-                1 => {
-                    ::core::result::Result::Ok(Path(
-                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                            self.builder.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
+                0 => ::core::result::Result::Ok(Uuid(
+                    ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                        self.builder.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
+                1 => ::core::result::Result::Ok(Path(
+                    ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                        self.builder.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
                 x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
             }
         }
@@ -2131,14 +2123,12 @@ pub mod source_metadata {
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(2) {
-                0 => {
-                    ::core::result::Result::Ok(Error(
-                        ::capnp::traits::FromPointerReader::get_from_pointer(
-                            &self.reader.get_pointer_field(7),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
+                0 => ::core::result::Result::Ok(Error(
+                    ::capnp::traits::FromPointerReader::get_from_pointer(
+                        &self.reader.get_pointer_field(7),
+                        ::core::option::Option::None,
+                    ),
+                )),
                 1 => ::core::result::Result::Ok(NoError(())),
                 x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
             }
@@ -2514,14 +2504,12 @@ pub mod source_metadata {
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(2) {
-                0 => {
-                    ::core::result::Result::Ok(Error(
-                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                            self.builder.get_pointer_field(7),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
+                0 => ::core::result::Result::Ok(Error(
+                    ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                        self.builder.get_pointer_field(7),
+                        ::core::option::Option::None,
+                    ),
+                )),
                 1 => ::core::result::Result::Ok(NoError(())),
                 x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
             }
@@ -3515,14 +3503,12 @@ pub mod asset_metadata {
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(2) {
-                0 => {
-                    ::core::result::Result::Ok(Error(
-                        ::capnp::traits::FromPointerReader::get_from_pointer(
-                            &self.reader.get_pointer_field(4),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
+                0 => ::core::result::Result::Ok(Error(
+                    ::capnp::traits::FromPointerReader::get_from_pointer(
+                        &self.reader.get_pointer_field(4),
+                        ::core::option::Option::None,
+                    ),
+                )),
                 1 => ::core::result::Result::Ok(NoError(())),
                 x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
             }
@@ -3762,14 +3748,12 @@ pub mod asset_metadata {
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(2) {
-                0 => {
-                    ::core::result::Result::Ok(Error(
-                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                            self.builder.get_pointer_field(4),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
+                0 => ::core::result::Result::Ok(Error(
+                    ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                        self.builder.get_pointer_field(4),
+                        ::core::option::Option::None,
+                    ),
+                )),
                 1 => ::core::result::Result::Ok(NoError(())),
                 x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
             }
@@ -3893,14 +3877,12 @@ pub mod asset_metadata {
             #[inline]
             pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
                 match self.reader.get_data_field::<u16>(0) {
-                    0 => {
-                        ::core::result::Result::Ok(Artifact(
-                            ::capnp::traits::FromPointerReader::get_from_pointer(
-                                &self.reader.get_pointer_field(3),
-                                ::core::option::Option::None,
-                            ),
-                        ))
-                    }
+                    0 => ::core::result::Result::Ok(Artifact(
+                        ::capnp::traits::FromPointerReader::get_from_pointer(
+                            &self.reader.get_pointer_field(3),
+                            ::core::option::Option::None,
+                        ),
+                    )),
                     1 => ::core::result::Result::Ok(None(())),
                     x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
                 }
@@ -4017,14 +3999,12 @@ pub mod asset_metadata {
             #[inline]
             pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
                 match self.builder.get_data_field::<u16>(0) {
-                    0 => {
-                        ::core::result::Result::Ok(Artifact(
-                            ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                                self.builder.get_pointer_field(3),
-                                ::core::option::Option::None,
-                            ),
-                        ))
-                    }
+                    0 => ::core::result::Result::Ok(Artifact(
+                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                            self.builder.get_pointer_field(3),
+                            ::core::option::Option::None,
+                        ),
+                    )),
                     1 => ::core::result::Result::Ok(None(())),
                     x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
                 }
@@ -4789,38 +4769,30 @@ pub mod asset_change_event {
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichReader<'a>, ::capnp::NotInSchema> {
             match self.reader.get_data_field::<u16>(0) {
-                0 => {
-                    ::core::result::Result::Ok(ContentUpdateEvent(
-                        ::capnp::traits::FromPointerReader::get_from_pointer(
-                            &self.reader.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
-                1 => {
-                    ::core::result::Result::Ok(RemoveEvent(
-                        ::capnp::traits::FromPointerReader::get_from_pointer(
-                            &self.reader.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
-                2 => {
-                    ::core::result::Result::Ok(PathUpdateEvent(
-                        ::capnp::traits::FromPointerReader::get_from_pointer(
-                            &self.reader.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
-                3 => {
-                    ::core::result::Result::Ok(PathRemoveEvent(
-                        ::capnp::traits::FromPointerReader::get_from_pointer(
-                            &self.reader.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
+                0 => ::core::result::Result::Ok(ContentUpdateEvent(
+                    ::capnp::traits::FromPointerReader::get_from_pointer(
+                        &self.reader.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
+                1 => ::core::result::Result::Ok(RemoveEvent(
+                    ::capnp::traits::FromPointerReader::get_from_pointer(
+                        &self.reader.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
+                2 => ::core::result::Result::Ok(PathUpdateEvent(
+                    ::capnp::traits::FromPointerReader::get_from_pointer(
+                        &self.reader.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
+                3 => ::core::result::Result::Ok(PathRemoveEvent(
+                    ::capnp::traits::FromPointerReader::get_from_pointer(
+                        &self.reader.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
                 x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
             }
         }
@@ -5008,38 +4980,30 @@ pub mod asset_change_event {
         #[inline]
         pub fn which(self) -> ::core::result::Result<WhichBuilder<'a>, ::capnp::NotInSchema> {
             match self.builder.get_data_field::<u16>(0) {
-                0 => {
-                    ::core::result::Result::Ok(ContentUpdateEvent(
-                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                            self.builder.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
-                1 => {
-                    ::core::result::Result::Ok(RemoveEvent(
-                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                            self.builder.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
-                2 => {
-                    ::core::result::Result::Ok(PathUpdateEvent(
-                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                            self.builder.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
-                3 => {
-                    ::core::result::Result::Ok(PathRemoveEvent(
-                        ::capnp::traits::FromPointerBuilder::get_from_pointer(
-                            self.builder.get_pointer_field(0),
-                            ::core::option::Option::None,
-                        ),
-                    ))
-                }
+                0 => ::core::result::Result::Ok(ContentUpdateEvent(
+                    ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                        self.builder.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
+                1 => ::core::result::Result::Ok(RemoveEvent(
+                    ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                        self.builder.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
+                2 => ::core::result::Result::Ok(PathUpdateEvent(
+                    ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                        self.builder.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
+                3 => ::core::result::Result::Ok(PathRemoveEvent(
+                    ::capnp::traits::FromPointerBuilder::get_from_pointer(
+                        self.builder.get_pointer_field(0),
+                        ::core::option::Option::None,
+                    ),
+                )),
                 x => ::core::result::Result::Err(::capnp::NotInSchema(x)),
             }
         }

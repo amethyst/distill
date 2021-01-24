@@ -988,11 +988,9 @@ impl Loader {
         } else {
             load
         };
-        self.data.load_states.get(&load).map(|s| {
-            LoadInfo {
-                asset_id: s.asset_id,
-                refs: s.refs.load(Ordering::Relaxed) as u32,
-            }
+        self.data.load_states.get(&load).map(|s| LoadInfo {
+            asset_id: s.asset_id,
+            refs: s.refs.load(Ordering::Relaxed) as u32,
         })
     }
 
@@ -1014,19 +1012,17 @@ impl Loader {
         if let Some(load) = self.data.load_states.get(&load) {
             let version = load.versions.iter().max_by_key(|v| v.version);
             version
-                .map(|v| {
-                    match v.state {
-                        LoadState::None => {
-                            if load.refs.load(Ordering::Relaxed) > 0 {
-                                LoadStatus::Loading
-                            } else {
-                                LoadStatus::NotRequested
-                            }
+                .map(|v| match v.state {
+                    LoadState::None => {
+                        if load.refs.load(Ordering::Relaxed) > 0 {
+                            LoadStatus::Loading
+                        } else {
+                            LoadStatus::NotRequested
                         }
-                        LoadState::Loaded => LoadStatus::Loaded,
-                        LoadState::UnloadRequested | LoadState::Unloading => LoadStatus::Unloading,
-                        _ => LoadStatus::Loading,
                     }
+                    LoadState::Loaded => LoadStatus::Loaded,
+                    LoadState::UnloadRequested | LoadState::Unloading => LoadStatus::Unloading,
+                    _ => LoadStatus::Loading,
                 })
                 .unwrap_or(LoadStatus::NotRequested)
         } else {

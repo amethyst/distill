@@ -1367,13 +1367,11 @@ impl FileAssetSource {
 
         let hashed_files: Vec<HashedSourcePair> = hashed_files
             .into_iter()
-            .filter_map(|f| {
-                match f {
-                    Ok(hashed_file) => Some(hashed_file),
-                    Err(err) => {
-                        error!("Hashing error: {}", err);
-                        None
-                    }
+            .filter_map(|f| match f {
+                Ok(hashed_file) => Some(hashed_file),
+                Err(err) => {
+                    error!("Hashing error: {}", err);
+                    None
                 }
             })
             .collect();
@@ -1456,12 +1454,10 @@ impl FileAssetSource {
             .1
             .assets
             .into_iter()
-            .map(|a| {
-                AssetImportResultMetadata {
-                    metadata: a.metadata,
-                    unresolved_load_refs: a.unresolved_load_refs,
-                    unresolved_build_refs: a.unresolved_build_refs,
-                }
+            .map(|a| AssetImportResultMetadata {
+                metadata: a.metadata,
+                unresolved_load_refs: a.unresolved_load_refs,
+                unresolved_build_refs: a.unresolved_build_refs,
             })
             .collect();
         let asset_ids: Vec<AssetUuid> = new_asset_metadata.iter().map(|a| a.metadata.id).collect();

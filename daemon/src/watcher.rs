@@ -161,37 +161,32 @@ impl DirWatcher {
 
         loop {
             match self.rx.recv() {
-                Ok(event) => {
-                    match self.handle_notify_event(event, false) {
-                        Ok(maybe_event) => {
-                            if let Some(evt) = maybe_event {
-                                log::debug!("File event: {:?}", evt);
-                                self.asset_tx.send(evt).unwrap();
-                            }
-                        }
-                        Err(err) => {
-                            match err {
-                                Error::RescanRequired => {
-                                    for dir in &self.dirs.clone() {
-                                        if let Err(err) = self.scan_directory(&dir, &|path| {
-                                            DebouncedEvent::Create(path)
-                                        }) {
-                                            self.asset_tx
-                                                .send(FileEvent::FileError(err))
-                                                .expect("Failed to send file error event");
-                                        }
-                                    }
-                                }
-                                Error::Exit => break,
-                                _ => {
-                                    self.asset_tx
-                                        .send(FileEvent::FileError(err))
-                                        .expect("Failed to send file error event")
-                                }
-                            }
+                Ok(event) => match self.handle_notify_event(event, false) {
+                    Ok(maybe_event) => {
+                        if let Some(evt) = maybe_event {
+                            log::debug!("File event: {:?}", evt);
+                            self.asset_tx.send(evt).unwrap();
                         }
                     }
-                }
+                    Err(err) => match err {
+                        Error::RescanRequired => {
+                            for dir in &self.dirs.clone() {
+                                if let Err(err) =
+                                    self.scan_directory(&dir, &|path| DebouncedEvent::Create(path))
+                                {
+                                    self.asset_tx
+                                        .send(FileEvent::FileError(err))
+                                        .expect("Failed to send file error event");
+                                }
+                            }
+                        }
+                        Error::Exit => break,
+                        _ => self
+                            .asset_tx
+                            .send(FileEvent::FileError(err))
+                            .expect("Failed to send file error event"),
+                    },
+                },
                 Err(_) => {
                     self.asset_tx
                         .send(FileEvent::FileError(Error::RecvError))
@@ -322,12 +317,10 @@ impl DirWatcher {
                         Ok(None)
                     }
                     Err(e) => Err(Error::IO(e)),
-                    Ok(metadata) => {
-                        Ok(Some(FileEvent::Updated(
-                            path.clone(),
-                            file_metadata(&metadata),
-                        )))
-                    }
+                    Ok(metadata) => Ok(Some(FileEvent::Updated(
+                        path.clone(),
+                        file_metadata(&metadata),
+                    ))),
                 };
                 match metadata_result {
                     Ok(None) => {

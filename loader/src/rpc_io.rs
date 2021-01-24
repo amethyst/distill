@@ -143,11 +143,9 @@ impl RpcRuntime {
 
                 let mut request = hub.register_listener_request();
                 request.get().set_listener(listener);
-                let rpc_conn = request.send().promise.await.map(|_| {
-                    RpcConnection {
-                        snapshot,
-                        snapshot_rx,
-                    }
+                let rpc_conn = request.send().promise.await.map(|_| RpcConnection {
+                    snapshot,
+                    snapshot_rx,
                 })?;
                 log::trace!("Registered listener, done connecting RPC loader.");
 
@@ -234,12 +232,10 @@ impl LoaderIO for RpcIO {
                 // update connection state
                 InternalConnectionState::Connecting(mut pending_connection) => {
                     match pending_connection.try_recv() {
-                        Ok(connection_result) => {
-                            match connection_result {
-                                Ok(conn) => InternalConnectionState::Connected(conn),
-                                Err(err) => InternalConnectionState::Error(err),
-                            }
-                        }
+                        Ok(connection_result) => match connection_result {
+                            Ok(conn) => InternalConnectionState::Connected(conn),
+                            Err(err) => InternalConnectionState::Error(err),
+                        },
                         Err(oneshot::error::TryRecvError::Closed) => {
                             InternalConnectionState::Error(Box::new(
                                 oneshot::error::TryRecvError::Closed,
