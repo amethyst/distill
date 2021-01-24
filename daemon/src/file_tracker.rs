@@ -697,8 +697,8 @@ impl FileTracker {
 
         let mut stopping = self.stopping_event.listen();
 
-        let mut listener_tx_guard = self.listener_rx.lock().await;
-        let listener_tx = listener_tx_guard.get_mut();
+        let mut listener_rx_guard = self.listener_rx.lock().await;
+        let listener_rx = listener_rx_guard.get_mut();
 
         let mut dirty = false;
 
@@ -707,7 +707,7 @@ impl FileTracker {
             let mut delay = time::sleep(Duration::from_millis(40));
 
             tokio::select! {
-                new_listener = listener_tx.next() => listeners.register(new_listener),
+                new_listener = listener_rx.next() => listeners.register(new_listener),
                 _ = delay, if dirty => {
                     listeners.send_event(FileTrackerEvent::Update);
                     dirty = false;
