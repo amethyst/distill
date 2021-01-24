@@ -56,7 +56,7 @@ The Loader module loads assets and their dependencies for a user-implemented `As
 <details><summary>&check; <b>Automatic Loading of Dependencies</b> </summary><p>When a source file is imported and an asset is produced, dependencies are gathered for the asset and saved as metadata. The Loader automatically ensures that dependencies are loaded before the asset is loaded, and that dependencies are unloaded when they are no longer needed.</p></details>
 <details><summary>&check; <b>serde` Support for Handles</b> 🎉💯 </summary><p>An optional Handle type is provided with support for deserialization and serialization using `serde`. Handles can be deserialized as either a UUID or a path.</p></details>
 <details><summary>&check; <b>Automatic Registration of Handle Dependencies</b> 🎉💯</summary><p>Handle references that are serialized as part of an asset are automatically registered and the referenced assets are guaranteed to be loaded by the Loader before the depending asset is loaded. This means Handles in assets are always guaranteed to be valid and loaded.</p></details>
-<details><summary><b>Packing for distribution</b></summary><p>To distribute your game, you will want to pack assets into files with enough metadata to load them quickly. The CLI supports packing assets into a file format which the `PackfileIO` implementation supports loading.</p></details>
+<details><summary>&check; <b>Packing for distribution</b></summary><p>To distribute your game, you will want to pack assets into files with enough metadata to load them quickly. The CLI supports packing assets into a file format which the `PackfileIO` implementation supports loading.</p></details>
 
 
 ## TODO
