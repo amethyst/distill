@@ -1129,6 +1129,7 @@ impl FileAssetSource {
         };
         let has_changed_paths = !changed_paths.is_empty();
         if has_changed_paths {
+            log::debug!("Found {} paths with importer changes, marking as dirty", changed_paths.len());
             let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
             for p in changed_paths.iter() {
                 self.tracker
@@ -1145,6 +1146,7 @@ impl FileAssetSource {
     fn handle_dirty_files(&self, txn: &mut RwTransaction<'_>) -> HashMap<PathBuf, SourcePair> {
         let dirty_files = self.tracker.read_dirty_files(txn);
         let mut source_meta_pairs: HashMap<PathBuf, SourcePair> = HashMap::new();
+        log::trace!("Found {} dirty files", dirty_files.len());
 
         if !dirty_files.is_empty() {
             for state in dirty_files.into_iter() {
@@ -1350,17 +1352,22 @@ impl FileAssetSource {
         let start_time = Instant::now();
         let mut changed_files = Vec::new();
 
+        log::trace!("handle_update acquiring rw txn");
         let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
+        log::trace!("handle_update acquired rw txn, checking rename events");
 
         // Before reading the filesystem state we need to process rename events.
         // This must be done in the same transaction to guarantee database consistency.
         self.handle_rename_events(&mut txn);
+        log::trace!("handle_update handle_dirty_files");
         let source_meta_pairs = self.handle_dirty_files(&mut txn);
 
         // This looks a little stupid, since there is no `into_values`
         changed_files.extend(source_meta_pairs.into_iter().map(|(_, v)| v));
 
+        log::trace!("handle_update committing");
         txn.commit().expect("Failed to commit txn");
+        log::trace!("handle_update committed");
 
         let hashed_files = hash_files(&changed_files);
         debug!("Hashed {}", hashed_files.len());
@@ -1407,6 +1414,7 @@ impl FileAssetSource {
         self.tracker.register_listener(tx);
 
         while let Some(evt) = rx.next().await {
+            log::debug!("Received file tracker event {:?}", evt);
             match evt {
                 FileTrackerEvent::Start => {
                     started = true;
