@@ -5,7 +5,7 @@ mod storage;
 
 use std::path::PathBuf;
 
-use atelier_assets::daemon::{init_logging, AssetDaemon};
+use distill::daemon::{init_logging, AssetDaemon};
 
 fn main() {
     init_logging().expect("failed to init logging");

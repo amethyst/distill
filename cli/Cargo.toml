@@ -1,5 +1,5 @@
 [package]
-name = "atelier-cli"
+name = "distill-cli"
 version = "0.1.0"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
@@ -11,7 +11,7 @@ capnp-rpc = "0.14.0"
 tokio = { version = "1.0", features = ["io-std", "rt", "net", "io-util"] }
 tokio-util = { version = "0.6.1", features = ["codec", "compat"] }
 futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
-atelier-schema = { path = "../schema" }
+distill-schema = { path = "../schema" }
 uuid = "0.8.2"
 async-trait = "0.1.22"
 crossterm = { version = "0.17", features = ["event-stream"] }

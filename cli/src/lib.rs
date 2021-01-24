@@ -1,7 +1,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
 
 use async_trait::async_trait;
-use atelier_schema::{
+use distill_schema::{
     data, pack,
     service::asset_hub::{self, snapshot::Client as Snapshot},
 };
@@ -43,9 +43,9 @@ where
 #[allow(dead_code)]
 fn endpoint() -> String {
     if cfg!(windows) {
-        r"\\.\pipe\atelier-assets".to_string()
+        r"\\.\pipe\distill".to_string()
     } else {
-        r"/tmp/atelier-assets".to_string()
+        r"/tmp/distill".to_string()
     }
 }
 pub struct Context {

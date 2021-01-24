@@ -2,7 +2,7 @@ mod game;
 mod image;
 use std::path::PathBuf;
 
-use atelier_assets::daemon::{init_logging, AssetDaemon};
+use distill::daemon::{init_logging, AssetDaemon};
 pub use game::Storage;
 
 fn main() {

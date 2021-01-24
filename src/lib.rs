@@ -1,9 +1,9 @@
-pub use atelier_core as core;
-use atelier_core::{AssetRef, AssetUuid};
-pub use atelier_daemon as daemon;
-pub use atelier_importer as importer;
-pub use atelier_loader as loader;
-use atelier_loader::handle::{Handle, SerdeContext};
+pub use distill_core as core;
+use distill_core::{AssetRef, AssetUuid};
+pub use distill_daemon as daemon;
+pub use distill_importer as importer;
+pub use distill_loader as loader;
+use distill_loader::handle::{Handle, SerdeContext};
 
 pub fn make_handle<T>(uuid: AssetUuid) -> Handle<T> {
     SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
@@ -14,10 +14,10 @@ pub fn make_handle<T>(uuid: AssetUuid) -> Handle<T> {
     })
 }
 
-pub fn make_handle_from_str<T>(uuid_str: &str) -> Result<Handle<T>, atelier_core::uuid::Error> {
+pub fn make_handle_from_str<T>(uuid_str: &str) -> Result<Handle<T>, distill_core::uuid::Error> {
     use std::str::FromStr;
     Ok(make_handle(AssetUuid(
-        *atelier_core::uuid::Uuid::from_str(uuid_str)?.as_bytes(),
+        *distill_core::uuid::Uuid::from_str(uuid_str)?.as_bytes(),
     )))
 }
 
@@ -33,12 +33,12 @@ mod tests {
         sync::{Once, RwLock},
     };
 
-    use atelier_core::{type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid};
-    use atelier_daemon::{init_logging, AssetDaemon};
-    use atelier_importer::{
+    use distill_core::{type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid};
+    use distill_daemon::{init_logging, AssetDaemon};
+    use distill_importer::{
         AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,
     };
-    use atelier_loader::{
+    use distill_loader::{
         rpc_io::RpcIO,
         storage::{
             AssetLoadOp, AssetStorage, DefaultIndirectionResolver, LoadStatus, LoaderInfoProvider,
@@ -68,7 +68,7 @@ mod tests {
             loader_handle: LoadHandle,
             load_op: AssetLoadOp,
             version: u32,
-        ) -> atelier_loader::Result<()> {
+        ) -> distill_loader::Result<()> {
             println!("update asset {:?} data size {}", loader_handle, data.len());
             let mut map = self.map.write().unwrap();
             let state = map.entry(loader_handle).or_insert(LoadState {

@@ -1,4 +1,4 @@
-use atelier_schema::data::artifact;
+use distill_schema::data::artifact;
 
 pub trait BuildFunc {
     fn build(artifact: artifact::Reader);

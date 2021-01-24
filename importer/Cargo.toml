@@ -1,12 +1,12 @@
 [package]
-name = "atelier-importer"
+name = "distill-importer"
 version = "0.1.0"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-atelier-core = { path = "../core", version = "0.1.0", features = ["serde-1"] }
+distill-core = { path = "../core", version = "0.1.0", features = ["serde-1"] }
 uuid = { version = "0.8.2", features = ["v4"] }
 serde = "1"
 erased-serde = "0.3"
@@ -21,5 +21,5 @@ serde_importers = [
     "typetag",
     "serde-importable-derive",
     "ron",
-    "atelier-core/type_uuid",
+    "distill-core/type_uuid",
 ]

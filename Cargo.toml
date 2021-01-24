@@ -1,5 +1,5 @@
 [package]
-name = "atelier-assets"
+name = "distill"
 version = "0.1.0"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
@@ -8,7 +8,7 @@ exclude = ["examples/*"]
 keywords = ["game", "engine", "assets", "loading", "processing", "indexing"]
 categories = ["game-engines"]
 
-repository = "https://github.com/amethyst/atelier-assets"
+repository = "https://github.com/amethyst/distill"
 
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -27,10 +27,10 @@ members = [
 ]
 
 [dependencies]
-atelier-core = { version = "0.1", path = "core" }
-atelier-daemon = { version = "0.1", path = "daemon" }
-atelier-importer = { version = "0.1", path = "importer" }
-atelier-loader = { version = "0.1", path = "loader" }
+distill-core = { version = "0.1", path = "core" }
+distill-daemon = { version = "0.1", path = "daemon" }
+distill-importer = { version = "0.1", path = "importer" }
+distill-loader = { version = "0.1", path = "loader" }
 
 [dev-dependencies]
 futures = "0.3"
@@ -41,11 +41,11 @@ serial_test = "0.5.1"
 
 
 [features]
-serde-1 = ["atelier-core/serde"]
-type_uuid = ["atelier-core/type_uuid"]
-serde_importers = ["atelier-importer/serde_importers"]
-parallel_hash = ["atelier-daemon/parallel_hash"]
-pretty_log = ["atelier-daemon/pretty_log"]
-rpc_io = ["atelier-loader/rpc_io"]
-packfile_io = ["atelier-loader/packfile_io"]
-handle = ["atelier-loader/handle"]
+serde-1 = ["distill-core/serde"]
+type_uuid = ["distill-core/type_uuid"]
+serde_importers = ["distill-importer/serde_importers"]
+parallel_hash = ["distill-daemon/parallel_hash"]
+pretty_log = ["distill-daemon/pretty_log"]
+rpc_io = ["distill-loader/rpc_io"]
+packfile_io = ["distill-loader/packfile_io"]
+handle = ["distill-loader/handle"]

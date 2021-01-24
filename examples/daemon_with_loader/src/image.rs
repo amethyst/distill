@@ -1,4 +1,4 @@
-use atelier_assets::{
+use distill::{
     core::{type_uuid, type_uuid::TypeUuid, AssetUuid},
     importer::{AsyncImporter, Error, ImportOp, ImportedAsset, ImporterValue, Result},
 };

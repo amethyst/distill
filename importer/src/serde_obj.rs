@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use atelier_core::TypeUuidDynamic;
+use distill_core::TypeUuidDynamic;
 use erased_serde::*;
 
 /// A trait for serializing any struct with a TypeUuid

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use atelier_importer::SerializedAsset;
-use atelier_schema::{build_artifact_metadata, data::artifact};
+use distill_importer::SerializedAsset;
+use distill_schema::{build_artifact_metadata, data::artifact};
 
 use crate::{
     capnp_db::{DBTransaction, Environment, MessageReader, RoTransaction, RwTransaction},

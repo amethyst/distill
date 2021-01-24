@@ -295,7 +295,7 @@ impl SerdeContext {
 
 /// This context can be used to maintain AssetUuid references through a serialize/deserialize cycle
 /// even if the LoadHandles produced are invalid. This is useful when a loader is not
-/// present, such as when processing in the atelier-assets AssetDaemon.
+/// present, such as when processing in the Distill Daemon.
 struct DummySerdeContext {
     maps: RwLock<DummySerdeContextMaps>,
     current: Mutex<DummySerdeContextCurrent>,
@@ -372,7 +372,7 @@ impl LoaderInfoProvider for DummySerdeContext {
 struct DummySerdeContextHandle {
     dummy: Arc<DummySerdeContext>,
 }
-impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeContextHandle {
+impl<'a> distill_core::importer_context::ImporterContextHandle for DummySerdeContextHandle {
     fn scope<'s>(&'s self, fut: BoxFuture<'s, ()>) -> BoxFuture<'s, ()> {
         let sender = self.dummy.ref_sender.clone();
         let loader = &*self.dummy;
@@ -411,8 +411,8 @@ impl<'a> atelier_core::importer_context::ImporterContextHandle for DummySerdeCon
 
 /// Register this context with AssetDaemon to add serde support for Handle.
 pub struct HandleSerdeContextProvider;
-impl atelier_core::importer_context::ImporterContext for HandleSerdeContextProvider {
-    fn handle(&self) -> Box<dyn atelier_core::importer_context::ImporterContextHandle> {
+impl distill_core::importer_context::ImporterContext for HandleSerdeContextProvider {
+    fn handle(&self) -> Box<dyn distill_core::importer_context::ImporterContextHandle> {
         let dummy = Arc::new(DummySerdeContext::new());
         Box::new(DummySerdeContextHandle { dummy })
     }

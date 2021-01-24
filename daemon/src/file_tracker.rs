@@ -14,8 +14,8 @@ use std::{
     time::Duration,
 };
 
-use atelier_core::utils::{self, canonicalize_path};
-use atelier_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
+use distill_core::utils::{self, canonicalize_path};
+use distill_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use event_listener::Event;
 use futures::{
     channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},

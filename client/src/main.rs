@@ -8,7 +8,7 @@ use std::{
     time::Instant,
 };
 
-use atelier_schema::service::asset_hub;
+use distill_schema::service::asset_hub;
 use capnp::message::ReaderOptions;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use tokio::runtime::Runtime;

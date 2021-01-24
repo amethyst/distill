@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use atelier_core::{type_uuid, type_uuid::TypeUuid, AssetUuid};
+use distill_core::{type_uuid, type_uuid::TypeUuid, AssetUuid};
 use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +63,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate as atelier_importer;
+    use crate as distill_importer;
     use crate::*;
 
     #[derive(Serialize, Deserialize, TypeUuid, SerdeImportable, PartialEq, Eq)]

@@ -1,5 +1,5 @@
-use atelier_core::{ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
-use atelier_importer::{ArtifactMetadata, SerdeObj, SerializedAsset};
+use distill_core::{ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use distill_importer::{ArtifactMetadata, SerdeObj, SerializedAsset};
 
 use crate::Result;
 

@@ -5,8 +5,8 @@ use std::{
     sync::Arc,
 };
 
-use atelier_core::{utils::make_array, ArtifactMetadata, AssetMetadata, AssetRef, AssetUuid};
-use atelier_schema::pack::pack_file;
+use distill_core::{utils::make_array, ArtifactMetadata, AssetMetadata, AssetRef, AssetUuid};
+use distill_schema::pack::pack_file;
 use capnp::serialize::SliceSegments;
 use memmap::{Mmap, MmapOptions};
 use thread_local::ThreadLocal;
@@ -102,7 +102,7 @@ impl PackfileReaderInner {
             if let Some(idx) = self.index_by_uuid.get(&uuid) {
                 let entry = entries.get(*idx);
                 let artifact_metadata =
-                    atelier_schema::parse_artifact_metadata(&entry.get_artifact()?.get_metadata()?);
+                    distill_schema::parse_artifact_metadata(&entry.get_artifact()?.get_metadata()?);
                 for dep in &artifact_metadata.load_deps {
                     if let AssetRef::Uuid(dep_uuid) = dep {
                         if !visited.contains(&dep_uuid) {
@@ -144,7 +144,7 @@ impl PackfileReaderInner {
             for idx in indices {
                 let entry = entries.get(*idx);
                 let asset_metadata =
-                    atelier_schema::parse_db_metadata(&entry.get_asset_metadata()?);
+                    distill_schema::parse_db_metadata(&entry.get_asset_metadata()?);
                 metadata.push(asset_metadata);
             }
             Ok(vec![(path, metadata)])

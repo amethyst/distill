@@ -10,8 +10,8 @@ use std::{
 
 use asset_hub::AssetHub;
 use asset_hub_service::AssetHubService;
-use atelier_importer::{BoxedImporter, ImporterContext};
-use atelier_schema::data;
+use distill_importer::{BoxedImporter, ImporterContext};
+use distill_schema::data;
 use file_asset_source::FileAssetSource;
 use tokio::sync::oneshot::{self, Receiver, Sender};
 
@@ -60,8 +60,8 @@ pub struct AssetDaemon {
 }
 
 pub fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
-    vec![atelier_loader::if_handle_enabled!(Box::new(
-        atelier_loader::handle::HandleSerdeContextProvider
+    vec![distill_loader::if_handle_enabled!(Box::new(
+        distill_loader::handle::HandleSerdeContextProvider
     ))]
 }
 
@@ -69,8 +69,8 @@ pub fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
 pub fn default_importers() -> Vec<(&'static str, Box<dyn BoxedImporter>)> {
     let mut importers: Vec<(&'static str, Box<dyn BoxedImporter>)> = vec![];
 
-    atelier_importer::if_serde_importers!(
-        importers.push(("ron", Box::new(atelier_importer::RonImporter::default())))
+    distill_importer::if_serde_importers!(
+        importers.push(("ron", Box::new(distill_importer::RonImporter::default())))
     );
     importers
 }

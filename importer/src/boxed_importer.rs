@@ -1,4 +1,4 @@
-use atelier_core::TypeUuidDynamic;
+use distill_core::TypeUuidDynamic;
 use erased_serde::Deserializer;
 use futures::{future::BoxFuture, AsyncRead, AsyncWrite};
 use serde::{Deserialize, Serialize};

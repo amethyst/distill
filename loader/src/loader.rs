@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use atelier_core::{ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
+use distill_core::{ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dashmap::DashMap;
 use log::error;
@@ -714,7 +714,7 @@ impl LoaderState {
             let indirect_id = entry.key();
             let handle = entry.value();
             let cleaned_path =
-                atelier_core::utils::canonicalize_path(&PathBuf::from(indirect_id.path()));
+                distill_core::utils::canonicalize_path(&PathBuf::from(indirect_id.path()));
             for change in &changes {
                 if change == &cleaned_path {
                     if let Some(mut indirect) = self.indirect_states.get_mut(&handle) {

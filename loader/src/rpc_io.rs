@@ -1,7 +1,7 @@
 use std::{error::Error, path::PathBuf, sync::Mutex};
 
-use atelier_core::{utils, ArtifactMetadata, AssetMetadata, AssetUuid};
-use atelier_schema::{data::asset_change_event, parse_db_metadata, service::asset_hub};
+use distill_core::{utils, ArtifactMetadata, AssetMetadata, AssetUuid};
+use distill_schema::{data::asset_change_event, parse_db_metadata, service::asset_hub};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};

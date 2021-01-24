@@ -1,6 +1,6 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, error::Error, sync::Arc};
 
-use atelier_assets::{
+use distill::{
     core::type_uuid::TypeUuid,
     loader::{
         crossbeam_channel::Sender,
@@ -161,7 +161,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         version: u32,
     ) -> Result<(), Box<dyn Error + Send + 'static>> {
         // To enable automatic serde of Handle, we need to set up a SerdeContext with a RefOp sender
-        let asset = futures_executor::block_on(atelier_assets::loader::handle::SerdeContext::with(
+        let asset = futures_executor::block_on(distill::loader::handle::SerdeContext::with(
             loader_info,
             (*self.refop_sender).clone(),
             async { bincode::deserialize::<A>(&data) },
