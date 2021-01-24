@@ -8,6 +8,7 @@ on:
 
 env:
   RUSTFLAGS: -Cdebuginfo=0 -Dwarnings
+  RUST_LOG: TRACE
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
 
