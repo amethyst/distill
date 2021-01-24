@@ -103,12 +103,14 @@ impl RpcRuntime {
 
         self.local.spawn_local(async move {
             let result = async move {
+                log::trace!("Tcp connect to {:?}", connect_string);
                 let stream = TcpStream::connect(connect_string).await?;
                 stream.set_nodelay(true)?;
 
                 use tokio_util::compat::*;
                 let (reader, writer) = stream.compat().split();
 
+                log::trace!("Creating capnp VatNetwork");
                 let rpc_network = Box::new(twoparty::VatNetwork::new(
                     reader,
                     writer,
@@ -126,9 +128,11 @@ impl RpcRuntime {
 
                 tokio::task::spawn_local(rpc_system);
 
+                log::trace!("Requesting RPC snapshot..");
                 let response = hub.get_snapshot_request().send().promise.await?;
 
                 let snapshot = response.get()?.get_snapshot()?;
+                log::trace!("Received snapshot, registering listener..");
                 let (snapshot_tx, snapshot_rx) = unbounded();
                 let listener: asset_hub::listener::Client = capnp_rpc::new_client(ListenerImpl {
                     snapshot_channel: snapshot_tx,
@@ -141,6 +145,7 @@ impl RpcRuntime {
                     snapshot,
                     snapshot_rx,
                 })?;
+                log::trace!("Registered listener, done connecting RPC loader.");
 
                 Ok(rpc_conn)
             }
