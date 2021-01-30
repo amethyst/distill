@@ -5,7 +5,7 @@ authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
 description = "Asset framework for game engines & editor suites."
 exclude = ["examples/*"]
-keywords = ["game", "engine", "assets", "loading", "processing", "indexing"]
+keywords = ["game", "engine", "assets", "loading", "pipeline"]
 categories = ["game-engines"]
 
 repository = "https://github.com/amethyst/distill"

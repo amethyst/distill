@@ -4,6 +4,7 @@ version = "0.0.1"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
+publish = false
 
 [dependencies]
 uuid = { version = "0.8", features = ["v4"] }
