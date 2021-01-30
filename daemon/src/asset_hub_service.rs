@@ -5,9 +5,9 @@ use std::{
     sync::Arc,
 };
 
-use atelier_core::utils::{self, canonicalize_path};
-use atelier_importer::SerializedAsset;
-use atelier_schema::{
+use distill_core::utils::{self, canonicalize_path};
+use distill_importer::SerializedAsset;
+use distill_schema::{
     build_artifact_metadata,
     data::{
         artifact, asset_change_log_entry,

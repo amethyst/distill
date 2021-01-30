@@ -6,14 +6,14 @@ use std::{
     time::Instant,
 };
 
-use atelier_core::{
+use distill_core::{
     utils::{self, canonicalize_path},
     ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType,
 };
-use atelier_importer::{
+use distill_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
 };
-use atelier_schema::{
+use distill_schema::{
     build_asset_metadata,
     data::{self, path_refs, source_metadata},
     parse_db_metadata,

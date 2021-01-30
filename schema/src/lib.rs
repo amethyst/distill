@@ -1,7 +1,7 @@
 mod schemas;
 use std::path::PathBuf;
 
-use atelier_core::{utils::make_array, ArtifactId, ArtifactMetadata, AssetMetadata, AssetRef};
+use distill_core::{utils::make_array, ArtifactId, ArtifactMetadata, AssetMetadata, AssetRef};
 pub use schemas::{data_capnp, pack_capnp, service_capnp};
 impl ::std::fmt::Debug for data_capnp::FileState {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
@@ -17,16 +17,16 @@ impl ::std::fmt::Debug for data_capnp::FileState {
     }
 }
 
-impl From<atelier_core::CompressionType> for data_capnp::CompressionType {
-    fn from(c: atelier_core::CompressionType) -> Self {
+impl From<distill_core::CompressionType> for data_capnp::CompressionType {
+    fn from(c: distill_core::CompressionType) -> Self {
         match c {
-            atelier_core::CompressionType::None => Self::None,
-            atelier_core::CompressionType::Lz4 => Self::Lz4,
+            distill_core::CompressionType::None => Self::None,
+            distill_core::CompressionType::Lz4 => Self::Lz4,
         }
     }
 }
 
-impl From<data_capnp::CompressionType> for atelier_core::CompressionType {
+impl From<data_capnp::CompressionType> for distill_core::CompressionType {
     fn from(c: data_capnp::CompressionType) -> Self {
         match c {
             data_capnp::CompressionType::None => Self::None,

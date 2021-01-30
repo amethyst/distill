@@ -1,4 +1,4 @@
-use atelier_cli::{shell::Shell, *};
+use distill_cli::{shell::Shell, *};
 use tokio::runtime::Runtime;
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {

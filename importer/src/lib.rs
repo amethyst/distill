@@ -7,11 +7,11 @@ mod serialized_asset;
 mod ron_importer;
 use std::io::{Read, Write};
 
-pub use atelier_core::{
+pub use distill_core::{
     importer_context::{ImporterContext, ImporterContextHandle},
     ArtifactMetadata, AssetMetadata,
 };
-use atelier_core::{AssetRef, AssetUuid};
+use distill_core::{AssetRef, AssetUuid};
 use futures::{future::BoxFuture, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub use serde;
 use serde::Serialize;

@@ -35,8 +35,8 @@ pub fn serde_importable_derive(input: proc_macro::TokenStream) -> proc_macro::To
     let uuid =
         uuid.expect("No `#[uuid = \"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\"` attribute found");
     let gen = quote! {
-        #[atelier_importer::typetag::serde(name = #uuid)]
-        impl atelier_importer::SerdeImportable for #name {
+        #[distill_importer::typetag::serde(name = #uuid)]
+        impl distill_importer::SerdeImportable for #name {
         }
     };
     gen.into()

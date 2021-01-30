@@ -9,9 +9,9 @@ use std::{
 };
 
 use async_channel::Sender;
-use atelier_core::{utils, AssetRef, AssetUuid};
-use atelier_importer::AssetMetadata;
-use atelier_schema::{
+use distill_core::{utils, AssetRef, AssetUuid};
+use distill_importer::AssetMetadata;
+use distill_schema::{
     build_asset_metadata_message,
     data::{
         self, asset_change_log_entry,

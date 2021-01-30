@@ -17,7 +17,7 @@ pub enum Error {
     RecvError,
     SendError,
     Exit,
-    ImporterError(atelier_importer::Error),
+    ImporterError(distill_importer::Error),
     StrUtf8Error(str::Utf8Error),
     Custom(String),
 }
@@ -126,8 +126,8 @@ impl From<log::SetLoggerError> for Error {
         Error::SetLoggerError(err)
     }
 }
-impl From<atelier_importer::Error> for Error {
-    fn from(err: atelier_importer::Error) -> Error {
+impl From<distill_importer::Error> for Error {
+    fn from(err: distill_importer::Error) -> Error {
         Error::ImporterError(err)
     }
 }

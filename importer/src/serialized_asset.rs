@@ -1,4 +1,4 @@
-use atelier_core::ArtifactMetadata;
+use distill_core::ArtifactMetadata;
 
 pub struct SerializedAsset<T: AsRef<[u8]>> {
     pub metadata: ArtifactMetadata,

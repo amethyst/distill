@@ -4,7 +4,7 @@ use std::{
     error::Error,
 };
 
-use atelier_assets::{
+use distill::{
     core::type_uuid::TypeUuid,
     loader::{
         loader::Loader,
@@ -186,7 +186,7 @@ pub fn run() {
         }
     }
     // The basic API uses explicit reference counting.
-    // Integrate with atelier_loader::handle for automatic reference counting!
+    // Integrate with distill_loader::handle for automatic reference counting!
     loader.remove_ref(handle);
     loop {
         loader

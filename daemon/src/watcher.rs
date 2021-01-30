@@ -6,7 +6,7 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
-use atelier_core::utils::canonicalize_path;
+use distill_core::utils::canonicalize_path;
 use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc::UnboundedSender;
 

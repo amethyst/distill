@@ -1,5 +1,5 @@
 [package]
-name = "atelier-client"
+name = "distill-client"
 version = "0.1.0"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
@@ -11,4 +11,4 @@ capnp-rpc = "0.14.0"
 tokio = "1.0"
 tokio-util = { version = "0.6.1", features = ["compat"] }
 futures-util = { version = "0.3", default-features = false }
-atelier-schema = { path = "../schema" }
+distill-schema = { path = "../schema" }

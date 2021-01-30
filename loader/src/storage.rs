@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use atelier_core::{AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
+use distill_core::{AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
 

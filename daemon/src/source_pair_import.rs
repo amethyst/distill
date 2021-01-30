@@ -7,13 +7,13 @@ use std::{
     time::Instant,
 };
 
-use atelier_core::{utils, ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
-use atelier_importer::{
+use distill_core::{utils, ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
+use distill_importer::{
     ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportOp, ImportedAsset,
     ImporterContext, ImporterContextHandle, SerdeObj, SerializedAsset,
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
-use atelier_schema::data;
+use distill_schema::data;
 use futures::future::{BoxFuture, Future};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};

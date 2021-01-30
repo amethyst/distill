@@ -1,6 +1,6 @@
-use atelier_assets::{
+use distill::{
     core::{type_uuid, type_uuid::TypeUuid},
-    importer::{self as atelier_importer, typetag, SerdeImportable},
+    importer::{self as distill_importer, typetag, SerdeImportable},
     loader::handle::Handle,
 };
 use serde::{Deserialize, Serialize};
