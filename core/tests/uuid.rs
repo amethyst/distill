@@ -1,5 +1,5 @@
-extern crate distill_core;
 extern crate bincode;
+extern crate distill_core;
 extern crate serde_json;
 
 #[test]

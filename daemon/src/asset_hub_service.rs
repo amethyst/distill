@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use distill_core::utils::{self, canonicalize_path};
 use distill_importer::SerializedAsset;
 use distill_schema::{
@@ -17,7 +18,6 @@ use distill_schema::{
     parse_artifact_metadata, parse_db_asset_ref,
     service::asset_hub,
 };
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::{AsyncReadExt, TryFutureExt};
 
 use crate::{

@@ -1,12 +1,12 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
 
 use async_trait::async_trait;
+use capnp::message::ReaderOptions;
+use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use distill_schema::{
     data, pack,
     service::asset_hub::{self, snapshot::Client as Snapshot},
 };
-use capnp::message::ReaderOptions;
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
 pub mod shell;
 use shell::Autocomplete;

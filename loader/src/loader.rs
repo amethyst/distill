@@ -7,9 +7,9 @@ use std::{
     },
 };
 
-use distill_core::{ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dashmap::DashMap;
+use distill_core::{ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
 use log::error;
 
 use crate::{

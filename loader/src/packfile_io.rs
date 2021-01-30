@@ -5,9 +5,9 @@ use std::{
     sync::Arc,
 };
 
+use capnp::serialize::SliceSegments;
 use distill_core::{utils::make_array, ArtifactMetadata, AssetMetadata, AssetRef, AssetUuid};
 use distill_schema::pack::pack_file;
-use capnp::serialize::SliceSegments;
 use memmap::{Mmap, MmapOptions};
 use thread_local::ThreadLocal;
 

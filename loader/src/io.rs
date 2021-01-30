@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use distill_core::{ArtifactId, ArtifactMetadata, AssetMetadata, AssetUuid};
 use crossbeam_channel::Sender;
+use distill_core::{ArtifactId, ArtifactMetadata, AssetMetadata, AssetUuid};
 
 use crate::{loader::LoaderState, storage::IndirectIdentifier, LoadHandle, Result};
 

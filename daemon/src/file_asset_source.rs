@@ -6,6 +6,7 @@ use std::{
     time::Instant,
 };
 
+use bincode::config::Options;
 use distill_core::{
     utils::{self, canonicalize_path},
     ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType,
@@ -18,7 +19,6 @@ use distill_schema::{
     data::{self, path_refs, source_metadata},
     parse_db_metadata,
 };
-use bincode::config::Options;
 use futures::{channel::mpsc::unbounded, lock::Mutex, stream::StreamExt};
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]

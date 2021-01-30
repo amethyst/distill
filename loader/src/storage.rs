@@ -7,9 +7,9 @@ use std::{
     },
 };
 
-use distill_core::{AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
+use distill_core::{AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
 
 /// Loading ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset
 /// or an indirect reference to an asset.

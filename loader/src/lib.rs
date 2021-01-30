@@ -16,8 +16,8 @@ pub mod rpc_io;
 /// [`AssetStorage`](crate::storage::AssetStorage) is implemented by engines to store loaded asset data.
 pub mod storage;
 
-pub use distill_core::{AssetRef, AssetTypeId, AssetUuid};
 pub use crossbeam_channel;
+pub use distill_core::{AssetRef, AssetTypeId, AssetUuid};
 pub use loader::Loader;
 #[cfg(feature = "packfile_io")]
 pub use packfile_io::PackfileReader;
