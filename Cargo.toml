@@ -1,6 +1,6 @@
 [package]
 name = "distill"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
 description = "\"Offline\" asset processing and indexing for game engines"
@@ -27,10 +27,10 @@ members = [
 ]
 
 [dependencies]
-distill-core = { version = "0.1", path = "core" }
-distill-daemon = { version = "0.1", path = "daemon" }
-distill-importer = { version = "0.1", path = "importer" }
-distill-loader = { version = "0.1", path = "loader" }
+distill-core = { version = "0.0.1", path = "core" }
+distill-daemon = { version = "0.0.1", path = "daemon" }
+distill-importer = { version = "0.0.1", path = "importer" }
+distill-loader = { version = "0.0.1", path = "loader" }
 
 [dev-dependencies]
 futures = "0.3"
