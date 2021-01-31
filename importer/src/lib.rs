@@ -16,7 +16,7 @@ use futures::{future::BoxFuture, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWrite
 pub use serde;
 use serde::Serialize;
 #[cfg(feature = "serde_importers")]
-pub use serde_importable_derive::*;
+pub use distill_serde_importable_derive::*;
 
 pub use self::error::{Error, Result};
 #[cfg(feature = "serde_importers")]
