@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 capnp = "0.14.0"
 capnp-rpc = "0.14.0"
-tokio = "1.0"
+tokio = "1.2"
 tokio-util = { version = "0.6.1", features = ["compat"] }
 futures-util = { version = "0.3", default-features = false }
 distill-schema = { path = "../schema" }

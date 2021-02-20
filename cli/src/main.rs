@@ -1,8 +1,7 @@
 use distill_cli::{shell::Shell, *};
-use tokio::runtime::Runtime;
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let runtime = Runtime::new().unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
     let local = tokio::task::LocalSet::new();
     runtime.block_on(local.run_until(async_main()))
 }
