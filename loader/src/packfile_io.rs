@@ -159,7 +159,7 @@ impl PackfileReaderInner {
 
 impl LoaderIO for PackfileReader {
     fn get_asset_metadata_with_dependencies(&mut self, request: MetadataRequest) {
-        self.0.runtime.enter();
+        let _guard = self.0.runtime.enter();
         let inner = self.0.clone();
         tokio::spawn(async move {
             match inner.get_asset_metadata_with_dependencies_impl(&request) {
@@ -170,7 +170,7 @@ impl LoaderIO for PackfileReader {
     }
 
     fn get_asset_candidates(&mut self, requests: Vec<ResolveRequest>) {
-        self.0.runtime.enter();
+        let _guard = self.0.runtime.enter();
         for request in requests {
             let inner = self.0.clone();
             tokio::spawn(async move {
@@ -183,7 +183,7 @@ impl LoaderIO for PackfileReader {
     }
 
     fn get_artifacts(&mut self, requests: Vec<DataRequest>) {
-        self.0.runtime.enter();
+        let _guard = self.0.runtime.enter();
         for request in requests {
             let inner = self.0.clone();
             tokio::spawn(async move {
