@@ -6,13 +6,13 @@ use std::{
 };
 
 use capnp::serialize::SliceSegments;
-use distill_core::{utils::make_array, ArtifactMetadata, AssetMetadata, AssetRef, AssetUuid};
+use distill_core::{utils::make_array, AssetMetadata, AssetRef, AssetUuid};
 use distill_schema::pack::pack_file;
 use memmap::{Mmap, MmapOptions};
 use thread_local::ThreadLocal;
 
 use crate::{
-    io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest},
+    io::{DataRequest, LoaderIO, MetadataRequest, MetadataRequestResult, ResolveRequest},
     loader::LoaderState,
 };
 
@@ -91,7 +91,7 @@ impl PackfileReaderInner {
     fn get_asset_metadata_with_dependencies_impl(
         &self,
         request: &MetadataRequest,
-    ) -> capnp::Result<Vec<ArtifactMetadata>> {
+    ) -> capnp::Result<Vec<MetadataRequestResult>> {
         let reader = self.reader.get_reader()?;
         let mut to_visit = request.requested_assets().cloned().collect::<Vec<_>>();
         let mut visited: HashSet<AssetUuid, std::collections::hash_map::RandomState> =
@@ -111,7 +111,16 @@ impl PackfileReaderInner {
                         }
                     }
                 }
-                metadata.push(artifact_metadata);
+                let mut result = MetadataRequestResult {
+                    artifact_metadata,
+                    asset_metadata: None,
+                };
+                if request.include_asset_metadata() {
+                    result.asset_metadata = Some(distill_schema::parse_db_metadata(
+                        &entry.get_asset_metadata()?,
+                    ));
+                }
+                metadata.push(result);
             }
         }
         Ok(metadata)

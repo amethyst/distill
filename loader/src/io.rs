@@ -99,18 +99,28 @@ impl std::fmt::Display for RequestDropError {
 }
 impl std::error::Error for RequestDropError {}
 
+pub struct MetadataRequestResult {
+    pub artifact_metadata: ArtifactMetadata,
+    pub asset_metadata: Option<AssetMetadata>,
+}
 /// A request for artifact metadata covering the dependency graphs of the requested asset IDs.
 #[allow(clippy::type_complexity)]
 pub struct MetadataRequest {
     pub(crate) tx: Sender<(
-        Result<Vec<ArtifactMetadata>>,
+        Result<Vec<MetadataRequestResult>>,
         HashMap<AssetUuid, (LoadHandle, u32)>,
     )>,
     pub(crate) requests: Option<HashMap<AssetUuid, (LoadHandle, u32)>>,
+    pub(crate) include_asset_metadata: bool,
 }
 impl MetadataRequest {
     pub fn requested_assets(&self) -> impl Iterator<Item = &AssetUuid> {
         self.requests.as_ref().unwrap().keys()
+    }
+
+    /// Whether the response should include asset metadata or not, for debugging purposes.
+    pub fn include_asset_metadata(&self) -> bool {
+        self.include_asset_metadata
     }
 
     pub fn error<T: std::error::Error + Send + 'static>(mut self, err: T) {
@@ -119,7 +129,7 @@ impl MetadataRequest {
         }
     }
 
-    pub fn complete(mut self, metadata: Vec<ArtifactMetadata>) {
+    pub fn complete(mut self, metadata: Vec<MetadataRequestResult>) {
         if let Some(requests) = self.requests.take() {
             let _ = self.tx.send((Ok(metadata), requests));
         }

@@ -3,7 +3,7 @@ use std::{error::Error, path::PathBuf, sync::Mutex};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use distill_core::{utils, ArtifactMetadata, AssetMetadata, AssetUuid};
+use distill_core::{utils, AssetMetadata, AssetUuid};
 use distill_schema::{data::asset_change_event, parse_db_metadata, service::asset_hub};
 use futures_util::AsyncReadExt;
 use tokio::{
@@ -13,7 +13,7 @@ use tokio::{
 };
 
 use crate::{
-    io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest},
+    io::{DataRequest, LoaderIO, MetadataRequest, MetadataRequestResult, ResolveRequest},
     loader::LoaderState,
 };
 
@@ -265,7 +265,7 @@ impl LoaderIO for RpcIO {
 async fn do_metadata_request(
     asset: &MetadataRequest,
     snapshot: &asset_hub::snapshot::Client,
-) -> Result<Vec<ArtifactMetadata>, capnp::Error> {
+) -> Result<Vec<MetadataRequestResult>, capnp::Error> {
     let mut request = snapshot.get_asset_metadata_with_dependencies_request();
     let mut assets = request
         .get()
@@ -279,7 +279,15 @@ async fn do_metadata_request(
         .get_assets()?
         .into_iter()
         .map(|a| parse_db_metadata(&a))
-        .filter_map(|a| a.artifact)
+        .filter(|a| a.artifact.is_some())
+        .map(|a| MetadataRequestResult {
+            artifact_metadata: a.artifact.clone().unwrap(),
+            asset_metadata: if asset.include_asset_metadata() {
+                Some(a)
+            } else {
+                None
+            },
+        })
         .collect::<Vec<_>>();
     Ok(artifacts)
 }

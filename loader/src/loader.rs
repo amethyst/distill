@@ -14,7 +14,7 @@ use log::error;
 
 use crate::{
     handle::{RefOp, SerdeContext},
-    io::{DataRequest, LoaderIO, MetadataRequest, ResolveRequest},
+    io::{DataRequest, LoaderIO, MetadataRequest, MetadataRequestResult, ResolveRequest},
     storage::{
         AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, HandleOp,
         IndirectIdentifier, IndirectionResolver, IndirectionTable, LoadHandle, LoadInfo,
@@ -74,6 +74,7 @@ struct IndirectLoad {
 struct AssetVersionLoad {
     state: LoadState,
     metadata: Option<ArtifactMetadata>,
+    asset_metadata: Option<AssetMetadata>,
     asset_type: Option<AssetTypeId>,
     auto_commit: bool,
     version: u32,
@@ -120,11 +121,11 @@ struct IORequestChannels {
     data_rx: Receiver<(Result<Vec<u8>>, LoadHandle, u32)>,
     data_tx: Sender<(Result<Vec<u8>>, LoadHandle, u32)>,
     metadata_rx: Receiver<(
-        Result<Vec<ArtifactMetadata>>,
+        Result<Vec<MetadataRequestResult>>,
         HashMap<AssetUuid, (LoadHandle, u32)>,
     )>,
     metadata_tx: Sender<(
-        Result<Vec<ArtifactMetadata>>,
+        Result<Vec<MetadataRequestResult>>,
         HashMap<AssetUuid, (LoadHandle, u32)>,
     )>,
     resolve_rx: Receiver<(
@@ -199,6 +200,7 @@ impl LoaderState {
                         asset_type: None,
                         auto_commit: true,
                         metadata: None,
+                        asset_metadata: None,
                         state: LoadState::None,
                         version: 1,
                     }],
@@ -291,6 +293,7 @@ impl LoaderState {
                         load.versions.push(AssetVersionLoad {
                             asset_type: None,
                             metadata: None,
+                            asset_metadata: None,
                             // The assets are not auto_commit for reloads to ensure all assets in a
                             // changeset are made visible together, atomically
                             auto_commit: false,
@@ -500,11 +503,12 @@ impl LoaderState {
             match response.0 {
                 Ok(metadata_list) => {
                     for metadata in metadata_list {
-                        let request_data = request_data.remove(&metadata.asset_id);
+                        let request_data =
+                            request_data.remove(&metadata.artifact_metadata.asset_id);
                         let load_handle = if let Some((handle, _)) = request_data {
                             handle
                         } else {
-                            self.get_or_insert(metadata.asset_id)
+                            self.get_or_insert(metadata.artifact_metadata.asset_id)
                         };
                         let mut load = self
                             .load_states
@@ -525,7 +529,7 @@ impl LoaderState {
                             }
                         });
                         if let Some(version_load) = version_load {
-                            version_load.metadata = Some(metadata);
+                            version_load.metadata = Some(metadata.artifact_metadata);
                             if let LoadState::RequestingMetadata = version_load.state {
                                 version_load.state = LoadState::RequestDependencies
                             }
@@ -535,7 +539,8 @@ impl LoaderState {
                             load.versions.push(AssetVersionLoad {
                                 asset_type: None,
                                 auto_commit: true,
-                                metadata: Some(metadata),
+                                metadata: Some(metadata.artifact_metadata),
+                                asset_metadata: metadata.asset_metadata,
                                 state: LoadState::None,
                                 version: new_version,
                             });
@@ -576,6 +581,7 @@ impl LoaderState {
             io.get_asset_metadata_with_dependencies(MetadataRequest {
                 tx: self.responses.metadata_tx.clone(),
                 requests: Some(assets_to_request),
+                include_asset_metadata: true, // TODO make this a user-controlled feature to reduce memory usage
             })
         }
     }
@@ -974,7 +980,7 @@ impl Loader {
         self.data.uuid_to_load.get(&id).map(|l| *l)
     }
 
-    /// Returns the number of references to an asset.
+    /// Returns information about the load of an asset.
     ///
     /// **Note:** The information is true at the time the `LoadInfo` is retrieved. The actual number
     /// of references may change.
@@ -988,10 +994,45 @@ impl Loader {
         } else {
             load
         };
-        self.data.load_states.get(&load).map(|s| LoadInfo {
-            asset_id: s.asset_id,
-            refs: s.refs.load(Ordering::Relaxed) as u32,
+        self.data.load_states.get(&load).map(|s| {
+            let (path, file_name) = s
+                .versions
+                .iter()
+                .filter(|v| v.metadata.is_some())
+                .max_by_key(|v| v.version)
+                .and_then(|v| {
+                    v.asset_metadata.as_ref().map(|a| {
+                        let path = a
+                            .search_tags
+                            .iter()
+                            .find(|(tag, _)| tag == "path")
+                            .and_then(|(_, v)| v.clone());
+                        let file_name = a
+                            .search_tags
+                            .iter()
+                            .find(|(tag, _)| tag == "file_name")
+                            .and_then(|(_, v)| v.clone());
+                        (path, file_name)
+                    })
+                })
+                .unwrap_or((None, None));
+            LoadInfo {
+                asset_id: s.asset_id,
+                refs: s.refs.load(Ordering::Relaxed) as u32,
+                path,
+                file_name,
+            }
         })
+    }
+
+    /// Returns handles to all active asset loads.
+    pub fn get_active_loads(&self) -> Vec<LoadHandle> {
+        self.data
+            .load_states
+            .iter()
+            .filter(|v| v.value().refs.load(Ordering::Relaxed) > 0)
+            .map(|l| *l.key())
+            .collect()
     }
 
     /// Returns the asset load status.

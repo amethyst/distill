@@ -155,7 +155,7 @@ pub enum LoadStatus {
     Error(Box<dyn Error>),
 }
 
-/// Indicates the number of references there are to an asset.
+/// Information about an asset load operation.
 ///
 /// **Note:** The information is true at the time the `LoadInfo` is retrieved. The actual number of
 /// references may change.
@@ -164,6 +164,10 @@ pub struct LoadInfo {
     pub asset_id: AssetUuid,
     /// Number of references to the asset.
     pub refs: u32,
+    /// Asset source path. Not guaranteed to always be available.
+    pub path: Option<String>,
+    /// Asset file name. Not guaranteed to always be available.
+    pub file_name: Option<String>,
 }
 
 /// Provides information about mappings between `AssetUuid` and `LoadHandle`.
