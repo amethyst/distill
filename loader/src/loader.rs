@@ -62,6 +62,7 @@ enum IndirectHandleState {
     Resolved,
 }
 
+#[derive(Debug)]
 struct IndirectLoad {
     id: IndirectIdentifier,
     state: IndirectHandleState,
@@ -217,10 +218,22 @@ impl LoaderState {
 
     fn add_refs(&self, id: AssetUuid, num_refs: usize) -> LoadHandle {
         let handle = self.get_or_insert(id);
-        self.load_states
-            .get(&handle)
-            .map(|h| h.refs.fetch_add(num_refs, Ordering::Relaxed));
+        self.add_ref_handle(handle, num_refs);
         handle
+    }
+
+    fn add_ref_handle(&self, handle: LoadHandle, num_refs: usize) {
+        if handle.is_indirect() {
+            let state = self.indirect_states.get(&handle).unwrap();
+            if let Some(uuid) = state.resolved_uuid {
+                self.add_refs(uuid, 1);
+            }
+            state.refs.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.load_states
+                .get(&handle)
+                .map(|h| h.refs.fetch_add(num_refs, Ordering::Relaxed));
+        }
     }
 
     fn get_asset(&self, load: LoadHandle) -> Option<AssetTypeId> {
@@ -241,29 +254,77 @@ impl LoaderState {
             .unwrap_or(None)
     }
 
+    fn get_load_info(&self, load: LoadHandle) -> Option<LoadInfo> {
+        let load = if load.is_indirect() {
+            self.indirect_table.resolve(load)?
+        } else {
+            load
+        };
+        self.load_states.get(&load).map(|s| {
+            let (path, file_name, asset_name) = s
+                .versions
+                .iter()
+                .filter(|v| v.metadata.is_some())
+                .max_by_key(|v| v.version)
+                .and_then(|v| {
+                    v.asset_metadata.as_ref().map(|a| {
+                        let path = a
+                            .search_tags
+                            .iter()
+                            .find(|(tag, _)| tag == "path")
+                            .and_then(|(_, v)| v.clone());
+                        let file_name = a
+                            .search_tags
+                            .iter()
+                            .find(|(tag, _)| tag == "file_name")
+                            .and_then(|(_, v)| v.clone());
+                        let asset_name = a
+                            .search_tags
+                            .iter()
+                            .find(|(tag, _)| tag == "name")
+                            .and_then(|(_, v)| v.clone());
+                        (path, file_name, asset_name)
+                    })
+                })
+                .unwrap_or((None, None, None));
+            LoadInfo {
+                asset_id: s.asset_id,
+                refs: s.refs.load(Ordering::Relaxed) as u32,
+                path,
+                file_name,
+                asset_name,
+            }
+        })
+    }
+
     fn remove_refs(&self, load: LoadHandle, num_refs: usize) {
         if load.is_indirect() {
-            if let Some(state) = self.indirect_states.get(&load) {
+            if let Some(state) = self.indirect_states.get_mut(&load) {
                 if let Some(uuid) = state.resolved_uuid {
                     let uuid_handle = self.get_or_insert(uuid);
-                    self.remove_refs(uuid_handle, 1);
+                    self.remove_refs(uuid_handle, num_refs);
                 }
-                state.refs.fetch_sub(num_refs, Ordering::Relaxed);
+                assert!(
+                    state.refs.fetch_sub(num_refs, Ordering::Relaxed) < usize::MAX - num_refs,
+                    "refcount underflow for indirect load {:?}:{:?}",
+                    load.0,
+                    *state
+                );
             }
         } else {
-            self.load_states
-                .get(&load)
-                .map(|h| h.refs.fetch_sub(num_refs, Ordering::Relaxed));
+            self.load_states.get(&load).map(|h| {
+                assert!(
+                    h.refs.fetch_sub(num_refs, Ordering::Relaxed) < usize::MAX - num_refs,
+                    "refcount underflow for asset {:?}",
+                    self.get_load_info(load),
+                );
+            });
         }
     }
 
     fn add_ref_indirect(&self, id: IndirectIdentifier) -> LoadHandle {
         let handle = self.get_or_insert_indirect(id);
-        let state = self.indirect_states.get(&handle).unwrap();
-        if let Some(uuid) = state.resolved_uuid {
-            self.add_refs(uuid, 1);
-        }
-        state.refs.fetch_add(1, Ordering::Relaxed);
+        self.add_ref_handle(handle, 1);
         handle
     }
 
@@ -530,6 +591,7 @@ impl LoaderState {
                         });
                         if let Some(version_load) = version_load {
                             version_load.metadata = Some(metadata.artifact_metadata);
+                            version_load.asset_metadata = metadata.asset_metadata;
                             if let LoadState::RequestingMetadata = version_load.state {
                                 version_load.state = LoadState::RequestDependencies
                             }
@@ -989,40 +1051,7 @@ impl Loader {
     ///
     /// * `load_handle`: ID allocated by `Loader` to track loading of the asset.
     pub fn get_load_info(&self, load: LoadHandle) -> Option<LoadInfo> {
-        let load = if load.is_indirect() {
-            self.data.indirect_table.resolve(load)?
-        } else {
-            load
-        };
-        self.data.load_states.get(&load).map(|s| {
-            let (path, file_name) = s
-                .versions
-                .iter()
-                .filter(|v| v.metadata.is_some())
-                .max_by_key(|v| v.version)
-                .and_then(|v| {
-                    v.asset_metadata.as_ref().map(|a| {
-                        let path = a
-                            .search_tags
-                            .iter()
-                            .find(|(tag, _)| tag == "path")
-                            .and_then(|(_, v)| v.clone());
-                        let file_name = a
-                            .search_tags
-                            .iter()
-                            .find(|(tag, _)| tag == "file_name")
-                            .and_then(|(_, v)| v.clone());
-                        (path, file_name)
-                    })
-                })
-                .unwrap_or((None, None));
-            LoadInfo {
-                asset_id: s.asset_id,
-                refs: s.refs.load(Ordering::Relaxed) as u32,
-                path,
-                file_name,
-            }
-        })
+        self.data.get_load_info(load)
     }
 
     /// Returns handles to all active asset loads.
@@ -1069,6 +1098,10 @@ impl Loader {
         } else {
             LoadStatus::NotRequested
         }
+    }
+
+    pub fn add_ref_handle(&self, handle: LoadHandle) {
+        self.data.add_ref_handle(handle, 1);
     }
 
     /// Adds a reference to an asset and returns its [`LoadHandle`].

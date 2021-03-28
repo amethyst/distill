@@ -159,15 +159,18 @@ pub enum LoadStatus {
 ///
 /// **Note:** The information is true at the time the `LoadInfo` is retrieved. The actual number of
 /// references may change.
+#[derive(Debug)]
 pub struct LoadInfo {
     /// UUID of the asset.
     pub asset_id: AssetUuid,
     /// Number of references to the asset.
     pub refs: u32,
-    /// Asset source path. Not guaranteed to always be available.
+    /// Path to asset's source file. Not guaranteed to always be available.
     pub path: Option<String>,
-    /// Asset file name. Not guaranteed to always be available.
+    /// Name of asset's source file. Not guaranteed to always be available.
     pub file_name: Option<String>,
+    /// Asset name. Not guaranteed to always be available.
+    pub asset_name: Option<String>,
 }
 
 /// Provides information about mappings between `AssetUuid` and `LoadHandle`.
