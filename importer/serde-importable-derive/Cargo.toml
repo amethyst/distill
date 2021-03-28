@@ -1,6 +1,6 @@
 [package]
 name = "distill-serde-importable-derive"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
