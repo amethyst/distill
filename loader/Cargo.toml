@@ -1,6 +1,6 @@
 [package]
 name = "distill-loader"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -8,8 +8,8 @@ description = "Loader component of the asset pipeline `distill`."
 
 [dependencies]
 crossbeam-channel = "0.5.0"
-distill-core = { path = "../core", version = "=0.0.2", features = ["serde-1"] }
-distill-schema = { path = "../schema", version = "=0.0.2", optional = true }
+distill-core = { path = "../core", version = "=0.0.3", features = ["serde-1"] }
+distill-schema = { path = "../schema", version = "=0.0.3", optional = true }
 tokio = { version = "1.2", features = ["net", "sync", "rt", "rt-multi-thread"], optional = true }
 tokio-util = { version = "0.6.1", features = ["compat"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["io"], optional = true }
