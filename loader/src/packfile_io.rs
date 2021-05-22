@@ -128,6 +128,7 @@ impl PackfileReader {
         let reader = message_reader.get_reader()?;
         let mut index_by_uuid = HashMap::new();
         let mut assets_by_path: HashMap<String, Vec<u32>> = HashMap::new();
+        log::debug!("Packfile contains {} entries", reader.get_entries().len());
         for (idx, entry) in reader.get_entries()?.iter().enumerate() {
             let asset_metadata = entry.get_asset_metadata()?;
             let id = AssetUuid(make_array(asset_metadata.get_id()?.get_id()?));
@@ -140,11 +141,13 @@ impl PackfileReader {
                 .or_insert_with(|| vec![idx as u32]);
         }
 
+        let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+
         Ok(PackfileReader(Arc::new(PackfileReaderInner {
             reader: message_reader,
             index_by_uuid,
             assets_by_path,
-            runtime: tokio::runtime::Builder::new_multi_thread().build()?,
+            runtime,
         })))
     }
 }
@@ -266,7 +269,9 @@ impl LoaderIO for PackfileReader {
         }
     }
 
-    fn tick(&mut self, _loader: &mut LoaderState) {}
+    fn tick(&mut self, _loader: &mut LoaderState) {
+        self.0.runtime.block_on(tokio::task::yield_now());
+    }
 
     fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Runtime)) {
         f(&self.0.runtime);
