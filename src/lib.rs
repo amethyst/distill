@@ -33,7 +33,7 @@ mod tests {
         sync::{Once, RwLock},
     };
 
-    use distill_core::{type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid};
+    use distill_core::{type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid, distill_signal};
     use distill_daemon::{init_logging, AssetDaemon};
     use distill_importer::{
         AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,
@@ -339,7 +339,7 @@ mod tests {
         daemon_address: &str,
     ) -> (
         std::thread::JoinHandle<()>,
-        tokio::sync::oneshot::Sender<bool>,
+        distill_signal::Sender<bool>,
     ) {
         let daemon_address = daemon_address
             .parse()

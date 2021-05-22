@@ -13,6 +13,8 @@ use uuid::Uuid;
 pub mod importer_context;
 pub mod utils;
 
+pub mod distill_signal;
+
 /// A universally unique identifier for an asset.
 /// An asset can be a value of any Rust type that implements
 /// [`TypeUuidDynamic`] + [serde::Serialize] + [Send].
