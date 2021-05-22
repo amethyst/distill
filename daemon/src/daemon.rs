@@ -13,7 +13,9 @@ use asset_hub_service::AssetHubService;
 use distill_importer::{BoxedImporter, ImporterContext};
 use distill_schema::data;
 use file_asset_source::FileAssetSource;
-use tokio::sync::oneshot::{self, Receiver, Sender};
+use futures::future::FutureExt;
+use std::rc::Rc;
+use distill_core::distill_signal;
 
 use crate::{
     artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
@@ -165,23 +167,18 @@ impl AssetDaemon {
         self
     }
 
-    pub fn run(self) -> (JoinHandle<()>, Sender<bool>) {
-        let (tx, rx) = oneshot::channel();
+    pub fn run(self) -> (JoinHandle<()>, distill_signal::Sender<bool>) {
+        let (tx, rx) = distill_signal::oneshot();
 
         let handle = thread::spawn(|| {
-            let rpc_runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            let local = tokio::task::LocalSet::new();
-
-            rpc_runtime.block_on(local.run_until(self.run_rpc_runtime(rx)))
+            let local = Rc::new(async_executor::LocalExecutor::new());
+            async_io::block_on(local.run(self.run_rpc_runtime(&local, rx)))
         });
 
         (handle, tx)
     }
 
-    async fn run_rpc_runtime(self, mut rx: Receiver<bool>) {
+    async fn run_rpc_runtime(self, local: &async_executor::LocalExecutor<'_>, rx: distill_signal::Receiver<bool>) {
         let cache_dir = self.db_dir.join("cache");
         let _ = fs::create_dir(&self.db_dir);
         let _ = fs::create_dir(&cache_dir);
@@ -244,18 +241,23 @@ impl AssetDaemon {
 
         let shutdown_tracker = tracker.clone();
 
-        let mut service_handle = tokio::task::spawn_local(async move { service.run(addr).await });
-        let mut tracker_handle = tokio::task::spawn_local(async move { tracker.run().await });
-        let mut asset_source_handle =
-            tokio::task::spawn_local(async move { asset_source.run().await });
+        let service_handle = local.spawn(async move { service.run(addr).await }).fuse();
+
+        let tracker_handle = local.spawn(async move { tracker.run().await }).fuse();
+        let asset_source_handle =
+            local.spawn(async move { asset_source.run().await }).fuse();
+
+        let rx_fuse = rx.fuse();
+
+        futures::pin_mut!(service_handle, tracker_handle, asset_source_handle, rx_fuse);
 
         log::info!("Starting Daemon Loop");
         loop {
-            tokio::select! {
-                done = &mut service_handle => done.expect("ServiceHandle panicked"),
-                done = &mut tracker_handle => done.expect("FileTracker panicked"),
-                done = &mut asset_source_handle => done.expect("AssetSource panicked"),
-                done = &mut rx => match done {
+            futures::select! {
+                _done = &mut service_handle => panic!("ServiceHandle panicked"),
+                _done = &mut tracker_handle => panic!("FileTracker panicked"),
+                _done = &mut asset_source_handle => panic!("AssetSource panicked"),
+                done = &mut rx_fuse => match done {
                     Ok(_) => {
                         log::warn!("Shutting Down!");
                         shutdown_tracker.stop().await;
@@ -267,7 +269,7 @@ impl AssetDaemon {
                     }
                     Err(_) => continue,
                 }
-            }
+            };
         }
     }
 }

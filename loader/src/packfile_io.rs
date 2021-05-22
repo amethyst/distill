@@ -69,7 +69,7 @@ impl Drop for PackfileMessageReaderFile {
 
 #[derive(PartialEq)]
 enum RuntimeType {
-    CurrentThread,
+    //CurrentThread,
     MultiThread,
 }
 
@@ -123,7 +123,7 @@ struct PackfileReaderInner {
     reader: Box<dyn PackfileMessageReader>,
     index_by_uuid: HashMap<AssetUuid, u32>,
     assets_by_path: HashMap<String, Vec<u32>>,
-    runtime: tokio::runtime::Runtime,
+    runtime: bevy_tasks::IoTaskPool,
     runtime_type: RuntimeType,
 }
 pub struct PackfileReader(Arc<PackfileReaderInner>);
@@ -168,8 +168,8 @@ impl PackfileReader {
         let runtime_type = RuntimeType::MultiThread;
 
         let runtime = match runtime_type {
-            RuntimeType::CurrentThread => tokio::runtime::Builder::new_current_thread().build()?,
-            RuntimeType::MultiThread => tokio::runtime::Builder::new_multi_thread().build()?,
+            //RuntimeType::CurrentThread => bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build()),
+            RuntimeType::MultiThread => bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build()),
         };
 
         Ok(PackfileReader(Arc::new(PackfileReaderInner {
@@ -263,50 +263,43 @@ impl PackfileReaderInner {
 
 impl LoaderIO for PackfileReader {
     fn get_asset_metadata_with_dependencies(&mut self, request: MetadataRequest) {
-        let _guard = self.0.runtime.enter();
         let inner = self.0.clone();
-        tokio::spawn(async move {
+        self.0.runtime.spawn(async move {
             match inner.get_asset_metadata_with_dependencies_impl(&request) {
                 Ok(data) => request.complete(data),
                 Err(err) => request.error(err),
             }
-        });
+        }).detach();
     }
 
     fn get_asset_candidates(&mut self, requests: Vec<ResolveRequest>) {
-        let _guard = self.0.runtime.enter();
         for request in requests {
             let inner = self.0.clone();
-            tokio::spawn(async move {
+            self.0.runtime.spawn(async move {
                 match inner.get_asset_candidates_impl(&request) {
                     Ok(data) => request.complete(data),
                     Err(err) => request.error(err),
                 }
-            });
+            }).detach();
         }
     }
 
     fn get_artifacts(&mut self, requests: Vec<DataRequest>) {
-        let _guard = self.0.runtime.enter();
         for request in requests {
             let inner = self.0.clone();
-            tokio::spawn(async move {
+            self.0.runtime.spawn(async move {
                 match inner.get_artifact_impl(&request) {
                     Ok(data) => request.complete(data),
                     Err(err) => request.error(err),
                 }
-            });
+            }).detach();
         }
     }
 
     fn tick(&mut self, _loader: &mut LoaderState) {
         // We require this yield if the runtime is a CurrentThread runtime
-        if self.0.runtime_type == RuntimeType::CurrentThread {
-            self.0.runtime.block_on(tokio::task::yield_now());
-        }
-    }
-
-    fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Runtime)) {
-        f(&self.0.runtime);
+        //if self.0.runtime_type == RuntimeType::CurrentThread {
+        //    self.0.runtime.block_on(tokio::task::yield_now());
+        //}
     }
 }
