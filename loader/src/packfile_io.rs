@@ -8,31 +8,43 @@ use std::{
 use capnp::serialize::SliceSegments;
 use distill_core::{utils::make_array, AssetMetadata, AssetRef, AssetUuid};
 use distill_schema::pack::pack_file;
-use memmap::{Mmap, MmapOptions};
 use thread_local::ThreadLocal;
+
+#[cfg(not(target_arch = "wasm32"))]
+use memmap::{Mmap, MmapOptions};
 
 use crate::{
     io::{DataRequest, LoaderIO, MetadataRequest, MetadataRequestResult, ResolveRequest},
     loader::LoaderState,
 };
 
-struct PackfileMessageReader {
+trait PackfileMessageReader: Send + Sync {
+    fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>>;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct PackfileMessageReaderFile {
     file: ManuallyDrop<File>,
     mmap: ManuallyDrop<Mmap>,
     message_reader: ManuallyDrop<ThreadLocal<capnp::message::Reader<SliceSegments<'static>>>>,
 }
-impl PackfileMessageReader {
+
+#[cfg(not(target_arch = "wasm32"))]
+impl PackfileMessageReaderFile {
     pub fn new(file: File) -> std::io::Result<Self> {
         let mmap = unsafe { MmapOptions::new().map(&file)? };
-        Ok(PackfileMessageReader {
+        Ok(PackfileMessageReaderFile {
             file: ManuallyDrop::new(file),
             mmap: ManuallyDrop::new(mmap),
             message_reader: ManuallyDrop::new(ThreadLocal::new()),
         })
     }
+}
 
+#[cfg(not(target_arch = "wasm32"))]
+impl PackfileMessageReader for PackfileMessageReaderFile {
     fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>> {
-        let messge_reader = self.message_reader.get_or_try(|| {
+        let message_reader = self.message_reader.get_or_try(|| {
             // We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here
             let slice: &[u8] = &self.mmap;
             let mut slice: &[u8] = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) };
@@ -40,10 +52,12 @@ impl PackfileMessageReader {
             options.traversal_limit_in_words(Some(1 << 31));
             capnp::serialize::read_message_from_flat_slice(&mut slice, options)
         })?;
-        messge_reader.get_root::<pack_file::Reader<'_>>()
+        message_reader.get_root::<pack_file::Reader<'_>>()
     }
 }
-impl Drop for PackfileMessageReader {
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for PackfileMessageReaderFile {
     fn drop(&mut self) {
         unsafe {
             ManuallyDrop::drop(&mut self.message_reader);
@@ -52,8 +66,46 @@ impl Drop for PackfileMessageReader {
         }
     }
 }
+
+struct PackfileMessageReaderBuffer {
+    data: &'static [u8],
+    message_reader: ManuallyDrop<ThreadLocal<capnp::message::Reader<SliceSegments<'static>>>>,
+}
+
+impl PackfileMessageReaderBuffer {
+    pub fn new(data: &'static [u8]) -> std::io::Result<Self> {
+        Ok(PackfileMessageReaderBuffer {
+            data,
+            message_reader: ManuallyDrop::new(ThreadLocal::new()),
+        })
+    }
+}
+
+impl PackfileMessageReader for PackfileMessageReaderBuffer {
+    fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>> {
+        let message_reader = self.message_reader.get_or_try(|| {
+            // We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here
+            // let slice: &[u8] = &self.mmap;
+            // let mut slice: &[u8] = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) };
+            let mut slice = self.data;
+            let mut options = capnp::message::ReaderOptions::new();
+            options.traversal_limit_in_words(Some(1 << 31));
+            capnp::serialize::read_message_from_flat_slice(&mut slice, options)
+        })?;
+        message_reader.get_root::<pack_file::Reader<'_>>()
+    }
+}
+
+impl Drop for PackfileMessageReaderBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            ManuallyDrop::drop(&mut self.message_reader);
+        }
+    }
+}
+
 struct PackfileReaderInner {
-    reader: PackfileMessageReader,
+    reader: Box<dyn PackfileMessageReader>,
     index_by_uuid: HashMap<AssetUuid, u32>,
     assets_by_path: HashMap<String, Vec<u32>>,
     runtime: tokio::runtime::Runtime,
@@ -61,8 +113,18 @@ struct PackfileReaderInner {
 pub struct PackfileReader(Arc<PackfileReaderInner>);
 
 impl PackfileReader {
-    pub fn new(file: File) -> capnp::Result<Self> {
-        let message_reader = PackfileMessageReader::new(file)?;
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn new_from_file(file: File) -> capnp::Result<Self> {
+        let message_reader = PackfileMessageReaderFile::new(file)?;
+        Self::create(Box::new(message_reader))
+    }
+
+    pub fn new_from_buffer(buffer: &'static [u8]) -> capnp::Result<Self> {
+        let message_reader = PackfileMessageReaderBuffer::new(buffer)?;
+        Self::create(Box::new(message_reader))
+    }
+
+    fn create(message_reader: Box<dyn PackfileMessageReader>) -> capnp::Result<Self> {
         let reader = message_reader.get_reader()?;
         let mut index_by_uuid = HashMap::new();
         let mut assets_by_path: HashMap<String, Vec<u32>> = HashMap::new();

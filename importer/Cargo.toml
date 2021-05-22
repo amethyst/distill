@@ -24,3 +24,6 @@ serde_importers = [
     "ron",
     "distill-core/type_uuid",
 ]
+wasm-bindgen = [
+    "uuid/wasm-bindgen"
+]
