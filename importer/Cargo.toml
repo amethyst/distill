@@ -7,13 +7,14 @@ license = "MIT OR Apache-2.0"
 description = "Importer component of the asset pipeline `distill`."
 
 [dependencies]
-distill-core = { path = "../core", version = "0.0.3", features = ["serde-1"] }
+distill-core = { path = "../core", version = "=0.0.3", features = ["serde-1"] }
+distill-serde-importable-derive = { path = "./serde-importable-derive", version = "=0.0.3", optional = true }
+
 uuid = { version = "0.8.2", features = ["v4"] }
 serde = "1"
 erased-serde = "0.3"
 ron = { version = "0.6.4", optional = true }
 typetag = { version = "0.1", optional = true }
-distill-serde-importable-derive = { path = "./serde-importable-derive", version = "0.0.3", optional = true }
 futures = "0.3"
 log = { version = "0.4", features = ["serde"] }
 
