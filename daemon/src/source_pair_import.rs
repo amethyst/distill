@@ -90,6 +90,7 @@ pub(crate) struct SourcePairImport<'a> {
     importer: Option<&'a dyn BoxedImporter>,
     importer_contexts: Option<&'a [Box<dyn ImporterContext>]>,
     source_hash: Option<u64>,
+    #[allow(dead_code)]
     meta_hash: Option<u64>,
     import_hash: Option<u64>,
     source_metadata: Option<SourceMetadata>,
