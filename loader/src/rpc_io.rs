@@ -435,8 +435,8 @@ impl asset_hub::listener::Server for ListenerImpl {
                         snapshot,
                         changed_assets,
                         deleted_assets,
-                        deleted_paths,
                         changed_paths,
+                        deleted_paths,
                     })
                     .map_err(|_| capnp::Error::failed("Could not send SnapshotChange".into()))
             });
