@@ -11,6 +11,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use dashmap::DashMap;
 use distill_core::{ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
 use log::error;
+use instant::Instant;
 
 use crate::{
     handle::{RefOp, SerdeContext},
@@ -83,7 +84,7 @@ struct AssetVersionLoad {
 #[derive(Debug)]
 struct AssetLoad {
     asset_id: AssetUuid,
-    last_state_change_instant: std::time::Instant,
+    last_state_change_instant: Instant,
     refs: AtomicUsize,
     versions: Vec<AssetVersionLoad>,
     version_counter: u32,
@@ -206,7 +207,7 @@ impl LoaderState {
                         version: 1,
                     }],
                     version_counter: 1,
-                    last_state_change_instant: std::time::Instant::now(),
+                    last_state_change_instant: Instant::now(),
                     refs: AtomicUsize::new(0),
                     pending_reload: false,
                 },
@@ -505,8 +506,7 @@ impl LoaderState {
 
                 entry.value_mut().versions = versions;
                 if state_change {
-                    let time_in_state = std::time::Instant::now()
-                        .duration_since(last_state_change_instant)
+                    let time_in_state = last_state_change_instant.elapsed()
                         .as_secs_f32();
                     log::debug!(
                         "{:?} {:?} => {:?} in {}s",
@@ -516,10 +516,9 @@ impl LoaderState {
                         time_in_state
                     );
 
-                    entry.value_mut().last_state_change_instant = std::time::Instant::now();
+                    entry.value_mut().last_state_change_instant = Instant::now();
                 } else {
-                    let time_in_state = std::time::Instant::now()
-                        .duration_since(last_state_change_instant)
+                    let time_in_state = last_state_change_instant.elapsed()
                         .as_secs_f32();
                     log::trace!(
                         "process_load_states Key: {:?} State: {:?} Time in state: {}",
@@ -578,9 +577,7 @@ impl LoaderState {
                         log::trace!(
                             "received metadata for {:?} after {} secs",
                             load.asset_id,
-                            std::time::Instant::now()
-                                .duration_since(load.last_state_change_instant)
-                                .as_secs_f32()
+                            load.last_state_change_instant.elapsed().as_secs_f32()
                         );
                         let version_load = load.versions.iter_mut().find(|v| {
                             if let Some((_, requesting_version)) = request_data {
@@ -743,9 +740,14 @@ impl LoaderState {
         while let Ok(op) = self.op_rx.try_recv() {
             match op {
                 HandleOp::Error(_handle, _version, err) => {
+                    log::error!("load error {}", err);
                     panic!("load error {}", err);
                 }
                 HandleOp::Complete(handle, version) => {
+                    log::debug!(
+                        "completed load for handle {:?} version {}",
+                        handle, version
+                    );
                     let mut load = self
                         .load_states
                         .get_mut(&handle)
@@ -762,6 +764,10 @@ impl LoaderState {
                     }
                 }
                 HandleOp::Drop(handle, version) => {
+                    log::error!(
+                        "load op dropped without calling complete/error, handle {:?} version {}",
+                        handle, version
+                    );
                     panic!(
                         "load op dropped without calling complete/error, handle {:?} version {}",
                         handle, version

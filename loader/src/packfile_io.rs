@@ -128,7 +128,7 @@ impl PackfileReader {
         let reader = message_reader.get_reader()?;
         let mut index_by_uuid = HashMap::new();
         let mut assets_by_path: HashMap<String, Vec<u32>> = HashMap::new();
-        log::debug!("Packfile contains {} entries", reader.get_entries().len());
+        let mut entry_count = 0;
         for (idx, entry) in reader.get_entries()?.iter().enumerate() {
             let asset_metadata = entry.get_asset_metadata()?;
             let id = AssetUuid(make_array(asset_metadata.get_id()?.get_id()?));
@@ -139,7 +139,11 @@ impl PackfileReader {
                 .entry(path.into())
                 .and_modify(|v| v.push(idx as u32))
                 .or_insert_with(|| vec![idx as u32]);
+
+            entry_count += 1;
         }
+
+        log::debug!("Loaded {} asset entries from packfile", entry_count);
 
         let runtime = tokio::runtime::Builder::new_current_thread().build()?;
 
