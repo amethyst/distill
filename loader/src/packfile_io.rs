@@ -41,9 +41,11 @@ impl PackfileMessageReaderFile {
 impl PackfileMessageReader for PackfileMessageReaderFile {
     fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>> {
         let message_reader = self.message_reader.get_or_try(|| {
-            // We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here
             let slice: &[u8] = &self.mmap;
-            let mut slice: &[u8] = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) };
+            let mut slice: &[u8] = unsafe {
+                // SAFETY: We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here
+                std::mem::transmute::<&[u8], &'static [u8]>(slice) 
+            };
             capnp_reader_from_slice(&mut slice)
         })?;
         message_reader.get_root::<pack_file::Reader<'_>>()
