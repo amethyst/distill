@@ -573,10 +573,10 @@ impl AssetHubService {
         AssetHubService {
             ctx: Arc::new(ServiceContext {
                 hub,
-                db,
                 file_source,
                 file_tracker,
                 artifact_cache,
+                db,
             }),
         }
     }

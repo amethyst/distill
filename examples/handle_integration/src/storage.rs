@@ -168,7 +168,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
         ))
         .expect("failed to deserialize asset");
         self.uncommitted
-            .insert(load_handle, AssetState { asset, version });
+            .insert(load_handle, AssetState { version, asset });
         log::info!("{} bytes loaded for {:?}", data.len(), load_handle);
         // The loading process could be async, in which case you can delay
         // calling `load_op.complete` as it should only be done when the asset is usable.
