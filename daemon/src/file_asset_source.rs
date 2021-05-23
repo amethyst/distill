@@ -1543,7 +1543,8 @@ where
                         .with_fixint_encoding()
                         .allow_trailing_bytes(),
                 );
-                let mut deserializer = <dyn erased_serde::Deserializer<'_>>::erase(&mut deserializer);
+                let mut deserializer =
+                    <dyn erased_serde::Deserializer<'_>>::erase(&mut deserializer);
 
                 if let Ok(options) = importer.deserialize_options(&mut deserializer) {
                     metadata.importer_options = options;
@@ -1556,7 +1557,8 @@ where
                         .with_fixint_encoding()
                         .allow_trailing_bytes(),
                 );
-                let mut deserializer = <dyn erased_serde::Deserializer<'_>>::erase(&mut deserializer);
+                let mut deserializer =
+                    <dyn erased_serde::Deserializer<'_>>::erase(&mut deserializer);
                 if let Ok(state) = importer.deserialize_state(&mut deserializer) {
                     metadata.importer_state = state;
                 }

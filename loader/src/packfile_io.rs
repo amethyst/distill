@@ -50,7 +50,6 @@ impl PackfileMessageReader for PackfileMessageReaderFile {
     }
 }
 
-
 impl Drop for PackfileMessageReaderFile {
     fn drop(&mut self) {
         unsafe {
@@ -99,7 +98,9 @@ impl Drop for PackfileMessageReaderBuffer {
 
 /// Common setup for the capnp message Reader, used by `PackfileMessageReaderFile` and
 /// `PackfileMessageReaderBuffer`
-fn capnp_reader_from_slice<'a>(mut slice: &mut &'a [u8]) -> Result<capnp::message::Reader<SliceSegments<'a>>, capnp::Error> {
+fn capnp_reader_from_slice<'a>(
+    mut slice: &mut &'a [u8],
+) -> Result<capnp::message::Reader<SliceSegments<'a>>, capnp::Error> {
     let mut options = capnp::message::ReaderOptions::new();
     options.traversal_limit_in_words(Some(1 << 31));
     capnp::serialize::read_message_from_flat_slice(&mut slice, options)
