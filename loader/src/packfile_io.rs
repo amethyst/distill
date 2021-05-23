@@ -44,7 +44,7 @@ impl PackfileMessageReader for PackfileMessageReaderFile {
             let slice: &[u8] = &self.mmap;
             let mut slice: &[u8] = unsafe {
                 // SAFETY: We ensure that the reader is dropped before the mmap so it's ok to cast to 'static here
-                std::mem::transmute::<&[u8], &'static [u8]>(slice) 
+                std::mem::transmute::<&[u8], &'static [u8]>(slice)
             };
             capnp_reader_from_slice(&mut slice)
         })?;
