@@ -8,8 +8,10 @@ use std::{
 use capnp::serialize::SliceSegments;
 use distill_core::{utils::make_array, AssetMetadata, AssetRef, AssetUuid};
 use distill_schema::pack::pack_file;
-use memmap::{Mmap, MmapOptions};
 use thread_local::ThreadLocal;
+
+#[cfg(not(target_arch = "wasm32"))]
+use memmap::{Mmap, MmapOptions};
 
 use crate::{
     io::{DataRequest, LoaderIO, MetadataRequest, MetadataRequestResult, ResolveRequest},
@@ -20,13 +22,14 @@ trait PackfileMessageReader: Send + Sync {
     fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>>;
 }
 
-/// This reader memmaps a file
+#[cfg(not(target_arch = "wasm32"))]
 struct PackfileMessageReaderFile {
     file: ManuallyDrop<File>,
     mmap: ManuallyDrop<Mmap>,
     message_reader: ManuallyDrop<ThreadLocal<capnp::message::Reader<SliceSegments<'static>>>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl PackfileMessageReaderFile {
     pub fn new(file: File) -> std::io::Result<Self> {
         let mmap = unsafe { MmapOptions::new().map(&file)? };
@@ -38,6 +41,7 @@ impl PackfileMessageReaderFile {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl PackfileMessageReader for PackfileMessageReaderFile {
     fn get_reader(&self) -> capnp::Result<pack_file::Reader<'_>> {
         let message_reader = self.message_reader.get_or_try(|| {
@@ -52,6 +56,7 @@ impl PackfileMessageReader for PackfileMessageReaderFile {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for PackfileMessageReaderFile {
     fn drop(&mut self) {
         unsafe {
@@ -60,6 +65,12 @@ impl Drop for PackfileMessageReaderFile {
             ManuallyDrop::drop(&mut self.file);
         }
     }
+}
+
+#[derive(PartialEq)]
+enum RuntimeType {
+    CurrentThread,
+    MultiThread,
 }
 
 /// This reader loads from a buffer of bytes. Works great with a buffer returned by
@@ -113,10 +124,12 @@ struct PackfileReaderInner {
     index_by_uuid: HashMap<AssetUuid, u32>,
     assets_by_path: HashMap<String, Vec<u32>>,
     runtime: tokio::runtime::Runtime,
+    runtime_type: RuntimeType,
 }
 pub struct PackfileReader(Arc<PackfileReaderInner>);
 
 impl PackfileReader {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new_from_file(file: File) -> capnp::Result<Self> {
         let message_reader = PackfileMessageReaderFile::new(file)?;
         Self::create(Box::new(message_reader))
@@ -131,6 +144,7 @@ impl PackfileReader {
         let reader = message_reader.get_reader()?;
         let mut index_by_uuid = HashMap::new();
         let mut assets_by_path: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut entry_count = 0;
         for (idx, entry) in reader.get_entries()?.iter().enumerate() {
             let asset_metadata = entry.get_asset_metadata()?;
             let id = AssetUuid(make_array(asset_metadata.get_id()?.get_id()?));
@@ -141,13 +155,29 @@ impl PackfileReader {
                 .entry(path.into())
                 .and_modify(|v| v.push(idx as u32))
                 .or_insert_with(|| vec![idx as u32]);
+
+            entry_count += 1;
         }
+
+        log::debug!("Loaded {} asset entries from packfile", entry_count);
+
+        #[cfg(target_arch = "wasm32")]
+        let runtime_type = RuntimeType::CurrentThread;
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let runtime_type = RuntimeType::MultiThread;
+
+        let runtime = match runtime_type {
+            RuntimeType::CurrentThread => tokio::runtime::Builder::new_current_thread().build()?,
+            RuntimeType::MultiThread => tokio::runtime::Builder::new_multi_thread().build()?,
+        };
 
         Ok(PackfileReader(Arc::new(PackfileReaderInner {
             reader: message_reader,
             index_by_uuid,
             assets_by_path,
-            runtime: tokio::runtime::Builder::new_multi_thread().build()?,
+            runtime,
+            runtime_type,
         })))
     }
 }
@@ -269,7 +299,12 @@ impl LoaderIO for PackfileReader {
         }
     }
 
-    fn tick(&mut self, _loader: &mut LoaderState) {}
+    fn tick(&mut self, _loader: &mut LoaderState) {
+        // We require this yield if the runtime is a CurrentThread runtime
+        if self.0.runtime_type == RuntimeType::CurrentThread {
+            self.0.runtime.block_on(tokio::task::yield_now());
+        }
+    }
 
     fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Runtime)) {
         f(&self.0.runtime);

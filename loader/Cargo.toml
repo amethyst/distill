@@ -11,7 +11,7 @@ distill-core = { path = "../core", version = "=0.0.3", features = ["serde-1"] }
 distill-schema = { path = "../schema", version = "=0.0.3", optional = true }
 
 crossbeam-channel = "0.5.0"
-tokio = { version = "1.2", features = ["net", "sync", "rt", "rt-multi-thread"], optional = true }
+tokio = { version = "1.2", features = ["sync", "rt", "rt-multi-thread"], optional = true }
 tokio-util = { version = "0.6.1", features = ["compat"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["io"], optional = true }
 futures-channel = { version = "0.3", default-features = false, features = ["alloc"] }
@@ -22,11 +22,17 @@ log = "0.4"
 dashmap = "4.0.1"
 serde = { version = "1", features = ["derive"], optional = true }
 uuid = { version = "0.8.2", optional = true }
-memmap = { version = "0.7", optional = true }
 thread_local = { version = "1.0", optional = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+memmap = { version = "0.7", optional = true }
+instant = { version = "0.1" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+instant = { version = "0.1", features = ["wasm-bindgen"] }
+
 [features]
-default = ["rpc_io", "handle", "packfile_io"]
+default = []
 packfile_io = [
     "distill-schema",
     "tokio",
@@ -45,6 +51,7 @@ rpc_io = [
     "capnp-rpc",
     "futures-util",
     "invalidate_path",
+    "tokio/net"
 ]
 invalidate_path = ["distill-core/path_utils"]
 handle = ["serde", "uuid"]

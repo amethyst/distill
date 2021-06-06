@@ -1,10 +1,18 @@
+#[cfg(feature = "distill-core")]
 pub use distill_core as core;
-use distill_core::{AssetRef, AssetUuid};
+#[cfg(feature = "distill-daemon")]
 pub use distill_daemon as daemon;
+#[cfg(feature = "distill-importer")]
 pub use distill_importer as importer;
+#[cfg(feature = "distill-loader")]
 pub use distill_loader as loader;
+
+#[cfg(feature = "distill-core")]
+use distill_core::{AssetRef, AssetUuid};
+#[cfg(feature = "distill-loader")]
 use distill_loader::handle::{Handle, SerdeContext};
 
+#[cfg(feature = "distill-loader")]
 pub fn make_handle<T>(uuid: AssetUuid) -> Handle<T> {
     SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
         let load_handle = loader_info_provider
@@ -14,6 +22,7 @@ pub fn make_handle<T>(uuid: AssetUuid) -> Handle<T> {
     })
 }
 
+#[cfg(feature = "distill-loader")]
 pub fn make_handle_from_str<T>(uuid_str: &str) -> Result<Handle<T>, distill_core::uuid::Error> {
     use std::str::FromStr;
     Ok(make_handle(AssetUuid(
