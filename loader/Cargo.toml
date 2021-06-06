@@ -51,6 +51,7 @@ rpc_io = [
     "capnp-rpc",
     "futures-util",
     "invalidate_path",
+    "net"
 ]
 invalidate_path = ["distill-core/path_utils"]
 handle = ["serde", "uuid"]

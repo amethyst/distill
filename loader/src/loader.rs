@@ -10,8 +10,8 @@ use std::{
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dashmap::DashMap;
 use distill_core::{ArtifactMetadata, AssetMetadata, AssetRef, AssetTypeId, AssetUuid};
-use log::error;
 use instant::Instant;
+use log::error;
 
 use crate::{
     handle::{RefOp, SerdeContext},
@@ -504,8 +504,7 @@ impl LoaderState {
 
                 entry.value_mut().versions = versions;
                 if state_change {
-                    let time_in_state = last_state_change_instant.elapsed()
-                        .as_secs_f32();
+                    let time_in_state = last_state_change_instant.elapsed().as_secs_f32();
                     log::debug!(
                         "{:?} {:?} => {:?} in {}s",
                         key,
@@ -516,8 +515,7 @@ impl LoaderState {
 
                     entry.value_mut().last_state_change_instant = Instant::now();
                 } else {
-                    let time_in_state = last_state_change_instant.elapsed()
-                        .as_secs_f32();
+                    let time_in_state = last_state_change_instant.elapsed().as_secs_f32();
                     log::trace!(
                         "process_load_states Key: {:?} State: {:?} Time in state: {}",
                         key,
@@ -742,10 +740,7 @@ impl LoaderState {
                     panic!("load error {}", err);
                 }
                 HandleOp::Complete(handle, version) => {
-                    log::debug!(
-                        "completed load for handle {:?} version {}",
-                        handle, version
-                    );
+                    log::debug!("completed load for handle {:?} version {}", handle, version);
                     let mut load = self
                         .load_states
                         .get_mut(&handle)
@@ -764,7 +759,8 @@ impl LoaderState {
                 HandleOp::Drop(handle, version) => {
                     log::error!(
                         "load op dropped without calling complete/error, handle {:?} version {}",
-                        handle, version
+                        handle,
+                        version
                     );
                     panic!(
                         "load op dropped without calling complete/error, handle {:?} version {}",

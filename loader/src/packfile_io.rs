@@ -67,6 +67,12 @@ impl Drop for PackfileMessageReaderFile {
     }
 }
 
+#[derive(PartialEq)]
+enum RuntimeType {
+    CurrentThread,
+    MultiThread,
+}
+
 /// This reader loads from a buffer of bytes. Works great with a buffer returned by
 /// include_bytes!(...).
 ///
@@ -118,6 +124,7 @@ struct PackfileReaderInner {
     index_by_uuid: HashMap<AssetUuid, u32>,
     assets_by_path: HashMap<String, Vec<u32>>,
     runtime: tokio::runtime::Runtime,
+    runtime_type: RuntimeType,
 }
 pub struct PackfileReader(Arc<PackfileReaderInner>);
 
@@ -154,13 +161,23 @@ impl PackfileReader {
 
         log::debug!("Loaded {} asset entries from packfile", entry_count);
 
-        let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+        #[cfg(target_arch = "wasm32")]
+        let runtime_type = RuntimeType::CurrentThread;
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let runtime_type = RuntimeType::MultiThread;
+
+        let runtime = match runtime_type {
+            RuntimeType::CurrentThread => tokio::runtime::Builder::new_current_thread().build()?,
+            RuntimeType::MultiThread => tokio::runtime::Builder::new_multi_thread().build()?,
+        };
 
         Ok(PackfileReader(Arc::new(PackfileReaderInner {
             reader: message_reader,
             index_by_uuid,
             assets_by_path,
             runtime,
+            runtime_type,
         })))
     }
 }
@@ -283,7 +300,10 @@ impl LoaderIO for PackfileReader {
     }
 
     fn tick(&mut self, _loader: &mut LoaderState) {
-        self.0.runtime.block_on(tokio::task::yield_now());
+        // We require this yield if the runtime is a CurrentThread runtime
+        if self.0.runtime_type == RuntimeType::CurrentThread {
+            self.0.runtime.block_on(tokio::task::yield_now());
+        }
     }
 
     fn with_runtime(&self, f: &mut dyn FnMut(&tokio::runtime::Runtime)) {
