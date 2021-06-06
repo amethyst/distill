@@ -90,6 +90,7 @@ pub(crate) struct SourcePairImport<'a> {
     importer: Option<&'a dyn BoxedImporter>,
     importer_contexts: Option<&'a [Box<dyn ImporterContext>]>,
     source_hash: Option<u64>,
+    #[allow(dead_code)]
     meta_hash: Option<u64>,
     import_hash: Option<u64>,
     source_metadata: Option<SourceMetadata>,
@@ -276,7 +277,7 @@ impl<'a> SourcePairImport<'a> {
         scratch_buf.clear();
         f.read_to_end(scratch_buf).await?;
         let mut deserializer = ron::de::Deserializer::from_bytes(&scratch_buf)?;
-        let mut deserializer = erased_serde::Deserializer::erase(&mut deserializer);
+        let mut deserializer = <dyn erased_serde::Deserializer<'_>>::erase(&mut deserializer);
         self.source_metadata = Some(importer.deserialize_metadata(&mut deserializer)?);
         Ok(())
     }

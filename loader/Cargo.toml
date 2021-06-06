@@ -36,6 +36,7 @@ packfile_io = [
     "futures-util",
     "memmap",
     "thread_local",
+    "invalidate_path"
 ]
 rpc_io = [
     "distill-schema",

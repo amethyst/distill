@@ -66,6 +66,7 @@ pub fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
 }
 
 #[allow(unused_mut)]
+#[allow(clippy::vec_init_then_push)]
 pub fn default_importers() -> Vec<(&'static str, Box<dyn BoxedImporter>)> {
     let mut importers: Vec<(&'static str, Box<dyn BoxedImporter>)> = vec![];
 
