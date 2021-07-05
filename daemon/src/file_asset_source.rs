@@ -12,7 +12,7 @@ use distill_core::{
     ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType,
 };
 use distill_importer::{
-    ArtifactMetadata, AssetMetadata, BoxedImporter, ImporterContext, SerializedAsset,
+    ArtifactMetadata, AssetMetadata, BoxedImporter, ImportSource, ImporterContext, SerializedAsset,
 };
 use distill_schema::{
     build_asset_metadata,
@@ -687,7 +687,7 @@ impl FileAssetSource {
         let mut import = SourcePairImport::new(path.clone());
         import.set_importer_from_map(&self.importers);
         import.set_importer_contexts(&self.importer_contexts);
-        import.generate_source_metadata(&cache);
+        import.generate_source_metadata(&cache, ImportSource::File(&path));
         import.hash_source();
 
         log::trace!("Importing source for {:?}", id);
@@ -1005,7 +1005,7 @@ impl FileAssetSource {
                 if !import.set_importer_from_map(&self.importers) {
                     log::warn!("failed to set importer from map for path {:?} when updating path ref dependencies", path_ref_source);
                 } else {
-                    import.generate_source_metadata(&cache);
+                    import.generate_source_metadata(&cache, ImportSource::File(&path.clone()));
                     import
                         .get_result_metadata_from_cache(&cache)
                         .expect("error fetching import result metadata from cache");
@@ -1201,7 +1201,7 @@ impl FileAssetSource {
                                 .expect("capnp: Failed to get importer type");
 
                             importer_version != importer.version()
-                                || options_type != importer.default_options().uuid()
+                                || options_type != importer.options_type_uuid()
                                 || state_type != importer.default_state().uuid()
                                 || importer_type != importer.uuid()
                         }
