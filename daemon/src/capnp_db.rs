@@ -81,7 +81,7 @@ impl<'cursor, 'txn> Iterator for Iter<'cursor, 'txn> {
                 let mut slice = value_bytes;
                 let value_msg = capnp::serialize::read_message_from_flat_slice(
                     &mut slice,
-                    capnp::message::ReaderOptions::default(),
+                    distill_schema::default_capnp_reader_options(),
                 );
                 Some((key_bytes, value_msg))
             }
@@ -110,7 +110,7 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
         if let Ok(mut slice) = get_result {
             let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut slice,
-                capnp::message::ReaderOptions::default(),
+                distill_schema::default_capnp_reader_options(),
             )?
             .into_typed::<V>();
             Ok(Some(msg))
@@ -139,7 +139,7 @@ pub trait DBTransaction<'a, T: lmdb::Transaction + 'a>: Sized {
         if let Ok(mut slice) = get_result {
             let msg = capnp::serialize::read_message_from_flat_slice(
                 &mut slice,
-                capnp::message::ReaderOptions::default(),
+                distill_schema::default_capnp_reader_options(),
             )?
             .into_typed::<V>();
             Ok(Some(msg))

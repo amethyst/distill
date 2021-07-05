@@ -1,6 +1,5 @@
 use std::{error::Error, path::PathBuf, sync::Mutex};
 
-use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use distill_core::{distill_signal, utils, AssetMetadata, AssetUuid};
@@ -133,9 +132,7 @@ impl RpcRuntime {
                         reader,
                         writer,
                         rpc_twoparty_capnp::Side::Client,
-                        *ReaderOptions::new()
-                            .nesting_limit(64)
-                            .traversal_limit_in_words(Some(256 * 1024 * 1024)),
+                        distill_schema::default_capnp_reader_options(),
                     ));
 
                     let mut rpc_system = RpcSystem::new(rpc_network, None);

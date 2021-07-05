@@ -8,7 +8,25 @@
 )]
 
 mod schemas;
+use capnp::message::ReaderOptions;
 use std::path::PathBuf;
+
+pub const DEFAULT_CAPNP_TRAVERSAL_LIMIT_IN_WORDS: Option<usize> = Some(256 * 1024 * 1024);
+pub const DEFAULT_CAPNP_NESTING_LIMIT: i32 = 64;
+
+// Recommended default settings, including for use over network sockets
+pub fn default_capnp_reader_options() -> ReaderOptions {
+    *ReaderOptions::new()
+        .nesting_limit(DEFAULT_CAPNP_NESTING_LIMIT)
+        .traversal_limit_in_words(DEFAULT_CAPNP_TRAVERSAL_LIMIT_IN_WORDS)
+}
+
+// Used in trusted cases like reading a file from disk
+pub fn default_capnp_reader_options_unbounded() -> ReaderOptions {
+    *ReaderOptions::new()
+        .nesting_limit(DEFAULT_CAPNP_NESTING_LIMIT)
+        .traversal_limit_in_words(Some(1 << 31))
+}
 
 use distill_core::{utils::make_array, ArtifactId, ArtifactMetadata, AssetMetadata, AssetRef};
 pub use schemas::{data_capnp, pack_capnp, service_capnp};
