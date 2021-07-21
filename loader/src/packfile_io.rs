@@ -169,7 +169,9 @@ impl PackfileReader {
 
         let runtime = match runtime_type {
             //RuntimeType::CurrentThread => bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build()),
-            RuntimeType::MultiThread => bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build()),
+            RuntimeType::MultiThread => {
+                bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build())
+            }
         };
 
         Ok(PackfileReader(Arc::new(PackfileReaderInner {
@@ -264,35 +266,44 @@ impl PackfileReaderInner {
 impl LoaderIO for PackfileReader {
     fn get_asset_metadata_with_dependencies(&mut self, request: MetadataRequest) {
         let inner = self.0.clone();
-        self.0.runtime.spawn(async move {
-            match inner.get_asset_metadata_with_dependencies_impl(&request) {
-                Ok(data) => request.complete(data),
-                Err(err) => request.error(err),
-            }
-        }).detach();
+        self.0
+            .runtime
+            .spawn(async move {
+                match inner.get_asset_metadata_with_dependencies_impl(&request) {
+                    Ok(data) => request.complete(data),
+                    Err(err) => request.error(err),
+                }
+            })
+            .detach();
     }
 
     fn get_asset_candidates(&mut self, requests: Vec<ResolveRequest>) {
         for request in requests {
             let inner = self.0.clone();
-            self.0.runtime.spawn(async move {
-                match inner.get_asset_candidates_impl(&request) {
-                    Ok(data) => request.complete(data),
-                    Err(err) => request.error(err),
-                }
-            }).detach();
+            self.0
+                .runtime
+                .spawn(async move {
+                    match inner.get_asset_candidates_impl(&request) {
+                        Ok(data) => request.complete(data),
+                        Err(err) => request.error(err),
+                    }
+                })
+                .detach();
         }
     }
 
     fn get_artifacts(&mut self, requests: Vec<DataRequest>) {
         for request in requests {
             let inner = self.0.clone();
-            self.0.runtime.spawn(async move {
-                match inner.get_artifact_impl(&request) {
-                    Ok(data) => request.complete(data),
-                    Err(err) => request.error(err),
-                }
-            }).detach();
+            self.0
+                .runtime
+                .spawn(async move {
+                    match inner.get_artifact_impl(&request) {
+                        Ok(data) => request.complete(data),
+                        Err(err) => request.error(err),
+                    }
+                })
+                .detach();
         }
     }
 

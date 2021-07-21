@@ -3,7 +3,7 @@ use std::{error::Error, path::PathBuf, sync::Mutex};
 use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use distill_core::{utils, AssetMetadata, AssetUuid, distill_signal};
+use distill_core::{distill_signal, utils, AssetMetadata, AssetUuid};
 use distill_schema::{data::asset_change_event, parse_db_metadata, service::asset_hub};
 use futures_util::AsyncReadExt;
 
@@ -99,55 +99,59 @@ impl RpcRuntime {
         let (conn_tx, conn_rx) = distill_signal::oneshot();
 
         let local = self.local.clone();
-        self.local.spawn(async move {
-            let result = async move {
-                log::trace!("Tcp connect to {:?}", connect_string);
-                let stream = async_net::TcpStream::connect(connect_string).await?;
-                stream.set_nodelay(true)?;
+        self.local
+            .spawn(async move {
+                let result = async move {
+                    log::trace!("Tcp connect to {:?}", connect_string);
+                    let stream = async_net::TcpStream::connect(connect_string).await?;
+                    stream.set_nodelay(true)?;
 
-                let (reader, writer) = stream.split();
+                    let (reader, writer) = stream.split();
 
-                log::trace!("Creating capnp VatNetwork");
-                let rpc_network = Box::new(twoparty::VatNetwork::new(
-                    reader,
-                    writer,
-                    rpc_twoparty_capnp::Side::Client,
-                    *ReaderOptions::new()
-                        .nesting_limit(64)
-                        .traversal_limit_in_words(Some(256 * 1024 * 1024)),
-                ));
+                    log::trace!("Creating capnp VatNetwork");
+                    let rpc_network = Box::new(twoparty::VatNetwork::new(
+                        reader,
+                        writer,
+                        rpc_twoparty_capnp::Side::Client,
+                        *ReaderOptions::new()
+                            .nesting_limit(64)
+                            .traversal_limit_in_words(Some(256 * 1024 * 1024)),
+                    ));
 
-                let mut rpc_system = RpcSystem::new(rpc_network, None);
+                    let mut rpc_system = RpcSystem::new(rpc_network, None);
 
-                let hub: asset_hub::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+                    let hub: asset_hub::Client =
+                        rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
 
-                let _disconnector = rpc_system.get_disconnector();
-                local.spawn(rpc_system).detach();
+                    let _disconnector = rpc_system.get_disconnector();
+                    local.spawn(rpc_system).detach();
 
-                log::trace!("Requesting RPC snapshot..");
-                let response = hub.get_snapshot_request().send().promise.await?;
+                    log::trace!("Requesting RPC snapshot..");
+                    let response = hub.get_snapshot_request().send().promise.await?;
 
-                let snapshot = response.get()?.get_snapshot()?;
-                log::trace!("Received snapshot, registering listener..");
-                let (snapshot_tx, snapshot_rx) = unbounded();
-                let listener: asset_hub::listener::Client = capnp_rpc::new_client(ListenerImpl {
-                    snapshot_channel: snapshot_tx,
-                    snapshot_change: None,
-                });
+                    let snapshot = response.get()?.get_snapshot()?;
+                    log::trace!("Received snapshot, registering listener..");
+                    let (snapshot_tx, snapshot_rx) = unbounded();
+                    let listener: asset_hub::listener::Client =
+                        capnp_rpc::new_client(ListenerImpl {
+                            snapshot_channel: snapshot_tx,
+                            snapshot_change: None,
+                        });
 
-                let mut request = hub.register_listener_request();
-                request.get().set_listener(listener);
-                let rpc_conn = request.send().promise.await.map(|_| RpcConnection {
-                    snapshot,
-                    snapshot_rx,
-                })?;
-                log::trace!("Registered listener, done connecting RPC loader.");
+                    let mut request = hub.register_listener_request();
+                    request.get().set_listener(listener);
+                    let rpc_conn = request.send().promise.await.map(|_| RpcConnection {
+                        snapshot,
+                        snapshot_rx,
+                    })?;
+                    log::trace!("Registered listener, done connecting RPC loader.");
 
-                Ok(rpc_conn)
-            }
-            .await;
-            let _ = conn_tx.send(result);
-        }).detach();
+                    Ok(rpc_conn)
+                }
+                .await;
+                let _ = conn_tx.send(result);
+            })
+            .detach();
 
         self.connection = InternalConnectionState::Connecting(conn_rx)
     }
@@ -328,46 +332,55 @@ fn process_requests(runtime: &mut RpcRuntime, requests: &mut QueuedRequests) {
         let len = requests.data_requests.len();
         for asset in requests.data_requests.drain(0..len) {
             let snapshot = connection.snapshot.clone();
-            runtime.local.spawn(async move {
-                match do_import_artifact_request(&asset, &snapshot).await {
-                    Ok(data) => {
-                        asset.complete(data);
+            runtime
+                .local
+                .spawn(async move {
+                    match do_import_artifact_request(&asset, &snapshot).await {
+                        Ok(data) => {
+                            asset.complete(data);
+                        }
+                        Err(e) => {
+                            asset.error(e);
+                        }
                     }
-                    Err(e) => {
-                        asset.error(e);
-                    }
-                }
-            }).detach();
+                })
+                .detach();
         }
 
         let len = requests.metadata_requests.len();
         for m in requests.metadata_requests.drain(0..len) {
             let snapshot = connection.snapshot.clone();
-            runtime.local.spawn(async move {
-                match do_metadata_request(&m, &snapshot).await {
-                    Ok(data) => {
-                        m.complete(data);
+            runtime
+                .local
+                .spawn(async move {
+                    match do_metadata_request(&m, &snapshot).await {
+                        Ok(data) => {
+                            m.complete(data);
+                        }
+                        Err(e) => {
+                            m.error(e);
+                        }
                     }
-                    Err(e) => {
-                        m.error(e);
-                    }
-                }
-            }).detach();
+                })
+                .detach();
         }
 
         let len = requests.resolve_requests.len();
         for m in requests.resolve_requests.drain(0..len) {
             let snapshot = connection.snapshot.clone();
-            runtime.local.spawn(async move {
-                match do_resolve_request(&m, &snapshot).await {
-                    Ok(data) => {
-                        m.complete(data);
+            runtime
+                .local
+                .spawn(async move {
+                    match do_resolve_request(&m, &snapshot).await {
+                        Ok(data) => {
+                            m.complete(data);
+                        }
+                        Err(e) => {
+                            m.error(e);
+                        }
                     }
-                    Err(e) => {
-                        m.error(e);
-                    }
-                }
-            }).detach();
+                })
+                .detach();
         }
     }
 }

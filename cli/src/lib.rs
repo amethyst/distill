@@ -9,9 +9,9 @@ use distill_schema::{
 };
 
 pub mod shell;
+use futures::AsyncReadExt;
 use shell::Autocomplete;
 pub use shell::Command;
-use futures::AsyncReadExt;
 
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
 pub type DynResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -53,7 +53,9 @@ pub struct Context {
     snapshot: Rc<RefCell<Snapshot>>,
 }
 
-pub async fn create_context(local: &async_executor::LocalExecutor<'_>) -> Result<Context, Box<dyn std::error::Error>> {
+pub async fn create_context(
+    local: &async_executor::LocalExecutor<'_>,
+) -> Result<Context, Box<dyn std::error::Error>> {
     use std::net::ToSocketAddrs;
     let addr = "127.0.0.1:9999".to_socket_addrs()?.next().unwrap();
     let stream = async_net::TcpStream::connect(&addr).await?;

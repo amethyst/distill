@@ -1,6 +1,6 @@
-use std::task::{Poll, Context};
 use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Thin wrapper around `futures::channel::oneshot` to match `tokio::sync::oneshot` interface.
 pub fn oneshot<T>() -> (Sender<T>, Receiver<T>) {
@@ -24,7 +24,7 @@ impl<T> Receiver<T> {
         match self.inner.try_recv() {
             Ok(Some(x)) => Ok(x),
             Ok(None) => Err(TryRecvError::Empty),
-            Err(_canceled) => Err(TryRecvError::Closed)
+            Err(_canceled) => Err(TryRecvError::Closed),
         }
     }
 }
@@ -43,7 +43,7 @@ impl<T> Future for Receiver<T> {
 
 #[derive(Debug)]
 pub struct Sender<T> {
-    inner: futures::channel::oneshot::Sender<T>
+    inner: futures::channel::oneshot::Sender<T>,
 }
 
 impl<T> Sender<T> {

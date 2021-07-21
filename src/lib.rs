@@ -42,7 +42,9 @@ mod tests {
         sync::{Once, RwLock},
     };
 
-    use distill_core::{type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid, distill_signal};
+    use distill_core::{
+        distill_signal, type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid,
+    };
     use distill_daemon::{init_logging, AssetDaemon};
     use distill_importer::{
         AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,
@@ -346,10 +348,7 @@ mod tests {
 
     fn spawn_daemon(
         daemon_address: &str,
-    ) -> (
-        std::thread::JoinHandle<()>,
-        distill_signal::Sender<bool>,
-    ) {
+    ) -> (std::thread::JoinHandle<()>, distill_signal::Sender<bool>) {
         let daemon_address = daemon_address
             .parse()
             .expect("Failed to parse string as `SocketAddr`.");

@@ -45,7 +45,7 @@ pub(crate) struct FileAssetSource {
     tables: FileAssetSourceTables,
     importers: Arc<ImporterMap>,
     importer_contexts: Arc<Vec<Box<dyn ImporterContext>>>,
-    runtime: bevy_tasks::IoTaskPool
+    runtime: bevy_tasks::IoTaskPool,
 }
 
 struct FileAssetSourceTables {

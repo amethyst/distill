@@ -77,7 +77,7 @@ struct AssetHubSnapshotImpl {
 
 struct AssetHubImpl {
     ctx: Arc<ServiceContext>,
-    local: Rc<async_executor::LocalExecutor<'static>>
+    local: Rc<async_executor::LocalExecutor<'static>>,
 }
 
 fn build_artifact_message<T: AsRef<[u8]>>(
@@ -533,22 +533,24 @@ impl AssetHubImpl {
 
         let tx = self.ctx.hub.register_listener(tx);
 
-        self.local.spawn(async move {
-            while rx.recv().await.is_ok() {
-                let mut request = listener.update_request();
-                let snapshot = AssetHubSnapshotImpl::new(ctx.clone()).await;
-                let latest_change = ctx
-                    .hub
-                    .get_latest_asset_change(snapshot.txn.txn())
-                    .expect("failed to get latest change");
-                request.get().set_latest_change(latest_change);
-                request.get().set_snapshot(capnp_rpc::new_client(snapshot));
-                if request.send().promise.await.is_err() {
-                    ctx.hub.drop_listener(tx);
-                    break;
+        self.local
+            .spawn(async move {
+                while rx.recv().await.is_ok() {
+                    let mut request = listener.update_request();
+                    let snapshot = AssetHubSnapshotImpl::new(ctx.clone()).await;
+                    let latest_change = ctx
+                        .hub
+                        .get_latest_asset_change(snapshot.txn.txn())
+                        .expect("failed to get latest change");
+                    request.get().set_latest_change(latest_change);
+                    request.get().set_snapshot(capnp_rpc::new_client(snapshot));
+                    if request.send().promise.await.is_err() {
+                        ctx.hub.drop_listener(tx);
+                        break;
+                    }
                 }
-            }
-        }).detach();
+            })
+            .detach();
 
         Ok(())
     }
@@ -600,7 +602,7 @@ impl AssetHubService {
                     let local = Rc::new(async_executor::LocalExecutor::new());
                     let service_impl = AssetHubImpl {
                         ctx,
-                        local: local.clone()
+                        local: local.clone(),
                     };
 
                     let hub_impl: asset_hub::Client = capnp_rpc::new_client(service_impl);

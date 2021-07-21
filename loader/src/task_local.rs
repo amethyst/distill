@@ -62,15 +62,15 @@ impl<T: 'static> LocalKey<T> {
     ///
     /// On completion of `scope`, the task-local will be dropped.
     pub async fn scope<F>(&'static self, value: T, f: F) -> F::Output
-        where
-            F: Future,
+    where
+        F: Future,
     {
         TaskLocalFuture {
             local: &self,
             slot: Some(value),
             future: f,
         }
-            .await
+        .await
     }
 
     /// Accesses the current task-local and runs the provided closure.
@@ -80,8 +80,8 @@ impl<T: 'static> LocalKey<T> {
     /// This function will panic if not called within the context
     /// of a future containing a task-local with the corresponding key.
     pub fn with<F, R>(&'static self, f: F) -> R
-        where
-            F: FnOnce(&T) -> R,
+    where
+        F: FnOnce(&T) -> R,
     {
         self.try_with(f).expect(
             "cannot access a Task Local Storage value \
@@ -95,8 +95,8 @@ impl<T: 'static> LocalKey<T> {
     /// method will return an `AccessError`. For a panicking variant,
     /// see `with`.
     pub fn try_with<F, R>(&'static self, f: F) -> Result<R, AccessError>
-        where
-            F: FnOnce(&T) -> R,
+    where
+        F: FnOnce(&T) -> R,
     {
         self.inner.with(|v| {
             if let Some(val) = v.borrow().as_ref() {
@@ -107,7 +107,6 @@ impl<T: 'static> LocalKey<T> {
         })
     }
 }
-
 
 impl<T: 'static> fmt::Debug for LocalKey<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

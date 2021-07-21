@@ -130,7 +130,9 @@ impl DirWatcher {
                         Ok(entry) => {
                             let evt = self.handle_notify_event(evt_create(entry.path()), true)?;
                             if let Some(evt) = evt {
-                                self.asset_tx.unbounded_send(evt).map_err(|_| Error::SendError)?;
+                                self.asset_tx
+                                    .unbounded_send(evt)
+                                    .map_err(|_| Error::SendError)?;
                             }
                             let metadata;
                             match entry.metadata() {

@@ -19,9 +19,9 @@ use distill_schema::data::{self, dirty_file_info, rename_file_event, source_file
 use event_listener::Event;
 use futures::{
     channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    lock::Mutex,
     stream::StreamExt,
     FutureExt,
-    lock::Mutex,
 };
 use lmdb::Cursor;
 use log::{debug, info};
@@ -933,7 +933,6 @@ pub mod tests {
             t.delete_dirty_file_state(&mut txn, &f.path);
         }
     }
-
 
     #[async_executor::test]
     async fn test_create_file() {

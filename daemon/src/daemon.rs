@@ -10,12 +10,12 @@ use std::{
 
 use asset_hub::AssetHub;
 use asset_hub_service::AssetHubService;
+use distill_core::distill_signal;
 use distill_importer::{BoxedImporter, ImporterContext};
 use distill_schema::data;
 use file_asset_source::FileAssetSource;
 use futures::future::FutureExt;
 use std::rc::Rc;
-use distill_core::distill_signal;
 
 use crate::{
     artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
@@ -178,7 +178,11 @@ impl AssetDaemon {
         (handle, tx)
     }
 
-    async fn run_rpc_runtime(self, local: &async_executor::LocalExecutor<'_>, rx: distill_signal::Receiver<bool>) {
+    async fn run_rpc_runtime(
+        self,
+        local: &async_executor::LocalExecutor<'_>,
+        rx: distill_signal::Receiver<bool>,
+    ) {
         let cache_dir = self.db_dir.join("cache");
         let _ = fs::create_dir(&self.db_dir);
         let _ = fs::create_dir(&cache_dir);
@@ -244,8 +248,7 @@ impl AssetDaemon {
         let service_handle = local.spawn(async move { service.run(addr).await }).fuse();
 
         let tracker_handle = local.spawn(async move { tracker.run().await }).fuse();
-        let asset_source_handle =
-            local.spawn(async move { asset_source.run().await }).fuse();
+        let asset_source_handle = local.spawn(async move { asset_source.run().await }).fuse();
 
         let rx_fuse = rx.fuse();
 
