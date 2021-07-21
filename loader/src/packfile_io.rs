@@ -68,8 +68,11 @@ impl Drop for PackfileMessageReaderFile {
 }
 
 #[derive(PartialEq)]
+#[allow(dead_code)]
 enum RuntimeType {
-    //CurrentThread,
+    // Use a single-threaded runtime (compatible with WASM)
+    CurrentThread,
+    // Use a typical runtime, which may use multiple threads
     MultiThread,
 }
 
@@ -124,6 +127,7 @@ struct PackfileReaderInner {
     index_by_uuid: HashMap<AssetUuid, u32>,
     assets_by_path: HashMap<String, Vec<u32>>,
     runtime: bevy_tasks::IoTaskPool,
+    #[allow(dead_code)]
     runtime_type: RuntimeType,
 }
 pub struct PackfileReader(Arc<PackfileReaderInner>);
@@ -168,7 +172,11 @@ impl PackfileReader {
         let runtime_type = RuntimeType::MultiThread;
 
         let runtime = match runtime_type {
-            //RuntimeType::CurrentThread => bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build()),
+            // The CurrentThread codepath has not been verified as necessary for WASM, this needs to
+            // be verified as necessary and correct before it is used
+            RuntimeType::CurrentThread => {
+                unimplemented!("packfile_io needs to be updated to support wasm")
+            }
             RuntimeType::MultiThread => {
                 bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build())
             }
@@ -308,6 +316,9 @@ impl LoaderIO for PackfileReader {
     }
 
     fn tick(&mut self, _loader: &mut LoaderState) {
+        //TODO: Handle the CurrentThread case.. before we switched from tokio to bevy_tasks, this
+        // would deadlock as this task never yielded and there was no other threads trying to make
+        // progress on other tasks.
         // We require this yield if the runtime is a CurrentThread runtime
         //if self.0.runtime_type == RuntimeType::CurrentThread {
         //    self.0.runtime.block_on(tokio::task::yield_now());
