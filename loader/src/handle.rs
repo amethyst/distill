@@ -403,7 +403,7 @@ impl<'a> distill_core::importer_context::ImporterContextHandle for DummySerdeCon
             panic!("end_serialize_asset when current_serde_asset is not set");
         }
         current.current_serde_asset = None;
-        std::mem::replace(&mut current.current_serde_dependencies, HashSet::new())
+        std::mem::take(&mut current.current_serde_dependencies)
     }
 }
 

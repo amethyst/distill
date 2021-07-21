@@ -667,7 +667,7 @@ impl FileTracker {
         if self.is_running() {
             self.stopping_event.notify(std::usize::MAX);
             self.listener_rx.lock().await;
-            assert_eq!(false, self.is_running.load(Ordering::Acquire));
+            assert!(!self.is_running.load(Ordering::Acquire));
         }
     }
 

@@ -502,8 +502,8 @@ impl LoaderState {
                 }
 
                 entry.value_mut().versions = versions;
+                let time_in_state = last_state_change_instant.elapsed().as_secs_f32();
                 if state_change {
-                    let time_in_state = last_state_change_instant.elapsed().as_secs_f32();
                     log::debug!(
                         "{:?} {:?} => {:?} in {}s",
                         key,
@@ -514,7 +514,6 @@ impl LoaderState {
 
                     entry.value_mut().last_state_change_instant = Instant::now();
                 } else {
-                    let time_in_state = last_state_change_instant.elapsed().as_secs_f32();
                     log::trace!(
                         "process_load_states Key: {:?} State: {:?} Time in state: {}",
                         key,

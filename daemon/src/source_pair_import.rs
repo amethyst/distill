@@ -72,15 +72,8 @@ pub(crate) struct AssetImportResult {
 
 impl AssetImportResult {
     pub(crate) fn is_fully_resolved(&self) -> bool {
-        self.unresolved_load_refs
-            .iter()
-            .find(|r| r.is_uuid())
-            .is_none()
-            && self
-                .unresolved_build_refs
-                .iter()
-                .find(|r| r.is_uuid())
-                .is_none()
+        !self.unresolved_load_refs.iter().any(|r| r.is_uuid())
+            && !self.unresolved_build_refs.iter().any(|r| r.is_uuid())
     }
 }
 

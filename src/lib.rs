@@ -132,7 +132,7 @@ mod tests {
                     })
                     .filter(|line| !line.is_empty())
                     .flat_map(|line| line.chars().chain(std::iter::once('\n')));
-                String::from_iter(processed)
+                processed.collect()
             })
         }
     }
