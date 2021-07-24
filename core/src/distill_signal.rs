@@ -2,20 +2,20 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// Thin wrapper around `futures::channel::oneshot` to match `tokio::sync::oneshot` interface.
+/// Thin wrapper around `futures_channel::oneshot` to match `tokio::sync::oneshot` interface.
 pub fn oneshot<T>() -> (Sender<T>, Receiver<T>) {
-    let (sender, receiver) = futures::channel::oneshot::channel();
+    let (sender, receiver) = futures_channel::oneshot::channel();
     (Sender::new(sender), Receiver::new(receiver))
 }
 
 #[derive(Debug)]
 pub struct Receiver<T> {
-    inner: futures::channel::oneshot::Receiver<T>,
+    inner: futures_channel::oneshot::Receiver<T>,
 }
 
 impl<T> Receiver<T> {
     #[inline(always)]
-    pub(crate) fn new(inner: futures::channel::oneshot::Receiver<T>) -> Self {
+    pub(crate) fn new(inner: futures_channel::oneshot::Receiver<T>) -> Self {
         Receiver { inner }
     }
 
@@ -43,12 +43,12 @@ impl<T> Future for Receiver<T> {
 
 #[derive(Debug)]
 pub struct Sender<T> {
-    inner: futures::channel::oneshot::Sender<T>,
+    inner: futures_channel::oneshot::Sender<T>,
 }
 
 impl<T> Sender<T> {
     #[inline(always)]
-    pub(crate) fn new(inner: futures::channel::oneshot::Sender<T>) -> Self {
+    pub(crate) fn new(inner: futures_channel::oneshot::Sender<T>) -> Self {
         Sender { inner }
     }
 
