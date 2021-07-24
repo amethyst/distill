@@ -19,7 +19,8 @@ use distill_schema::{
     data::{self, path_refs, source_metadata},
     parse_db_metadata,
 };
-use futures::{channel::mpsc::unbounded, lock::Mutex, stream::StreamExt};
+use futures_channel::mpsc::unbounded;
+use futures_util::{lock::Mutex, stream::StreamExt};
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;

@@ -14,7 +14,7 @@ use distill_core::distill_signal;
 use distill_importer::{BoxedImporter, ImporterContext};
 use distill_schema::data;
 use file_asset_source::FileAssetSource;
-use futures::future::FutureExt;
+use futures_util::future::FutureExt;
 use std::rc::Rc;
 
 use crate::{
@@ -252,11 +252,11 @@ impl AssetDaemon {
 
         let rx_fuse = rx.fuse();
 
-        futures::pin_mut!(service_handle, tracker_handle, asset_source_handle, rx_fuse);
+        futures_util::pin_mut!(service_handle, tracker_handle, asset_source_handle, rx_fuse);
 
         log::info!("Starting Daemon Loop");
         loop {
-            futures::select! {
+            futures_util::select! {
                 _done = &mut service_handle => panic!("ServiceHandle panicked"),
                 _done = &mut tracker_handle => panic!("FileTracker panicked"),
                 _done = &mut asset_source_handle => panic!("AssetSource panicked"),

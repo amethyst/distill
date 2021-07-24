@@ -9,7 +9,7 @@ use distill_schema::{
 };
 
 pub mod shell;
-use futures::AsyncReadExt;
+use futures_util::AsyncReadExt;
 use shell::Autocomplete;
 pub use shell::Command;
 

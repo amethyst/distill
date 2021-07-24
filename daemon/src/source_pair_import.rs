@@ -14,7 +14,8 @@ use distill_importer::{
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
 use distill_schema::data;
-use futures::future::{BoxFuture, Future};
+use futures_core::future::BoxFuture;
+use std::future::Future;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +26,7 @@ use crate::{
     file_tracker::FileState,
     watcher::file_metadata,
 };
-use futures::AsyncReadExt;
+use futures_util::AsyncReadExt;
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -596,7 +597,7 @@ impl<'a> SourcePairImport<'a> {
                 let mut f = std::fs::File::open(source)?;
                 let mut contents = vec![];
                 f.read_to_end(&mut contents)?;
-                let mut cursor = futures::io::Cursor::new(contents);
+                let mut cursor = futures_util::io::Cursor::new(contents);
 
                 importer
                     .import_boxed(

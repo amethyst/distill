@@ -17,8 +17,8 @@ use std::{
 use distill_core::utils::{self, canonicalize_path};
 use distill_schema::data::{self, dirty_file_info, rename_file_event, source_file_info, FileType};
 use event_listener::Event;
-use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures_util::{
     lock::Mutex,
     stream::StreamExt,
     FutureExt,
@@ -705,17 +705,17 @@ impl FileTracker {
         let listener_rx = listener_rx_guard.get_mut().fuse();
         let watcher_rx = watcher_rx.fuse();
 
-        futures::pin_mut!(watcher_rx, listener_rx, stopping);
+        futures_util::pin_mut!(watcher_rx, listener_rx, stopping);
 
         let mut dirty = false;
 
         #[allow(unused_mut)]
         loop {
-            let delay = futures::FutureExt::fuse(async_io::Timer::after(Duration::from_millis(40)));
+            let delay = futures_util::future::FutureExt::fuse(async_io::Timer::after(Duration::from_millis(40)));
 
-            futures::pin_mut!(delay);
+            futures_util::pin_mut!(delay);
 
-            futures::select! {
+            futures_util::select! {
                 new_listener = listener_rx.next() => listeners.register(new_listener),
                 _ = delay => {
                     if dirty {

@@ -20,7 +20,10 @@ notify = "4.0.15"
 distill-downstream-lmdb-rkv = "0.11.0-windows-fix"
 rayon = { version = "1.3", optional = true }
 log = { version = "0.4", features = ["serde", "std"] }
-futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
+futures-io = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = ["std", "async-await", "async-await-macro"] }
+futures-channel = { version = "0.3", default-features = false, features = ["std"] }
 event-listener = { version = "2.4.0" }
 serde = "1"
 serde_derive = "1.0"

@@ -18,7 +18,7 @@ use distill_schema::{
     parse_artifact_metadata, parse_db_asset_ref,
     service::asset_hub,
 };
-use futures::{AsyncReadExt, TryFutureExt};
+use futures_util::{AsyncReadExt, TryFutureExt};
 
 use crate::{
     artifact_cache::ArtifactCache,
