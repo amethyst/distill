@@ -8,7 +8,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
-use futures::{
+use futures_util::{
     future::{pending, FusedFuture, FutureExt},
     select,
     stream::StreamExt,
@@ -425,8 +425,7 @@ impl<C> Shell<C> {
                                     break 'event_loop;
                                 }
                                 _ => {
-                                    let items =
-                                        std::mem::replace(&mut autocomplete.items, Vec::new());
+                                    let items = std::mem::take(&mut autocomplete.items);
                                     state = State::Select {
                                         overlap: autocomplete.overlap,
                                         items,

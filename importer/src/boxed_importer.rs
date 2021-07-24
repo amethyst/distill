@@ -1,6 +1,7 @@
 use distill_core::TypeUuidDynamic;
 use erased_serde::Deserializer;
-use futures::{future::BoxFuture, AsyncRead, AsyncWrite};
+use futures_core::future::BoxFuture;
+use futures_io::{AsyncRead, AsyncWrite};
 use serde::{Deserialize, Serialize};
 
 use crate::{error::Result, AsyncImporter, ExportAsset, ImportOp, ImporterValue, SerdeObj};

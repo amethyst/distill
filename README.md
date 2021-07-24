@@ -101,3 +101,8 @@ Licensed under either of
 at your option.
 
 PLEASE NOTE that some dependencies may be licensed under other terms. These are listed in [deny.toml](deny.toml) under licenses.exceptions on a best-effort basis, and are validated in every CI run using [cargo-deny](https://github.com/EmbarkStudios/cargo-deny).
+
+## Vendored Code
+
+In addition to crate dependencies, this project contains some vendored code:
+ * [daemon/src/timout.rs](daemon/src/timout.rs) - Used under Apache 2.0/MIT license. (Only used in unit tests)

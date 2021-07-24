@@ -18,7 +18,7 @@ use distill_schema::{
     parse_artifact_metadata, parse_db_asset_ref,
     service::asset_hub,
 };
-use futures::{AsyncReadExt, TryFutureExt};
+use futures_util::{AsyncReadExt, TryFutureExt};
 
 use crate::{
     artifact_cache::ArtifactCache,
@@ -77,6 +77,7 @@ struct AssetHubSnapshotImpl {
 
 struct AssetHubImpl {
     ctx: Arc<ServiceContext>,
+    local: Rc<async_executor::LocalExecutor<'static>>,
 }
 
 fn build_artifact_message<T: AsRef<[u8]>>(
@@ -532,22 +533,25 @@ impl AssetHubImpl {
 
         let tx = self.ctx.hub.register_listener(tx);
 
-        tokio::task::spawn_local(async move {
-            while rx.recv().await.is_ok() {
-                let mut request = listener.update_request();
-                let snapshot = AssetHubSnapshotImpl::new(ctx.clone()).await;
-                let latest_change = ctx
-                    .hub
-                    .get_latest_asset_change(snapshot.txn.txn())
-                    .expect("failed to get latest change");
-                request.get().set_latest_change(latest_change);
-                request.get().set_snapshot(capnp_rpc::new_client(snapshot));
-                if request.send().promise.await.is_err() {
-                    ctx.hub.drop_listener(tx);
-                    break;
+        self.local
+            .spawn(async move {
+                while rx.recv().await.is_ok() {
+                    let mut request = listener.update_request();
+                    let snapshot = AssetHubSnapshotImpl::new(ctx.clone()).await;
+                    let latest_change = ctx
+                        .hub
+                        .get_latest_asset_change(snapshot.txn.txn())
+                        .expect("failed to get latest change");
+                    request.get().set_latest_change(latest_change);
+                    request.get().set_snapshot(capnp_rpc::new_client(snapshot));
+                    if request.send().promise.await.is_err() {
+                        ctx.hub.drop_listener(tx);
+                        break;
+                    }
                 }
-            }
-        });
+            })
+            .detach();
+
         Ok(())
     }
 
@@ -583,29 +587,36 @@ impl AssetHubService {
 
     pub async fn run(&self, addr: std::net::SocketAddr) {
         let result: std::result::Result<(), Box<dyn std::error::Error>> = async {
-            let listener = tokio::net::TcpListener::bind(&addr).await?;
+            let listener = async_net::TcpListener::bind(&addr).await?;
 
             loop {
                 let (stream, _) = listener.accept().await?;
-                log::info!("tokio::net::TcpListener accepted");
-                stream.set_nodelay(true).unwrap();
-                use tokio_util::compat::*;
-                let (reader, writer) = stream.compat().split();
+                let ctx = self.ctx.clone();
 
-                let service_impl = AssetHubImpl {
-                    ctx: self.ctx.clone(),
-                };
-                let hub_impl: asset_hub::Client = capnp_rpc::new_client(service_impl);
+                std::thread::spawn(|| {
+                    log::info!("async_net::TcpListener accepted");
 
-                let network = twoparty::VatNetwork::new(
-                    reader,
-                    writer,
-                    rpc_twoparty_capnp::Side::Server,
-                    Default::default(),
-                );
+                    stream.set_nodelay(true).unwrap();
+                    let (reader, writer) = stream.split();
 
-                let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.client));
-                tokio::task::spawn_local(rpc_system.map_err(|_| ()));
+                    let local = Rc::new(async_executor::LocalExecutor::new());
+                    let service_impl = AssetHubImpl {
+                        ctx,
+                        local: local.clone(),
+                    };
+
+                    let hub_impl: asset_hub::Client = capnp_rpc::new_client(service_impl);
+
+                    let network = twoparty::VatNetwork::new(
+                        reader,
+                        writer,
+                        rpc_twoparty_capnp::Side::Server,
+                        Default::default(),
+                    );
+
+                    let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.client));
+                    async_io::block_on(local.run(rpc_system.map_err(|_| ()))).unwrap();
+                });
             }
         }
         .await;

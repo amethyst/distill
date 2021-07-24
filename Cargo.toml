@@ -18,7 +18,6 @@ members = [
     "importer",
     "loader",
     "schema",
-    "client",
     "cli",
     "daemon",
     "core",
@@ -33,10 +32,11 @@ distill-importer = { version = "=0.0.3", path = "importer", optional = true }
 distill-loader = { version = "=0.0.3", path = "loader", optional = true }
 
 [dev-dependencies]
-futures = "0.3"
+futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
+futures-io = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
 serde = "1"
 uuid = "0.8.2"
-tokio = { version = "1.2", features = ["sync"] }
 serial_test = "0.5.1"
 
 [features]

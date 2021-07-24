@@ -14,7 +14,9 @@ pub use distill_core::{
 use distill_core::{AssetRef, AssetUuid};
 #[cfg(feature = "serde_importers")]
 pub use distill_serde_importable_derive::*;
-use futures::{future::BoxFuture, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use futures_core::future::BoxFuture;
+use futures_io::{AsyncRead, AsyncWrite};
+use futures_util::{AsyncReadExt, AsyncWriteExt};
 pub use serde;
 use serde::Serialize;
 

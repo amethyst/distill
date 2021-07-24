@@ -10,10 +10,13 @@ mod daemon;
 mod error;
 mod file_asset_source;
 mod file_tracker;
-mod scope;
 mod serialized_asset;
 mod source_pair_import;
 mod watcher;
+
+// This module is only used from test code
+#[cfg(test)]
+mod timeout;
 
 pub use crate::{
     daemon::{default_importer_contexts, default_importers, AssetDaemon, ImporterMap},
@@ -74,8 +77,6 @@ pub fn init_logging() -> Result<()> {
         })
         .chain(std::io::stdout())
         .level(log_level)
-        .level_for("mio", log::LevelFilter::Info)
-        .level_for("tokio_core", log::LevelFilter::Info)
         // .chain(fern::log_file("output.log")?)
         .apply()?;
     Ok(())
