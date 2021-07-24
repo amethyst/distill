@@ -37,6 +37,8 @@ use async_io::Timer;
 /// #
 /// # Ok(()) }) }
 /// ```
+// EDIT: Allow dead code (macOS does not run the tests that require this)
+#[allow(dead_code)]
 pub async fn timeout<F, T>(dur: Duration, f: F) -> Result<T, TimeoutError>
 where
     F: Future<Output = T>,
