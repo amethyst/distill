@@ -14,6 +14,10 @@ mod serialized_asset;
 mod source_pair_import;
 mod watcher;
 
+// This module is only used from test code
+#[cfg(test)]
+mod timeout;
+
 pub use crate::{
     daemon::{default_importer_contexts, default_importers, AssetDaemon, ImporterMap},
     error::{Error, Result},

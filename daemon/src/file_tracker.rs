@@ -776,6 +776,7 @@ pub mod tests {
     use crate::{
         capnp_db::Environment,
         file_tracker::{FileTracker, FileTrackerEvent},
+        timeout::timeout,
     };
 
     pub async fn with_tracker<F, T>(f: F)
@@ -815,7 +816,7 @@ pub mod tests {
 
     async fn expect_no_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) {
         match timeout(Duration::from_millis(1000), rx.next()).await {
-            Err(_) => return,
+            Err(_) => {}
             Ok(evt) => panic!("Received unexpected event {:?}", evt),
         }
     }
@@ -823,7 +824,7 @@ pub mod tests {
     async fn expect_event(rx: &mut UnboundedReceiver<FileTrackerEvent>) -> FileTrackerEvent {
         match timeout(Duration::from_millis(10000), rx.next()).await {
             Err(_) => panic!("Timed out waiting for file event"),
-            Ok(evt) => return evt.unwrap(),
+            Ok(evt) => evt.unwrap(),
         }
     }
 
