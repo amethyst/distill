@@ -584,24 +584,11 @@ impl<'a> SourcePairImport<'a> {
         let import_op_ref = &mut import_op;
         let imported = ctx
             .scope(async move {
-                // TODO(dvd): Can this be replaced now that tokio is gone?
-                //This is broken on tokio 0.2.14 and later (concurrent file loads endlessly yield to
-                // each other.
-                // let mut f = File::open(source).await?;
-                // let result = importer
-                //     .import_boxed(&mut f, metadata.importer_options, metadata.importer_state)
-                //     .await;
-
-                // Non-async work-around
-                let mut f = std::fs::File::open(source)?;
-                let mut contents = vec![];
-                f.read_to_end(&mut contents)?;
-                let mut cursor = futures::io::Cursor::new(contents);
-
+                let mut f = async_fs::File::open(source).await?;
                 importer
                     .import_boxed(
                         import_op_ref,
-                        &mut cursor,
+                        &mut f,
                         metadata.importer_options,
                         metadata.importer_state,
                     )
