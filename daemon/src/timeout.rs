@@ -16,9 +16,6 @@ use std::task::{Context, Poll};
 //EDIT: Use async_io directly
 //use crate::utils::{timer_after, Timer};
 use async_io::Timer;
-fn timer_after(dur: std::time::Duration) -> Timer {
-    Timer::after(dur)
-}
 
 /// Awaits a future or times out after a duration of time.
 ///
@@ -62,7 +59,9 @@ impl<F> TimeoutFuture<F> {
     pub(super) fn new(future: F, dur: Duration) -> TimeoutFuture<F> {
         TimeoutFuture {
             future,
-            delay: timer_after(dur),
+            //EDIT: Call timer directly
+            //delay: timer_after(dur),
+            delay: Timer::after(dur),
         }
     }
 }
