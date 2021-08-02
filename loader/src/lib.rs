@@ -1,4 +1,11 @@
-#![warn(rust_2018_idioms, rust_2018_compatibility)]
+#![deny(
+    rust_2018_compatibility,
+    rust_2018_idioms,
+    unused,
+    unused_extern_crates,
+    future_incompatible,
+    nonstandard_style
+)]
 
 /// *feature:* `handle`. Handles provide automatic reference counting of assets, similar to [Rc](`std::rc::Rc`).
 #[cfg(feature = "handle")]

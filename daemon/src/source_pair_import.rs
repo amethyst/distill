@@ -269,7 +269,7 @@ impl<'a> SourcePairImport<'a> {
         let mut f = async_fs::File::open(&meta).await?;
         scratch_buf.clear();
         f.read_to_end(scratch_buf).await?;
-        let mut deserializer = ron::de::Deserializer::from_bytes(&scratch_buf)?;
+        let mut deserializer = ron::de::Deserializer::from_bytes(scratch_buf)?;
         let mut deserializer = <dyn erased_serde::Deserializer<'_>>::erase(&mut deserializer);
         self.source_metadata = Some(importer.deserialize_metadata(&mut deserializer)?);
         Ok(())
@@ -700,7 +700,7 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
             import.set_source_hash(source_hash);
             import.set_meta_hash(meta_hash);
             import.set_importer_contexts(importer_contexts);
-            if !import.set_importer_from_map(&importer_map) {
+            if !import.set_importer_from_map(importer_map) {
                 Ok(None)
             } else {
                 import.read_metadata_from_file(scratch_buf).await?;
@@ -728,7 +728,7 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
             let mut import = SourcePairImport::new(source.path);
             import.set_source_hash(hash);
             import.set_importer_contexts(importer_contexts);
-            if !import.set_importer_from_map(&importer_map) {
+            if !import.set_importer_from_map(importer_map) {
                 debug!("file has no importer registered");
                 Ok(Some((import, None)))
             } else {
@@ -881,7 +881,7 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
                 op.set_source_hash(source_hash);
             }
             op.set_importer_contexts(importer_contexts);
-            if !op.set_importer_from_map(&importer_map) {
+            if !op.set_importer_from_map(importer_map) {
                 Err(Error::Custom(format!(
                     "no importer registered for extension {:?}",
                     source_path.extension()

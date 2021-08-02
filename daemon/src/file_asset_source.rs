@@ -276,7 +276,7 @@ impl FileAssetSource {
             .collect();
         for path_ref in new_path_refs {
             if deduped_path_refs.insert(path_ref.clone()) {
-                self.add_path_ref(txn, path, &path_ref);
+                self.add_path_ref(txn, path, path_ref);
             }
         }
         let mut value_builder = capnp::message::Builder::new_default();
@@ -400,7 +400,7 @@ impl FileAssetSource {
 
         for asset in to_remove.iter() {
             debug!("remove asset {:?}", asset);
-            self.delete_asset_path(txn, &asset);
+            self.delete_asset_path(txn, asset);
         }
 
         let key_str = path.to_string_lossy();
@@ -516,7 +516,7 @@ impl FileAssetSource {
         } else {
             list.init_paths(1)
         };
-        paths.set(new_size - 1, &path_ref_bytes);
+        paths.set(new_size - 1, path_ref_bytes);
         txn.put(self.tables.reverse_path_refs, &key, &message)
             .expect("lmdb: failed to put path ref");
         true
@@ -684,14 +684,14 @@ impl FileAssetSource {
                 })
                 .unwrap_or_else(Vec::new);
             for unresolved_ref in asset.unresolved_build_refs.iter() {
-                if let Some(uuid) = self.resolve_asset_ref(txn, &path, &unresolved_ref) {
-                    context_set.resolve_ref(&unresolved_ref, uuid);
+                if let Some(uuid) = self.resolve_asset_ref(txn, &path, unresolved_ref) {
+                    context_set.resolve_ref(unresolved_ref, uuid);
                     build_deps.push(uuid);
                 }
             }
             for unresolved_ref in asset.unresolved_load_refs.iter() {
-                if let Some(uuid) = self.resolve_asset_ref(txn, &path, &unresolved_ref) {
-                    context_set.resolve_ref(&unresolved_ref, uuid);
+                if let Some(uuid) = self.resolve_asset_ref(txn, &path, unresolved_ref) {
+                    context_set.resolve_ref(unresolved_ref, uuid);
                     load_deps.push(uuid);
                 }
             }
@@ -831,7 +831,7 @@ impl FileAssetSource {
                 &result_metadata
             };
             let changed_assets = self
-                .put_metadata(txn, path, &source_metadata, &result_metadata)
+                .put_metadata(txn, path, source_metadata, result_metadata)
                 .expect("Failed to put metadata");
 
             for asset in changed_assets {
@@ -860,7 +860,7 @@ impl FileAssetSource {
 
         // push removals and updates into AssetHub database
         for (asset, maybe_metadata) in affected_assets.iter_mut() {
-            match self.get_asset_path(txn, &asset) {
+            match self.get_asset_path(txn, asset) {
                 Some(ref path) => {
                     let asset_metadata = maybe_metadata
                         .as_mut()
@@ -891,7 +891,7 @@ impl FileAssetSource {
                         a.load_deps.sort_unstable();
                         a.build_deps.sort_unstable();
                         a.id = ArtifactId(utils::calc_import_artifact_hash(
-                            &asset,
+                            asset,
                             import_hash,
                             a.load_deps
                                 .iter()
@@ -901,12 +901,12 @@ impl FileAssetSource {
                     }
 
                     self.hub
-                        .update_asset(txn, &asset_metadata, data::AssetSource::File, change_batch)
+                        .update_asset(txn, asset_metadata, data::AssetSource::File, change_batch)
                         .expect("hub: Failed to update asset in hub");
                 }
                 None => {
                     self.hub
-                        .remove_asset(txn, &asset, change_batch)
+                        .remove_asset(txn, asset, change_batch)
                         .expect("hub: Failed to remove asset");
                 }
             }
@@ -923,7 +923,7 @@ impl FileAssetSource {
                 // Then we look in the database for assets affected by the change
                 let cache = DBSourceMetadataCache {
                     txn,
-                    file_asset_source: &self,
+                    file_asset_source: self,
                     _marker: std::marker::PhantomData,
                 };
                 let mut import = SourcePairImport::new(path_ref_source.clone());
@@ -1138,7 +1138,7 @@ impl FileAssetSource {
             let mut txn = self.db.rw_txn().await.expect("Failed to open rw txn");
             for p in changed_paths.iter() {
                 self.tracker
-                    .add_dirty_file(&mut txn, &p)
+                    .add_dirty_file(&mut txn, p)
                     .await
                     .unwrap_or_else(|err| error!("Failed to add dirty file, {}", err));
             }
@@ -1182,12 +1182,12 @@ impl FileAssetSource {
 
             for (path, pair) in source_meta_pairs.iter_mut() {
                 if pair.meta.is_none() {
-                    let path = utils::to_meta_path(&path);
+                    let path = utils::to_meta_path(path);
                     pair.meta = self.tracker.get_file_state(txn, &path);
                 }
 
                 if pair.source.is_none() {
-                    pair.source = self.tracker.get_file_state(txn, &path);
+                    pair.source = self.tracker.get_file_state(txn, path);
                 }
             }
 
@@ -1227,7 +1227,7 @@ impl FileAssetSource {
 
                         let cache = DBSourceMetadataCache {
                             txn: &read_txn,
-                            file_asset_source: &self,
+                            file_asset_source: self,
                             _marker: std::marker::PhantomData,
                         };
 
@@ -1459,7 +1459,7 @@ impl FileAssetSource {
             .expect("failed to open RW transaction");
         let cache = DBSourceMetadataCache {
             txn: &txn,
-            file_asset_source: &self,
+            file_asset_source: self,
             _marker: std::marker::PhantomData,
         };
         let meta_path = utils::to_meta_path(&path);
@@ -1543,9 +1543,8 @@ where
             let mut build_pipelines = HashMap::new();
             for pair in saved_metadata.get_build_pipelines()?.iter() {
                 build_pipelines.insert(
-                    utils::uuid_from_slice(&pair.get_key()?.get_id()?).ok_or(Error::UuidLength)?,
-                    utils::uuid_from_slice(&pair.get_value()?.get_id()?)
-                        .ok_or(Error::UuidLength)?,
+                    utils::uuid_from_slice(pair.get_key()?.get_id()?).ok_or(Error::UuidLength)?,
+                    utils::uuid_from_slice(pair.get_value()?.get_id()?).ok_or(Error::UuidLength)?,
                 );
             }
             if saved_metadata.get_importer_options_type()? == metadata.importer_options.uuid() {

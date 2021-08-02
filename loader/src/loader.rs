@@ -607,7 +607,7 @@ impl LoaderState {
             for (handle, version) in request_data.values() {
                 let mut load = self
                     .load_states
-                    .get_mut(&handle)
+                    .get_mut(handle)
                     .expect("load in metadata request but not in load_states");
                 let version_load = load
                     .versions
@@ -783,7 +783,7 @@ impl LoaderState {
                 distill_core::utils::canonicalize_path(&PathBuf::from(indirect_id.path()));
             for change in &changes {
                 if change == &cleaned_path {
-                    if let Some(mut indirect) = self.indirect_states.get_mut(&handle) {
+                    if let Some(mut indirect) = self.indirect_states.get_mut(handle) {
                         indirect.pending_reresolve = true;
                     }
                 }

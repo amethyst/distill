@@ -1,10 +1,19 @@
+#![deny(
+    rust_2018_compatibility,
+    rust_2018_idioms,
+    unused,
+    unused_extern_crates,
+    future_incompatible,
+    nonstandard_style
+)]
+
 mod schemas;
 use std::path::PathBuf;
 
 use distill_core::{utils::make_array, ArtifactId, ArtifactMetadata, AssetMetadata, AssetRef};
 pub use schemas::{data_capnp, pack_capnp, service_capnp};
 impl ::std::fmt::Debug for data_capnp::FileState {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match self {
             data::FileState::Exists => {
                 write!(f, "FileState::Exists")?;
@@ -243,7 +252,7 @@ pub fn build_asset_metadata(
     }
     if let Some(artifact_metadata) = &metadata.artifact {
         let mut artifact = m.reborrow().init_latest_artifact().init_artifact();
-        build_artifact_metadata(&artifact_metadata, &mut artifact);
+        build_artifact_metadata(artifact_metadata, &mut artifact);
     } else {
         m.reborrow().init_latest_artifact().set_none(());
     }

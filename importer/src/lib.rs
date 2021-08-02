@@ -1,3 +1,12 @@
+#![deny(
+    rust_2018_compatibility,
+    rust_2018_idioms,
+    unused,
+    unused_extern_crates,
+    future_incompatible,
+    nonstandard_style
+)]
+
 mod boxed_importer;
 mod error;
 mod serde_obj;

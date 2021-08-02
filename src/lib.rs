@@ -1,3 +1,12 @@
+#![deny(
+    rust_2018_compatibility,
+    rust_2018_idioms,
+    unused,
+    unused_extern_crates,
+    future_incompatible,
+    nonstandard_style
+)]
+
 #[cfg(feature = "distill-core")]
 pub use distill_core as core;
 #[cfg(feature = "distill-daemon")]
@@ -132,7 +141,7 @@ mod tests {
                     })
                     .filter(|line| !line.is_empty())
                     .flat_map(|line| line.chars().chain(std::iter::once('\n')));
-                processed.collect()
+                processed.collect::<String>()
             })
         }
     }
@@ -247,14 +256,14 @@ mod tests {
             LoadStatus::Loaded,
             handle,
             &mut loader,
-            &storage
+            storage
         ));
         loader.remove_ref(handle);
         assert!(wait_for_status(
             LoadStatus::NotRequested,
             handle,
             &mut loader,
-            &storage
+            storage
         ));
 
         tx.send(true).unwrap();
@@ -282,7 +291,7 @@ mod tests {
         let storage = &mut Storage {
             map: RwLock::new(HashMap::new()),
         };
-        wait_for_status(LoadStatus::Loaded, handle, &mut loader, &storage);
+        wait_for_status(LoadStatus::Loaded, handle, &mut loader, storage);
 
         // Check that dependent assets are loaded
         let asset_handles = asset_tree()
@@ -309,7 +318,7 @@ mod tests {
 
         // Remove reference to top level asset.
         loader.remove_ref(handle);
-        wait_for_status(LoadStatus::NotRequested, handle, &mut loader, &storage);
+        wait_for_status(LoadStatus::NotRequested, handle, &mut loader, storage);
 
         // Remove ref when unloading top level asset.
         asset_handles
@@ -320,7 +329,7 @@ mod tests {
                     LoadStatus::NotRequested,
                     *asset_load_handle,
                     &mut loader,
-                    &storage,
+                    storage,
                 );
             });
 

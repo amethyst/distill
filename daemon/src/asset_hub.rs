@@ -197,7 +197,7 @@ impl AssetHub {
     ) -> Result<()> {
         let existing_metadata: Option<MessageReader<'_, asset_metadata::Owned>> =
             txn.get(self.tables.asset_metadata, &metadata.id)?;
-        let new_metadata = build_asset_metadata_message::<&[u8; 8]>(&metadata, source);
+        let new_metadata = build_asset_metadata_message::<&[u8; 8]>(metadata, source);
         let mut deps_to_delete = Vec::new();
         let mut deps_to_add = Vec::new();
         let mut artifact_changed = true;

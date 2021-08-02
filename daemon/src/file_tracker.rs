@@ -256,7 +256,7 @@ mod events {
             scan_ctx.files.insert(path.to_path_buf(), metadata.clone());
         }
         if changed {
-            let value = build_source_info(&metadata);
+            let value = build_source_info(metadata);
             let dirty_value = build_dirty_file_info(
                 data::FileState::Exists,
                 value.get_root_as_reader::<source_file_info::Reader<'_>>()?,
@@ -303,7 +303,7 @@ mod events {
                 );
                 txn.put(tables.dirty_files, &src_key, &dirty_value_old)?;
                 txn.put(tables.dirty_files, &dst_key, &dirty_value_new)?;
-                add_rename_event(tables, txn, &src_key, &dst_key)?;
+                add_rename_event(tables, txn, src_key, dst_key)?;
             }
             FileEvent::Removed(path) => {
                 if !scan_stack.is_empty() {
@@ -314,7 +314,7 @@ mod events {
                 let path_str = path.to_string_lossy();
                 let key = path_str.as_bytes();
                 debug!("removed {}", path_str);
-                update_deleted_dirty_entry(txn, &tables, &key)?;
+                update_deleted_dirty_entry(txn, tables, &key)?;
                 txn.delete(tables.source_files, &key)?;
             }
             FileEvent::FileError(err) => {
@@ -353,7 +353,7 @@ mod events {
                 for p in to_remove {
                     let p_str = p.to_string_lossy();
                     let p_key = p_str.as_bytes();
-                    update_deleted_dirty_entry(txn, &tables, &p_key)?;
+                    update_deleted_dirty_entry(txn, tables, &p_key)?;
                     txn.delete(tables.source_files, &p_key)?;
                 }
                 info!(
@@ -386,7 +386,7 @@ mod events {
                     }
                     for key in to_delete {
                         txn.delete(tables.source_files, &key)?;
-                        update_deleted_dirty_entry(txn, &tables, &key)?;
+                        update_deleted_dirty_entry(txn, tables, &key)?;
                     }
                 }
                 debug!("scan end: {}", path.to_string_lossy());

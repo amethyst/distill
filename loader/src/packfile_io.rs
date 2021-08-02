@@ -154,7 +154,7 @@ impl PackfileReader {
             let id = AssetUuid(make_array(asset_metadata.get_id()?.get_id()?));
             index_by_uuid.insert(id, idx as u32);
             let path = entry.get_path()?;
-            let path = std::str::from_utf8(&path)?;
+            let path = std::str::from_utf8(path)?;
             assets_by_path
                 .entry(path.into())
                 .and_modify(|v| v.push(idx as u32))
@@ -210,7 +210,7 @@ impl PackfileReaderInner {
                     distill_schema::parse_artifact_metadata(&entry.get_artifact()?.get_metadata()?);
                 for dep in &artifact_metadata.load_deps {
                     if let AssetRef::Uuid(dep_uuid) = dep {
-                        if !visited.contains(&dep_uuid) {
+                        if !visited.contains(dep_uuid) {
                             visited.insert(*dep_uuid);
                             to_visit.push(*dep_uuid);
                         }

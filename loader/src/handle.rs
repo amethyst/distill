@@ -273,7 +273,7 @@ crate::task_local! {
 pub struct SerdeContext;
 impl SerdeContext {
     pub fn with_active<R>(f: impl FnOnce(&dyn LoaderInfoProvider, &Sender<RefOp>) -> R) -> R {
-        LOADER.with(|l| REFOP_SENDER.with(|r| f(*l, &r)))
+        LOADER.with(|l| REFOP_SENDER.with(|r| f(*l, r)))
     }
 
     pub async fn with<F>(loader: &dyn LoaderInfoProvider, sender: Sender<RefOp>, f: F) -> F::Output

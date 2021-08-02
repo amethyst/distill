@@ -1,3 +1,12 @@
+#![deny(
+    rust_2018_compatibility,
+    rust_2018_idioms,
+    unused,
+    unused_extern_crates,
+    future_incompatible,
+    nonstandard_style
+)]
+
 use std::fmt;
 #[cfg(feature = "serde-1")]
 use std::str::FromStr;
@@ -47,7 +56,7 @@ impl AsRef<[u8]> for AssetUuid {
 }
 
 impl fmt::Debug for AssetUuid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("AssetUuid")
             .field(&uuid::Uuid::from_bytes(self.0))
             .finish()
@@ -55,7 +64,7 @@ impl fmt::Debug for AssetUuid {
 }
 
 impl fmt::Display for AssetUuid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         uuid::Uuid::from_bytes(self.0).fmt(f)
     }
 }
@@ -78,7 +87,7 @@ struct AssetUuidVisitor;
 impl<'a> Visitor<'a> for AssetUuidVisitor {
     type Value = AssetUuid;
 
-    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(fmt, "a UUID-formatted string")
     }
 
@@ -120,7 +129,7 @@ impl AsRef<[u8]> for AssetTypeId {
 }
 
 impl fmt::Display for AssetTypeId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         uuid::Uuid::from_bytes(self.0).fmt(f)
     }
 }
@@ -143,7 +152,7 @@ struct AssetTypeIdVisitor;
 impl<'a> Visitor<'a> for AssetTypeIdVisitor {
     type Value = AssetTypeId;
 
-    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(fmt, "a UUID-formatted string")
     }
 

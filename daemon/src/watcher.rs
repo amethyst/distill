@@ -154,7 +154,7 @@ impl DirWatcher {
 
     pub fn run(&mut self) {
         for dir in &self.dirs.clone() {
-            if let Err(err) = self.scan_directory(&dir, &|path| DebouncedEvent::Create(path)) {
+            if let Err(err) = self.scan_directory(dir, &|path| DebouncedEvent::Create(path)) {
                 self.asset_tx
                     .unbounded_send(FileEvent::FileError(err))
                     .expect("Failed to send file error event. Ironic...");
@@ -174,7 +174,7 @@ impl DirWatcher {
                         Error::RescanRequired => {
                             for dir in &self.dirs.clone() {
                                 if let Err(err) =
-                                    self.scan_directory(&dir, &|path| DebouncedEvent::Create(path))
+                                    self.scan_directory(dir, &|path| DebouncedEvent::Create(path))
                                 {
                                     self.asset_tx
                                         .unbounded_send(FileEvent::FileError(err))

@@ -1,5 +1,13 @@
 #![allow(unknown_lints)]
-#![warn(clippy::all, rust_2018_idioms, rust_2018_compatibility)]
+#![deny(
+    rust_2018_compatibility,
+    rust_2018_idioms,
+    unused,
+    unused_extern_crates,
+    future_incompatible,
+    nonstandard_style
+)]
+#![warn(clippy::all)]
 #![allow(clippy::rc_buffer)] // https://github.com/rust-lang/rust-clippy/issues/6170
 
 mod artifact_cache;

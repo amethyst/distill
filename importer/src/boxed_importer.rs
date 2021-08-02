@@ -43,11 +43,16 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync + 'static {
     fn version(&self) -> u32;
     fn deserialize_metadata(
         &self,
-        deserializer: &mut dyn Deserializer,
+        deserializer: &mut dyn Deserializer<'_>,
     ) -> Result<SourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>>;
-    fn deserialize_options(&self, deserializer: &mut dyn Deserializer)
-        -> Result<Box<dyn SerdeObj>>;
-    fn deserialize_state(&self, deserializer: &mut dyn Deserializer) -> Result<Box<dyn SerdeObj>>;
+    fn deserialize_options(
+        &self,
+        deserializer: &mut dyn Deserializer<'_>,
+    ) -> Result<Box<dyn SerdeObj>>;
+    fn deserialize_state(
+        &self,
+        deserializer: &mut dyn Deserializer<'_>,
+    ) -> Result<Box<dyn SerdeObj>>;
 }
 
 impl std::fmt::Debug for dyn BoxedImporter {
@@ -154,7 +159,7 @@ where
 
     fn deserialize_metadata<'a>(
         &self,
-        deserializer: &mut dyn Deserializer,
+        deserializer: &mut dyn Deserializer<'_>,
     ) -> Result<SourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>> {
         let metadata = erased_serde::deserialize::<SourceMetadata<O, S>>(deserializer)?;
         Ok(SourceMetadata {
@@ -166,14 +171,14 @@ where
 
     fn deserialize_options<'a>(
         &self,
-        deserializer: &mut dyn Deserializer,
+        deserializer: &mut dyn Deserializer<'_>,
     ) -> Result<Box<dyn SerdeObj>> {
         Ok(Box::new(erased_serde::deserialize::<O>(deserializer)?))
     }
 
     fn deserialize_state<'a>(
         &self,
-        deserializer: &mut dyn Deserializer,
+        deserializer: &mut dyn Deserializer<'_>,
     ) -> Result<Box<dyn SerdeObj>> {
         Ok(Box::new(erased_serde::deserialize::<S>(deserializer)?))
     }
