@@ -105,4 +105,4 @@ PLEASE NOTE that some dependencies may be licensed under other terms. These are 
 ## Vendored Code
 
 In addition to crate dependencies, this project contains some vendored code:
- * [daemon/src/timout.rs](daemon/src/timout.rs) - Used under Apache 2.0/MIT license. (Only used in unit tests)
+ * [daemon/src/timeout.rs](daemon/src/timeout.rs) - Used under Apache 2.0/MIT license. (Only used in unit tests)
