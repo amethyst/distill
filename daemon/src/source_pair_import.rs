@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     fs,
     hash::{Hash, Hasher},
-    io::{BufRead, Read, Write},
+    io::{BufRead, Write},
     path::{Path, PathBuf},
     time::Instant,
 };

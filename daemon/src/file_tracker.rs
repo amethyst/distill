@@ -1054,8 +1054,8 @@ pub mod tests {
                 add_test_file(watch_dir.path(), "test.txt").await;
                 expect_event(&mut rx).await;
                 expect_no_event(&mut rx).await;
-                expect_file_state(&t, &watch_dir.path(), "test.txt").await;
-                expect_dirty_file_state(&t, &watch_dir.path(), "test.txt").await;
+                expect_file_state(&t, watch_dir.path(), "test.txt").await;
+                expect_dirty_file_state(&t, watch_dir.path(), "test.txt").await;
             }
         })
         .await;

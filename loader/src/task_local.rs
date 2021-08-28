@@ -66,7 +66,7 @@ impl<T: 'static> LocalKey<T> {
         F: Future,
     {
         TaskLocalFuture {
-            local: &self,
+            local: self,
             slot: Some(value),
             future: f,
         }
