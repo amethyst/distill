@@ -236,6 +236,9 @@ impl AssetDaemon {
         try_clear_db(&cache_db, self.clear_db_on_start)
             .await
             .expect("failed to clear cache db");
+        set_db_version(&asset_db)
+            .await
+            .expect("failed to check daemon version in cache db");
         let artifact_cache =
             ArtifactCache::new(&cache_db).expect("failed to create artifact cache");
         let artifact_cache = Arc::new(artifact_cache);
