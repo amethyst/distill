@@ -17,7 +17,6 @@ use distill_schema::data;
 use futures::future::{BoxFuture, Future};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use tokio::{fs::File, io::AsyncReadExt};
 
 use crate::{
     daemon::ImporterMap,
@@ -26,6 +25,7 @@ use crate::{
     file_tracker::FileState,
     watcher::file_metadata,
 };
+use futures::AsyncReadExt;
 
 pub type SourceMetadata = ImporterSourceMetadata<Box<dyn SerdeObj>, Box<dyn SerdeObj>>;
 
@@ -72,15 +72,8 @@ pub(crate) struct AssetImportResult {
 
 impl AssetImportResult {
     pub(crate) fn is_fully_resolved(&self) -> bool {
-        self.unresolved_load_refs
-            .iter()
-            .find(|r| r.is_uuid())
-            .is_none()
-            && self
-                .unresolved_build_refs
-                .iter()
-                .find(|r| r.is_uuid())
-                .is_none()
+        !self.unresolved_load_refs.iter().any(|r| r.is_uuid())
+            && !self.unresolved_build_refs.iter().any(|r| r.is_uuid())
     }
 }
 
@@ -273,7 +266,7 @@ impl<'a> SourcePairImport<'a> {
             .importer
             .expect("cannot read metadata without an importer");
         let meta = utils::to_meta_path(&self.source);
-        let mut f = File::open(&meta).await?;
+        let mut f = async_fs::File::open(&meta).await?;
         scratch_buf.clear();
         f.read_to_end(scratch_buf).await?;
         let mut deserializer = ron::de::Deserializer::from_bytes(&scratch_buf)?;
@@ -534,13 +527,12 @@ impl<'a> SourcePairImport<'a> {
         let mut ctx = Self::get_importer_context_set(self.importer_contexts);
 
         let source = &self.source;
-        use tokio_util::compat::*;
         let exported = ctx
             .scope(async move {
-                let f = File::open(source).await?;
+                let mut f = async_fs::File::open(source).await?;
                 importer
                     .export_boxed(
-                        &mut f.compat(),
+                        &mut f,
                         metadata.importer_options,
                         metadata.importer_state,
                         assets
@@ -592,6 +584,7 @@ impl<'a> SourcePairImport<'a> {
         let import_op_ref = &mut import_op;
         let imported = ctx
             .scope(async move {
+                // TODO(dvd): Can this be replaced now that tokio is gone?
                 //This is broken on tokio 0.2.14 and later (concurrent file loads endlessly yield to
                 // each other.
                 // let mut f = File::open(source).await?;
@@ -603,13 +596,12 @@ impl<'a> SourcePairImport<'a> {
                 let mut f = std::fs::File::open(source)?;
                 let mut contents = vec![];
                 f.read_to_end(&mut contents)?;
-                let cursor = std::io::Cursor::new(contents);
+                let mut cursor = futures::io::Cursor::new(contents);
 
-                use tokio_util::compat::*;
                 importer
                     .import_boxed(
                         import_op_ref,
-                        &mut cursor.compat(),
+                        &mut cursor,
                         metadata.importer_options,
                         metadata.importer_state,
                     )

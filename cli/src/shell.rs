@@ -425,8 +425,7 @@ impl<C> Shell<C> {
                                     break 'event_loop;
                                 }
                                 _ => {
-                                    let items =
-                                        std::mem::replace(&mut autocomplete.items, Vec::new());
+                                    let items = std::mem::take(&mut autocomplete.items);
                                     state = State::Select {
                                         overlap: autocomplete.overlap,
                                         items,

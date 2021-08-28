@@ -14,7 +14,6 @@ use instant::Instant;
 use log::error;
 
 use crate::{
-    handle::{RefOp, SerdeContext},
     io::{DataRequest, LoaderIO, MetadataRequest, MetadataRequestResult, ResolveRequest},
     storage::{
         AssetLoadOp, AssetStorage, AtomicHandleAllocator, HandleAllocator, HandleOp,
@@ -503,8 +502,8 @@ impl LoaderState {
                 }
 
                 entry.value_mut().versions = versions;
+                let time_in_state = last_state_change_instant.elapsed().as_secs_f32();
                 if state_change {
-                    let time_in_state = last_state_change_instant.elapsed().as_secs_f32();
                     log::debug!(
                         "{:?} {:?} => {:?} in {}s",
                         key,
@@ -515,7 +514,6 @@ impl LoaderState {
 
                     entry.value_mut().last_state_change_instant = Instant::now();
                 } else {
-                    let time_in_state = last_state_change_instant.elapsed().as_secs_f32();
                     log::trace!(
                         "process_load_states Key: {:?} State: {:?} Time in state: {}",
                         key,
@@ -1020,15 +1018,6 @@ impl Loader {
             },
             io,
         }
-    }
-
-    pub fn with_serde_context<R>(&self, tx: &Sender<RefOp>, mut f: impl FnMut() -> R) -> R {
-        let mut result = None;
-        self.io.with_runtime(&mut |runtime| {
-            result =
-                Some(runtime.block_on(SerdeContext::with(&self.data, tx.clone(), async { f() })));
-        });
-        result.unwrap()
     }
 
     /// Returns the load handle for the asset with the given UUID, if present.
