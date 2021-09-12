@@ -34,6 +34,7 @@ use crate::{
     watcher::{self, FileEvent, FileMetadata},
 };
 
+// LMDB database tables
 #[derive(Clone)]
 struct FileTrackerTables {
     /// Contains Path -> SourceFileInfo
@@ -45,27 +46,46 @@ struct FileTrackerTables {
 }
 #[derive(Copy, Clone, Debug)]
 pub enum FileTrackerEvent {
+    // Sent when we finish scanning all directories on startup, meaning we can drop any data in the
+    // db that wasn't found during the scan
     Start,
+    // Debounced event that indicates there are dirty files ready for processing
     Update,
 }
+
+// Starts a thread to watch the file system (via DirWatcher). Receives events about changes to file
+// system and populates LMDB tables. Downstream users of this struct can clear the dirty/rename
+// records as they are processed
 pub struct FileTracker {
+    // The single LMDB file
     db: Arc<Environment>,
+    // Tabls in the LMDB db
     tables: FileTrackerTables,
+
+    // Channel that allows registering new listeners while running
     listener_rx: Mutex<Cell<UnboundedReceiver<UnboundedSender<FileTrackerEvent>>>>,
     listener_tx: UnboundedSender<UnboundedSender<FileTrackerEvent>>,
+
+    // Flag indicates we are running, ensures we do not start the task if it's already running
     is_running: AtomicBool,
+    // Used to signal the running task to stop
     stopping_event: event_listener::Event,
+
+    // The directories behing watched, this can change when symlinks are created in watched dirs
     watch_dirs: RwLock<Vec<PathBuf>>,
 }
 
+// Path to file and description of its state when it was last found by the file watcher
 #[derive(Clone)]
 pub struct FileState {
     pub path: PathBuf,
+    // Indicates if file still exists or was deleted
     pub state: data::FileState,
     pub last_modified: u64,
     pub length: u64,
     pub ty: data::FileType,
 }
+
 impl std::fmt::Debug for FileState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use capnp::traits::ToU16;
@@ -93,6 +113,8 @@ pub struct RenameFileEvent {
     pub dst: PathBuf,
 }
 
+// We keep a stack of these during directory scans and add files that we encounter to the
+// ScanContext on the top of the stack
 struct ScanContext {
     path: PathBuf,
     files: HashMap<PathBuf, FileMetadata>,
@@ -142,6 +164,8 @@ impl ListenersList {
     }
 }
 
+// Adds a new record to rename_file_events, with the key being a sequence ID (we first read the
+// table to determine latest ID, increment, then write with the new sequence ID)
 fn add_rename_event(
     tables: &FileTrackerTables,
     txn: &mut RwTransaction<'_>,
@@ -172,6 +196,7 @@ fn add_rename_event(
     Ok(())
 }
 
+// Creates a DirtyFileInfo capn proto message
 fn build_dirty_file_info(
     state: data::FileState,
     source_info: source_file_info::Reader<'_>,
@@ -186,6 +211,8 @@ fn build_dirty_file_info(
     }
     value_builder
 }
+
+// Creates a SourceFileInfo capn proto message
 fn build_source_info(
     metadata: &watcher::FileMetadata,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
@@ -199,6 +226,7 @@ fn build_source_info(
     value_builder
 }
 
+// Checks if the file is in source_files. If it is, write a delete entry to the dirty_files table
 fn update_deleted_dirty_entry<K>(
     txn: &mut RwTransaction<'_>,
     tables: &FileTrackerTables,
@@ -225,6 +253,8 @@ mod events {
     use std::path::Path;
 
     use super::*;
+
+    // Called from handle_file_event
     fn handle_update(
         txn: &mut RwTransaction<'_>,
         tables: &FileTrackerTables,
@@ -244,12 +274,14 @@ mod events {
                     && info.get_last_modified() == metadata.last_modified
                     && info.get_type()? == db_file_type(metadata.file_type)
                 {
+                    // The file's metadata matches what we already stored
                     changed = false;
                 } else {
                     debug!("CHANGED {} metadata {:?}", path_str, metadata);
                 }
             }
         }
+        // Add the files
         if !scan_stack.is_empty() {
             let head_idx = scan_stack.len() - 1;
             let scan_ctx = scan_stack.index_mut(head_idx);
@@ -267,6 +299,7 @@ mod events {
         Ok(())
     }
 
+    // Called from inner loop of run
     pub(super) fn handle_file_event(
         txn: &mut RwTransaction<'_>,
         tables: &FileTrackerTables,
@@ -282,6 +315,7 @@ mod events {
                 if !scan_stack.is_empty() {
                     let head_idx = scan_stack.len() - 1;
                     let scan_ctx = scan_stack.index_mut(head_idx);
+                    //TODO: Does the remove work? Are we guaranteed it was first encountered in the current scan?
                     scan_ctx.files.insert(dst.clone(), metadata.clone());
                     scan_ctx.files.remove(&src);
                 }
@@ -329,9 +363,12 @@ mod events {
                 });
             }
             FileEvent::ScanEnd(path, watched_dirs) => {
-                // When we finish a scan, we know which files exist in the subdirectories.
-                // This means we can scan our DB for files we've tracked and delete removed files from DB
+                // When we finish a scan, we know which files exist in the subdirectories of the
+                // current scan. We can now scan our DB for files we've tracked and delete removed
+                // files from DB
                 let scan_ctx = scan_stack.pop().unwrap();
+
+                // Find all the files that start with the base directory of this scan
                 let mut db_file_set = HashSet::new();
                 {
                     let path_str = path.to_string_lossy();
@@ -348,7 +385,11 @@ mod events {
                         db_file_set.insert(PathBuf::from(key));
                     }
                 }
+
+                // Collapse the files hashmap into a set of keys
                 let scan_ctx_set: HashSet<PathBuf> = scan_ctx.files.keys().cloned().collect();
+
+                // Determine what keys in the DB exist that no longer exist on disk and remove them
                 let to_remove = db_file_set.difference(&scan_ctx_set);
                 for p in to_remove {
                     let p_str = p.to_string_lossy();
@@ -362,6 +403,7 @@ mod events {
                     db_file_set.len(),
                     db_file_set.difference(&scan_ctx_set).count()
                 );
+
                 // If this is the top-level scan, we have a final set of watched directories,
                 // so we can delete any files that are not in any watched directories from the DB.
                 if scan_stack.is_empty() {
@@ -406,6 +448,7 @@ mod events {
 }
 
 impl FileTracker {
+    // Creates tables in the provided DB, sanitizes passed paths.
     pub fn new<'a, I, T>(db: Arc<Environment>, to_watch: I) -> FileTracker
     where
         I: IntoIterator<Item = &'a str, IntoIter = T>,
@@ -455,6 +498,8 @@ impl FileTracker {
         }
     }
 
+    // Find if this file is contained within any of the watched directories. If it is, switch to
+    // a relative path starting from that watched directory.
     pub fn make_relative_path(&self, absolute_path: &Path) -> Option<PathBuf> {
         for dir in self.get_watch_dirs() {
             let canonicalized_dir = canonicalize_path(&dir);
@@ -485,6 +530,7 @@ impl FileTracker {
         self.db.rw_txn().await.expect("db: Failed to open rw txn")
     }
 
+    // Returns all data from rename_file_events table
     pub fn read_rename_events<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         iter_txn: &'a V,
@@ -510,11 +556,15 @@ impl FileTracker {
             .collect()
     }
 
+    // Clears the rename_file_events table. To avoid race conditions, read all the rename events,
+    // process them, and clear them in the same transaction
     pub fn clear_rename_events(&self, txn: &mut RwTransaction<'_>) {
         txn.clear_db(self.tables.rename_file_events)
             .expect("db: Failed to clear rename_file_events table");
     }
 
+    // Checks if the file exists. If it exists, populate source_files and dirty_files tables.
+    // Otherwise, write a deleted message to the dirty_files table
     pub async fn add_dirty_file(&self, txn: &mut RwTransaction<'_>, path: &Path) -> Result<()> {
         let metadata = match async_fs::metadata(path).await {
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -537,6 +587,7 @@ impl FileTracker {
         Ok(())
     }
 
+    // Returns file state from dirty_files table
     pub fn read_dirty_files<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         iter_txn: &'a V,
@@ -572,6 +623,7 @@ impl FileTracker {
             .collect()
     }
 
+    // Returns file state from source_files table
     pub fn read_all_files(&self, iter_txn: &RoTransaction<'_>) -> Vec<FileState> {
         iter_txn
             .open_ro_cursor(self.tables.source_files)
@@ -595,6 +647,9 @@ impl FileTracker {
             .collect()
     }
 
+    // Deletes an item from dirty_files table. This function must be used carefully to avoid a race
+    // condition; check that the SourceFileInfo stored in the table matches the file that was read
+    // and processed
     pub fn delete_dirty_file_state<'a>(&self, txn: &'a mut RwTransaction<'_>, path: &Path) -> bool {
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
@@ -632,6 +687,7 @@ impl FileTracker {
             })
     }
 
+    // Gets state from source_files table
     pub fn get_file_state<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
@@ -716,13 +772,18 @@ impl FileTracker {
             futures::pin_mut!(delay);
 
             futures::select! {
+                // Received a new listener, register it
                 new_listener = listener_rx.next() => listeners.register(new_listener),
+
+                // some time has passed since our previous writes to the DB, send the update event
                 _ = delay => {
                     if dirty {
                         listeners.send_event(FileTrackerEvent::Update);
                         dirty = false;
                     }
                 },
+                // Gather all events from the watcher into a transaction and commit it. This will
+                // set the dirty flag
                 mut maybe_file_event = watcher_rx.next() => {
                     if maybe_file_event.is_none() {
                         debug!("FileTracker: stopping due to exhausted watcher");
@@ -742,11 +803,15 @@ impl FileTracker {
                         maybe_file_event = watcher_rx.next().now_or_never().flatten();
                     }
 
+                    // If there were any operations that caused real changes, commit the
+                    // transaction and set the dirty flag, which will kick an update when we stop
+                    // receiving events
                     if txn.dirty {
                         txn.commit().expect("Failed to commit");
                         dirty = true;
                     }
                 }
+                // Terminate this task
                 _ = &mut stopping => {
                     debug!("FileTracker: stopping due to stop() notification");
                     break;

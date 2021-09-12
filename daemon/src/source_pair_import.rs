@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     fs,
     hash::{Hash, Hasher},
-    io::{BufRead, Read, Write},
+    io::{BufRead, Write},
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -57,8 +57,14 @@ pub(crate) struct SourcePair {
 }
 
 pub(crate) struct PairImportResult {
+    // Handlers for resolving assets by UUID or path, also tracks the assets that were referenced
+    // while serializing to automatically generate asset dependencies
     pub importer_context_set: Option<ImporterContextHandleSet>,
+
+    // Assets imported from the file
     pub assets: Vec<AssetImportResult>,
+
+    // Results from importing (i.e. warnings/errors)
     pub import_op: Option<ImportOp>,
 }
 
@@ -79,27 +85,37 @@ impl AssetImportResult {
 
 #[derive(Default)]
 pub(crate) struct SourcePairImport<'a> {
+    // Path to the file to be imported
     source: PathBuf,
+    // Importer implementation
     importer: Option<&'a dyn BoxedImporter>,
+    // Providers of ImporterContextHandles, which allow resolving paths to asset IDs and accumulating
+    // a list of asset dependencies
     importer_contexts: Option<&'a [Box<dyn ImporterContext>]>,
     source_hash: Option<u64>,
     #[allow(dead_code)]
     meta_hash: Option<u64>,
     import_hash: Option<u64>,
+    // State of the .meta file
     source_metadata: Option<SourceMetadata>,
+    // Result from previous import
     result_metadata: Option<ImportResultMetadata>,
 }
 
 pub(crate) trait SourceMetadataCache {
+    // Populate the passed in SourceMetadata, which is essentially the state of the .meta file
     fn restore_source_metadata(
         &self,
         path: &Path,
         importer: &dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()>;
+
+    // Returns metadata about the inputs and results of an import operation
     fn get_cached_metadata(&self, path: &Path) -> Result<Option<ImportResultMetadata>>;
 }
 
+// Wrapper for multiple ImporterContextHandles
 pub struct ImporterContextHandleSet(Vec<Box<dyn ImporterContextHandle>>);
 impl ImporterContextHandleSet {
     pub async fn scope<F>(&mut self, fut: F) -> F::Output
@@ -161,10 +177,13 @@ impl<'a> SourcePairImport<'a> {
         }
     }
 
+    // The SourceMetadata is the in-memory representation of the .meta file
     pub fn source_metadata(&self) -> Option<&SourceMetadata> {
         self.source_metadata.as_ref()
     }
 
+    // The ImportResultMetadata includes the results of the import operation (i.e. AssetMetadata for
+    // all assets in the source file
     pub fn result_metadata(&self) -> Option<&ImportResultMetadata> {
         self.result_metadata.as_ref()
     }
@@ -201,6 +220,8 @@ impl<'a> SourcePairImport<'a> {
         self.importer_contexts = Some(importer_contexts);
     }
 
+    // Checks if anything has changed (like importer version number being bumped), requiring
+    // a re-import. Returns true if source_metadata or result_metadata have not been populated.
     pub fn needs_source_import(&mut self, scratch_buf: &mut Vec<u8>) -> Result<bool> {
         if let (Some(meta_file), Some(cached_result)) =
             (self.source_metadata.as_ref(), self.result_metadata.as_ref())
@@ -261,7 +282,11 @@ impl<'a> SourcePairImport<'a> {
         self.import_hash
     }
 
-    pub async fn read_metadata_from_file(&mut self, scratch_buf: &mut Vec<u8>) -> Result<()> {
+    // Read the .meta file into self.source_metadata
+    pub async fn read_source_metadata_from_file(
+        &mut self,
+        scratch_buf: &mut Vec<u8>,
+    ) -> Result<()> {
         let importer = self
             .importer
             .expect("cannot read metadata without an importer");
@@ -275,6 +300,7 @@ impl<'a> SourcePairImport<'a> {
         Ok(())
     }
 
+    // Read the result of previous import into self.result_metadata
     pub fn get_result_metadata_from_cache<C: SourceMetadataCache>(
         &mut self,
         cache: &C,
@@ -283,6 +309,8 @@ impl<'a> SourcePairImport<'a> {
         Ok(())
     }
 
+    // Try to read the SourceMetadata from DB, but create a default SourceMetadata if the data
+    // cannot be found
     pub fn generate_source_metadata<C: SourceMetadataCache>(&mut self, metadata_cache: &C) {
         let importer = self
             .importer
@@ -302,6 +330,7 @@ impl<'a> SourcePairImport<'a> {
         }
     }
 
+    // ImporterContextHandles resolve paths and track referenced assets during deserialization
     fn get_importer_context_set(
         import_contexts: Option<&[Box<dyn ImporterContext>]>,
     ) -> ImporterContextHandleSet {
@@ -314,11 +343,15 @@ impl<'a> SourcePairImport<'a> {
         ImporterContextHandleSet(ctx_handles)
     }
 
+    // Regenerate PairImportResult based on cached previous import. This is used when we reimport an
+    // asset to update other assets that depend on it. We also use it when importing a file and
+    // detecting that the source file and .meta haven't changed
     pub fn import_result_from_cached_data(&self) -> Result<PairImportResult> {
         let mut assets = Vec::new();
         if let Some(metadatas) = self.result_metadata.as_ref() {
             for asset in &metadatas.assets {
                 use std::iter::FromIterator;
+                // Any load deps that aren't UUID based are unresolved
                 let unresolved_load_refs: HashSet<
                     AssetRef,
                     std::collections::hash_map::RandomState,
@@ -336,6 +369,7 @@ impl<'a> SourcePairImport<'a> {
                         })
                         .unwrap_or_else(Vec::new),
                 );
+                // Any build deps that aren't UUID based are unresolved
                 let unresolved_build_refs: HashSet<
                     AssetRef,
                     std::collections::hash_map::RandomState,
@@ -369,6 +403,10 @@ impl<'a> SourcePairImport<'a> {
         })
     }
 
+    // Given results of import an import, build the PairImportResult. (This struct can be returned
+    // from a fresh import or cached results of a previous import). This will modify our own state
+    // (self.import_hash, self.source_metadata, self.result_metadata, etc.) to match the imported
+    // data
     #[allow(clippy::too_many_arguments)]
     async fn build_import_result(
         &mut self,
@@ -511,6 +549,9 @@ impl<'a> SourcePairImport<'a> {
         })
     }
 
+    // Write the given serialized asset to disk, returns an updated PairImportResult (i.e. hash
+    // will match the exported data). This has the side effect of updating our own state (i.e.
+    // self.import_hash, self.source_metadata, self.result_metadata, etc.)
     pub async fn export_source(
         &mut self,
         scratch_buf: &mut Vec<u8>,
@@ -548,6 +589,8 @@ impl<'a> SourcePairImport<'a> {
         let state = exported.state;
         let imported = exported.value;
 
+        // This has the side effect of updating our own state (self.import_hash, self.source_metadata,
+        // self.result_metadata, etc.)
         let result = self
             .build_import_result(
                 None,
@@ -566,6 +609,8 @@ impl<'a> SourcePairImport<'a> {
         Ok(result)
     }
 
+    // Read the asset from disk, returns an updated PairImportResult (i.e. hash will match the
+    // imported data, assets will be refreshed with data from disk)
     pub async fn import_source(&mut self, scratch_buf: &mut Vec<u8>) -> Result<PairImportResult> {
         log::trace!("import_source importing {:?}", &self.source);
         let start_time = Instant::now();
@@ -618,6 +663,7 @@ impl<'a> SourcePairImport<'a> {
         Ok(result)
     }
 
+    // Write the .meta file to disk
     pub fn write_metadata(&self) -> Result<()> {
         let serialized_metadata = ron::ser::to_string_pretty(
             self.source_metadata
@@ -633,6 +679,9 @@ impl<'a> SourcePairImport<'a> {
     }
 }
 
+// Utility function that creates a SourcePairImport and returns an import result, either from
+// cached results from a previous import, or by importing the file from disk (if it has not been
+// imported, or something has changed, requiring re-import)
 pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
     metadata_cache: &C,
     importer_map: &'a ImporterMap,
@@ -703,7 +752,7 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
             if !import.set_importer_from_map(importer_map) {
                 Ok(None)
             } else {
-                import.read_metadata_from_file(scratch_buf).await?;
+                import.read_source_metadata_from_file(scratch_buf).await?;
                 import.get_result_metadata_from_cache(metadata_cache)?;
                 if import.needs_source_import(scratch_buf)? {
                     debug!("needs source import {:?}", import.source);
@@ -809,6 +858,7 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
     }
 }
 
+// Read filestate from disk (i.e. if the file exists, modification data, length, etc.)
 fn get_path_file_state(path: PathBuf) -> Result<Option<FileState>> {
     let state = match fs::metadata(&path) {
         Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -824,6 +874,10 @@ fn get_path_file_state(path: PathBuf) -> Result<Option<FileState>> {
     }))
 }
 
+// Utility function that creates a SourcePairImport and returns an import result, based on the given
+// serialized assets. This will update the source and .meta file, and the returned values should be
+// equivalent to what would be returned if the files were already written and being imported from
+// scratch
 pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
     assets: Vec<SerializedAsset<Vec<u8>>>,
     metadata_cache: &C,
@@ -833,6 +887,7 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
     meta_path: PathBuf,
     scratch_buf: &mut Vec<u8>,
 ) -> Result<(SourcePairImport<'a>, PairImportResult)> {
+    // Read state of source file already on disk
     let source_state = get_path_file_state(source_path.clone())?;
     let (source_state, source_hash) = if let Some(s) = source_state {
         let (state, hash) = hash_file(&s)?;
@@ -840,6 +895,7 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
     } else {
         (None, None)
     };
+    // Read state of meta file already on disk
     let meta_state = get_path_file_state(meta_path)?;
     let (meta_state, meta_hash) = if let Some(s) = meta_state {
         let (state, hash) = hash_file(&s)?;
@@ -889,7 +945,7 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
             } else {
                 if op.needs_source_import(scratch_buf)? {
                     // if we can't use cached metadata, read from file
-                    op.read_metadata_from_file(scratch_buf).await?;
+                    op.read_source_metadata_from_file(scratch_buf).await?;
                 } else {
                     // read metadata from db cache
                     op.generate_source_metadata(metadata_cache);

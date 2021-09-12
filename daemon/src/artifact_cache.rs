@@ -86,8 +86,7 @@ impl ArtifactCache {
     // }
 }
 
-// deduplicate with asset_hub_service, move artifact building to cache only
-fn build_artifact_message<T: AsRef<[u8]>>(
+pub(crate) fn build_artifact_message<T: AsRef<[u8]>>(
     artifact: &SerializedAsset<T>,
 ) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut value_builder = capnp::message::Builder::new_default();
