@@ -57,6 +57,7 @@ pub struct LocalKey<T: 'static> {
     pub inner: thread::LocalKey<RefCell<Option<T>>>,
 }
 
+#[cfg_attr(not(feature = "handle"), allow(unused))]
 impl<T: 'static> LocalKey<T> {
     /// Sets a value `T` as the task-local value for the future `F`.
     ///
