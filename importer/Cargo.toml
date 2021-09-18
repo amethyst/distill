@@ -10,7 +10,7 @@ description = "Importer component of the asset pipeline `distill`."
 distill-core = { path = "../core", version = "=0.0.3", features = ["serde-1"] }
 distill-serde-importable-derive = { path = "./serde-importable-derive", version = "=0.0.3", optional = true }
 
-uuid = { version = "0.8.2", features = ["v4"] }
+uuid = { version = "0.8.2", features = ["v4", "wasm-bindgen"] }
 serde = "1"
 erased-serde = "0.3"
 ron = { version = "0.6.4", optional = true }
@@ -24,7 +24,4 @@ serde_importers = [
     "distill-serde-importable-derive",
     "ron",
     "distill-core/type_uuid",
-]
-wasm-bindgen = [
-    "uuid/wasm-bindgen"
 ]
