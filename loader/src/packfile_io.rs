@@ -1,6 +1,7 @@
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs::File;
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
     mem::ManuallyDrop,
     sync::Arc,
 };

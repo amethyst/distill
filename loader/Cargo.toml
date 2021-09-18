@@ -43,7 +43,6 @@ packfile_io = [
     "futures-util",
     "memmap",
     "thread_local",
-    "async-io",
     "async-executor",
     "bevy_tasks",
     "invalidate_path"
