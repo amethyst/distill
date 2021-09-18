@@ -176,7 +176,7 @@ impl<'de> Deserialize<'de> for AssetTypeId {
 
 /// A potentially unresolved reference to an asset
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Ord, PartialOrd)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde-1", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssetRef {
     Uuid(AssetUuid),
     Path(std::path::PathBuf),
@@ -200,7 +200,7 @@ impl AssetRef {
 }
 
 #[derive(Debug, Hash, PartialEq, Copy, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde-1", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompressionType {
     None,
     Lz4,
@@ -215,7 +215,7 @@ impl Default for CompressionType {
 /// Serializable metadata for an asset.
 /// Stored in .meta files and metadata DB.
 #[derive(Debug, Clone, Hash, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-1", derive(Serialize, Deserialize))]
 pub struct AssetMetadata {
     /// UUID for the asset to uniquely identify it
     pub id: AssetUuid,
@@ -229,14 +229,14 @@ pub struct AssetMetadata {
 
 /// 64-bit hash of the inputs that would produce a given asset artifact
 #[derive(Debug, Copy, Clone, Hash, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
+#[cfg_attr(feature = "serde-1", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-1", serde(transparent))]
 pub struct ArtifactId(pub u64);
 
 /// Serializable metadata for an artifact.
 /// Stored in .meta files and metadata DB.
 #[derive(Debug, Clone, Hash, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-1", derive(Serialize, Deserialize))]
 pub struct ArtifactMetadata {
     /// Hash that identifies this artifact
     pub id: ArtifactId,
