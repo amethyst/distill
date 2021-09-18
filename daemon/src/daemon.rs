@@ -63,9 +63,11 @@ pub struct AssetDaemon {
 }
 
 pub fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
-    vec![distill_loader::if_handle_enabled!(Box::new(
-        distill_loader::handle::HandleSerdeContextProvider
-    ))]
+    #[cfg(feature = "handle")]
+    let contexts = vec![Box::new(distill_loader::handle::HandleSerdeContextProvider)];
+    #[cfg(not(feature = "handle"))]
+    let contexts = vec![];
+    contexts
 }
 
 #[allow(unused_mut)]
