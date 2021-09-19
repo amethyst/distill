@@ -233,6 +233,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[cfg_attr(target_os = "macos", ignore)]
     fn test_connect() {
         INIT.call_once(|| {
             init_logging().unwrap();
@@ -272,6 +273,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[cfg_attr(target_os = "macos", ignore)]
     fn test_load_with_dependencies() {
         INIT.call_once(|| {
             init_logging().unwrap();
