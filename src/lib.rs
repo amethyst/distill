@@ -43,18 +43,14 @@ pub fn make_handle_from_str<T>(uuid_str: &str) -> Result<Handle<T>, distill_core
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::HashMap,
-        iter::FromIterator,
-        path::PathBuf,
-        str::FromStr,
-        string::FromUtf8Error,
-        sync::{Once, RwLock},
+        collections::HashMap, iter::FromIterator, path::PathBuf, str::FromStr,
+        string::FromUtf8Error, sync::Once,
     };
 
     use distill_core::{
         distill_signal, type_uuid, type_uuid::TypeUuid, AssetRef, AssetTypeId, AssetUuid,
     };
-    use distill_daemon::{init_logging, AssetDaemon};
+    use distill_daemon::AssetDaemon;
     use distill_importer::{
         AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,
     };
@@ -77,11 +73,11 @@ mod tests {
         load_version: Option<u32>,
     }
     struct Storage {
-        map: RwLock<HashMap<LoadHandle, LoadState>>,
+        map: HashMap<LoadHandle, LoadState>,
     }
     impl AssetStorage for Storage {
         fn update_asset(
-            &self,
+            &mut self,
             _loader_info: &dyn LoaderInfoProvider,
             _asset_type: &AssetTypeId,
             data: Vec<u8>,
@@ -90,8 +86,7 @@ mod tests {
             version: u32,
         ) -> distill_loader::Result<()> {
             println!("update asset {:?} data size {}", loader_handle, data.len());
-            let mut map = self.map.write().unwrap();
-            let state = map.entry(loader_handle).or_insert(LoadState {
+            let state = self.map.entry(loader_handle).or_insert(LoadState {
                 size: None,
                 commit_version: None,
                 load_version: None,
@@ -104,23 +99,22 @@ mod tests {
         }
 
         fn commit_asset_version(
-            &self,
+            &mut self,
             _asset_type: &AssetTypeId,
             loader_handle: LoadHandle,
             version: u32,
         ) {
             println!("commit asset {:?}", loader_handle,);
-            let mut map = self.map.write().unwrap();
-            let state = map.get_mut(&loader_handle).unwrap();
+            let state = self.map.get_mut(&loader_handle).unwrap();
 
             assert!(state.load_version.unwrap() == version);
             state.commit_version = Some(version);
             state.load_version = None;
         }
 
-        fn free(&self, _asset_type: &AssetTypeId, loader_handle: LoadHandle, _version: u32) {
+        fn free(&mut self, _asset_type: &AssetTypeId, loader_handle: LoadHandle, _version: u32) {
             println!("free asset {:?}", loader_handle);
-            self.map.write().unwrap().remove(&loader_handle);
+            self.map.remove(&loader_handle);
         }
     }
 
@@ -211,7 +205,7 @@ mod tests {
         status: LoadStatus,
         handle: LoadHandle,
         loader: &mut Loader,
-        storage: &Storage,
+        storage: &mut Storage,
     ) -> bool {
         for _ in 0..100 {
             if std::mem::discriminant(&status)
@@ -235,7 +229,7 @@ mod tests {
     #[serial]
     fn test_connect() {
         INIT.call_once(|| {
-            init_logging().unwrap();
+            distill_daemon::init_logging().unwrap();
         });
 
         // Start daemon in a separate thread
@@ -250,7 +244,7 @@ mod tests {
             "b24d209d-6622-4d78-a983-731e8b76f04d",
         );
         let storage = &mut Storage {
-            map: RwLock::new(HashMap::new()),
+            map: HashMap::new(),
         };
         assert!(wait_for_status(
             LoadStatus::Loaded,
@@ -274,7 +268,7 @@ mod tests {
     #[serial]
     fn test_load_with_dependencies() {
         INIT.call_once(|| {
-            init_logging().unwrap();
+            distill_daemon::init_logging().unwrap();
         });
 
         // Start daemon in a separate thread
@@ -289,7 +283,7 @@ mod tests {
             "d83bb247-2710-4c10-83df-d7daa53e19bf",
         );
         let storage = &mut Storage {
-            map: RwLock::new(HashMap::new()),
+            map: HashMap::new(),
         };
         wait_for_status(LoadStatus::Loaded, handle, &mut loader, storage);
 

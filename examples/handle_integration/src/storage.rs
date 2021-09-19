@@ -208,7 +208,7 @@ impl<A: for<'a> serde::Deserialize<'a> + 'static + TypeUuid> TypedStorage for St
 // Untyped implementation of AssetStorage that finds the asset_type's storage and forwards the call
 impl AssetStorage for GenericAssetStorage {
     fn update_asset(
-        &self,
+        &mut self,
         loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
         data: Vec<u8>,
@@ -224,7 +224,7 @@ impl AssetStorage for GenericAssetStorage {
     }
 
     fn commit_asset_version(
-        &self,
+        &mut self,
         asset_type: &AssetTypeId,
         load_handle: LoadHandle,
         version: u32,
@@ -236,7 +236,7 @@ impl AssetStorage for GenericAssetStorage {
             .commit_asset_version(load_handle, version)
     }
 
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
+    fn free(&mut self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
         self.storage
             .borrow_mut()
             .get_mut(asset_type_id)

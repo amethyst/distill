@@ -326,7 +326,7 @@ impl LoaderState {
         handle
     }
 
-    fn process_load_states(&self, asset_storage: &dyn AssetStorage) {
+    fn process_load_states(&self, asset_storage: &mut dyn AssetStorage) {
         let mut to_remove = Vec::new();
         let keys: Vec<_> = self.load_states.iter().map(|x| *x.key()).collect();
 
@@ -639,7 +639,7 @@ impl LoaderState {
         }
     }
 
-    fn process_data_requests(&self, storage: &dyn AssetStorage, io: &mut dyn LoaderIO) {
+    fn process_data_requests(&self, storage: &mut dyn AssetStorage, io: &mut dyn LoaderIO) {
         while let Ok(response) = self.responses.data_rx.try_recv() {
             let result = response.0;
             let handle = response.1;
@@ -730,7 +730,7 @@ impl LoaderState {
         }
     }
 
-    fn process_load_ops(&self, asset_storage: &dyn AssetStorage) {
+    fn process_load_ops(&self, asset_storage: &mut dyn AssetStorage) {
         while let Ok(op) = self.op_rx.try_recv() {
             match op {
                 HandleOp::Error(_handle, _version, err) => {
@@ -792,7 +792,7 @@ impl LoaderState {
     }
 
     /// Checks for changed assets that need to be reloaded or unloaded
-    fn process_asset_changes(&mut self, asset_storage: &dyn AssetStorage) {
+    fn process_asset_changes(&mut self, asset_storage: &mut dyn AssetStorage) {
         if self.pending_reloads.is_empty() {
             // if we have no pending hot reloads, poll for new changes
             let mut changes = HashSet::new();
@@ -1147,7 +1147,7 @@ impl Loader {
     /// * `asset_storage`: Storage for all assets of all asset types.
     pub fn process(
         &mut self,
-        asset_storage: &dyn AssetStorage,
+        asset_storage: &mut dyn AssetStorage,
         resolver: &dyn IndirectionResolver,
     ) -> Result<()> {
         self.io.tick(&mut self.data);
@@ -1193,7 +1193,7 @@ fn commit_asset(
     handle: LoadHandle,
     load: &mut AssetLoad,
     version: u32,
-    asset_storage: &dyn AssetStorage,
+    asset_storage: &mut dyn AssetStorage,
 ) {
     let version_load = load
         .versions

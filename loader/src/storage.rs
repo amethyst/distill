@@ -109,7 +109,7 @@ pub trait AssetStorage {
     /// * `load_op`: Allows the loading implementation to signal when loading is done / errors.
     /// * `version`: Runtime load version of this asset, increments each time the asset is updated.
     fn update_asset(
-        &self,
+        &mut self,
         loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
         data: Vec<u8>,
@@ -125,7 +125,12 @@ pub trait AssetStorage {
     /// * `asset_type_id`: UUID of the asset type.
     /// * `load_handle`: ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset.
     /// * `version`: Runtime load version of this asset, increments each time the asset is updated.
-    fn commit_asset_version(&self, asset_type: &AssetTypeId, load_handle: LoadHandle, version: u32);
+    fn commit_asset_version(
+        &mut self,
+        asset_type: &AssetTypeId,
+        load_handle: LoadHandle,
+        version: u32,
+    );
 
     /// Frees the asset identified by the load handle.
     ///
@@ -133,7 +138,7 @@ pub trait AssetStorage {
     ///
     /// * `asset_type_id`: UUID of the asset type.
     /// * `load_handle`: ID allocated by [`Loader`](crate::loader::Loader) to track loading of a particular asset.
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32);
+    fn free(&mut self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32);
 }
 
 /// Asset loading status.
