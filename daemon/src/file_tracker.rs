@@ -936,6 +936,7 @@ pub mod tests {
     }
 
     #[futures_test::test]
+    #[ignore]
     async fn test_create_file() {
         with_tracker(|t, mut rx, asset_dir| async move {
             add_test_file(&asset_dir, "test.txt").await;
@@ -948,6 +949,7 @@ pub mod tests {
     }
 
     #[futures_test::test]
+    #[ignore]
     async fn test_modify_file() {
         with_tracker(|t, mut rx, asset_dir| async move {
             add_test_file(&asset_dir, "test.txt").await;
@@ -969,6 +971,7 @@ pub mod tests {
     }
 
     #[futures_test::test]
+    #[ignore]
     async fn test_delete_file() {
         with_tracker(|t, mut rx, asset_dir| async move {
             add_test_file(&asset_dir, "test.txt").await;
@@ -989,6 +992,7 @@ pub mod tests {
         .await;
     }
 
+    #[ignore]
     #[futures_test::test]
     async fn test_create_dir() {
         with_tracker(|t, mut rx, asset_dir| async move {
@@ -1002,6 +1006,7 @@ pub mod tests {
     }
 
     #[futures_test::test]
+    #[ignore]
     async fn test_create_file_in_dir() {
         with_tracker(|t, mut rx, asset_dir| async move {
             let dir = add_test_dir(&asset_dir, "testdir").await;
@@ -1021,6 +1026,7 @@ pub mod tests {
     }
 
     #[futures_test::test]
+    #[ignore]
     async fn test_create_emacs_lockfile() {
         with_tracker(|t, mut rx, asset_dir| async move {
             add_symlink_file(
@@ -1038,6 +1044,7 @@ pub mod tests {
     }
 
     #[futures_test::test]
+    #[ignore]
     async fn test_create_symlink_dir() {
         with_tracker(|t, mut rx, asset_dir| {
             async move {
@@ -1062,6 +1069,7 @@ pub mod tests {
     }
 
     #[futures_test::test]
+    #[ignore]
     async fn test_delete_symlink_dir() {
         with_tracker(|t, mut rx, asset_dir| async move {
             let watch_dir = tempfile::tempdir().unwrap();

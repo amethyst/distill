@@ -44,6 +44,6 @@ jobs:
 
       #TODO: macOS has tests are failing in github CI, but are not reproducing elsewhere
       - run: cargo test --workspace --all-features -- --nocapture --test-threads=1
-        if: matrix.toolchain == 'stable' && matrix.os != 'macos-latest'
+        if: matrix.toolchain == 'stable'
         env:
           RUST_LOG: TRACE
