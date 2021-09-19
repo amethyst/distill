@@ -1579,25 +1579,25 @@ impl FileAssetSource {
                 unresolved_build_refs: a.unresolved_build_refs,
             })
             .collect();
-        let asset_ids: Vec<AssetUuid> = new_asset_metadata.iter().map(|a| a.metadata.id).collect();
         let mut changes = HashMap::new();
         changes.insert(
-            path,
+            path.clone(),
             Some(PairImportResultMetadata {
                 import_state: result.0,
                 assets: new_asset_metadata,
             }),
         );
+        let new_asset_metadata = changes[&path].as_ref().unwrap();
         let mut change_batch = asset_hub::ChangeBatch::new();
         self.process_metadata_changes(&mut txn, &changes, &mut change_batch);
         let asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch)?;
-        let new_asset_metadata: Vec<AssetMetadata> = asset_ids
-            .into_iter()
+        let new_asset_metadata: Vec<AssetMetadata> = new_asset_metadata.assets
+            .iter()
             .map(|a| {
                 parse_db_metadata(
                     &self
                         .hub
-                        .get_asset_metadata(&txn, &a)
+                        .get_asset_metadata(&txn, &a.metadata.id)
                         .expect("Expected asset metadata in DB after metadata update")
                         .get()
                         .expect("capnp: metadata read failed"),
