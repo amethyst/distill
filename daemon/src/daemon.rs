@@ -14,7 +14,7 @@ use distill_core::distill_signal;
 use distill_importer::{BoxedImporter, ImporterContext};
 use distill_schema::data;
 use file_asset_source::FileAssetSource;
-use futures::future::FutureExt;
+use futures::{channel::mpsc::unbounded, future::FutureExt};
 use std::rc::Rc;
 
 use crate::{
@@ -266,8 +266,14 @@ impl AssetDaemon {
 
         let service_handle = local.spawn(async move { service.run(addr).await }).fuse();
 
+        let (file_events_tx, file_events_rx) = unbounded();
+        tracker.register_listener(file_events_tx);
+
+        let asset_source_handle = local
+            .spawn(async move { asset_source.run(file_events_rx).await })
+            .fuse();
+
         let tracker_handle = local.spawn(async move { tracker.run().await }).fuse();
-        let asset_source_handle = local.spawn(async move { asset_source.run().await }).fuse();
 
         let rx_fuse = rx.fuse();
 
