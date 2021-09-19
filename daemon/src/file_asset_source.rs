@@ -1591,7 +1591,8 @@ impl FileAssetSource {
         let mut change_batch = asset_hub::ChangeBatch::new();
         self.process_metadata_changes(&mut txn, &changes, &mut change_batch);
         let asset_metadata_changed = self.hub.add_changes(&mut txn, change_batch)?;
-        let new_asset_metadata: Vec<AssetMetadata> = new_asset_metadata.assets
+        let new_asset_metadata: Vec<AssetMetadata> = new_asset_metadata
+            .assets
             .iter()
             .map(|a| {
                 parse_db_metadata(
