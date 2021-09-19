@@ -14,7 +14,7 @@ crossbeam-channel = "0.5.0"
 futures-util = { version = "0.3", default-features = false, features = ["io"], optional = true }
 futures-channel = { version = "0.3", default-features = false, features = ["alloc"] }
 futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
-capnp = { version = "0.14.0", optional = true }
+capnp = { version = "0.14.0", features = ["unaligned"], optional = true }
 capnp-rpc = { version = "0.14.0", optional = true }
 log = "0.4"
 dashmap = "4.0.1"
@@ -43,7 +43,6 @@ packfile_io = [
     "futures-util",
     "memmap",
     "thread_local",
-    "async-io",
     "async-executor",
     "bevy_tasks",
     "invalidate_path"

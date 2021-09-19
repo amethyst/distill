@@ -1152,6 +1152,7 @@ impl Loader {
     ) -> Result<()> {
         self.io.tick(&mut self.data);
         self.data.process_asset_changes(asset_storage);
+        #[cfg(feature = "invalidate_path")]
         self.data.process_path_changes();
         self.data.process_load_ops(asset_storage);
         self.data.process_load_states(asset_storage);
@@ -1184,6 +1185,7 @@ impl Loader {
     /// Invalidates indirect identifiers that may match the provided paths.
     ///
     /// This may cause indirect handles to resolve to new assets.
+    #[cfg(feature = "invalidate_path")]
     pub fn invalidate_paths(&self, paths: &[PathBuf]) {
         self.data.invalidate_paths(paths);
     }
