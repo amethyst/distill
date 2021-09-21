@@ -5,7 +5,6 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use distill_core::{distill_signal, utils, AssetMetadata, AssetUuid};
 use distill_schema::{data::asset_change_event, parse_db_metadata, service::asset_hub};
-use futures_util::AsyncReadExt;
 
 use crate::{
     io::{DataRequest, LoaderIO, MetadataRequest, MetadataRequestResult, ResolveRequest},
@@ -88,7 +87,7 @@ impl RpcRuntime {
             };
     }
 
-    fn connect(&mut self, connect_string: String) {
+    fn connect(&mut self, connection_type: RpcConnectionType) {
         match self.connection {
             InternalConnectionState::Connected(_) | InternalConnectionState::Connecting(_) => {
                 panic!("Trying to connect while already connected or connecting")
@@ -102,11 +101,32 @@ impl RpcRuntime {
         self.local
             .spawn(async move {
                 let result = async move {
-                    log::trace!("Tcp connect to {:?}", connect_string);
-                    let stream = async_net::TcpStream::connect(connect_string).await?;
-                    stream.set_nodelay(true)?;
+                    log::trace!("connecting to {:?}", connection_type);
 
-                    let (reader, writer) = stream.split();
+                    let (reader, writer) = match connection_type {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        RpcConnectionType::Websocket(_) => {
+                            panic!("websocket connection type not supported on native targets")
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        RpcConnectionType::Websocket(addr) => {
+                            let ws = websocket_async_io::WebsocketIO::new(&addr).await?;
+                            ws.split()
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        RpcConnectionType::TCP(addr) => {
+                            use futures_util::AsyncReadExt;
+
+                            let stream = async_net::TcpStream::connect(addr).await?;
+                            stream.set_nodelay(true)?;
+
+                            stream.split()
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        RpcConnectionType::TCP(_) => {
+                            panic!("TCP connection type is not supported on wasm")
+                        }
+                    };
 
                     log::trace!("Creating capnp VatNetwork");
                     let rpc_network = Box::new(twoparty::VatNetwork::new(
@@ -157,8 +177,22 @@ impl RpcRuntime {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum RpcConnectionType {
+    Websocket(String),
+    TCP(String),
+}
+impl Default for RpcConnectionType {
+    fn default() -> Self {
+        #[cfg(target_arch = "wasm32")]
+        return RpcConnectionType::Websocket("127.0.0.1:9999".to_string());
+        #[cfg(not(target_arch = "wasm32"))]
+        return RpcConnectionType::TCP("127.0.0.1:9998".to_string());
+    }
+}
+
 pub struct RpcIO {
-    connect_string: String,
+    connection_type: RpcConnectionType,
     runtime: Mutex<RpcRuntime>,
     requests: QueuedRequests,
 }
@@ -172,14 +206,14 @@ struct QueuedRequests {
 
 impl Default for RpcIO {
     fn default() -> RpcIO {
-        RpcIO::new("127.0.0.1:9999".to_string()).unwrap()
+        RpcIO::new(RpcConnectionType::default()).unwrap()
     }
 }
 
 impl RpcIO {
-    pub fn new(connect_string: String) -> std::io::Result<RpcIO> {
+    pub fn new(connection_type: RpcConnectionType) -> std::io::Result<RpcIO> {
         Ok(RpcIO {
-            connect_string,
+            connection_type,
             runtime: Mutex::new(RpcRuntime {
                 local: Rc::new(async_executor::LocalExecutor::new()),
                 connection: InternalConnectionState::None,
@@ -214,10 +248,10 @@ impl LoaderIO for RpcIO {
         match &runtime.connection {
             InternalConnectionState::Error(err) => {
                 log::error!("Error connecting RpcIO: {}", err);
-                runtime.connect(self.connect_string.clone());
+                runtime.connect(self.connection_type.clone());
             }
             InternalConnectionState::None => {
-                runtime.connect(self.connect_string.clone());
+                runtime.connect(self.connection_type.clone());
             }
             _ => {}
         };
