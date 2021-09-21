@@ -12,6 +12,7 @@ use asset_hub::AssetHub;
 use asset_hub_service::AssetHubService;
 use distill_core::distill_signal;
 use distill_importer::{BoxedImporter, ImporterContext};
+use distill_loader::if_handle_enabled;
 use distill_schema::data;
 use file_asset_source::FileAssetSource;
 use futures::{channel::mpsc::unbounded, future::FutureExt};
@@ -62,12 +63,14 @@ pub struct AssetDaemon {
     pub clear_db_on_start: bool,
 }
 
+#[allow(unused_mut)]
+#[allow(clippy::vec_init_then_push)]
 pub fn default_importer_contexts() -> Vec<Box<dyn ImporterContext + 'static>> {
-    #[cfg(feature = "handle")]
-    let contexts = vec![Box::new(distill_loader::handle::HandleSerdeContextProvider)];
-    #[cfg(not(feature = "handle"))]
-    let contexts = vec![];
-    contexts
+    let mut importers = Vec::new();
+    if_handle_enabled!(importers
+        .push(Box::new(distill_loader::handle::HandleSerdeContextProvider)
+            as Box<dyn ImporterContext + 'static>));
+    importers
 }
 
 #[allow(unused_mut)]
