@@ -68,15 +68,6 @@ impl Drop for PackfileMessageReaderFile {
     }
 }
 
-#[derive(PartialEq)]
-#[allow(dead_code)]
-enum RuntimeType {
-    // Use a single-threaded runtime (compatible with WASM)
-    CurrentThread,
-    // Use a typical runtime, which may use multiple threads
-    MultiThread,
-}
-
 /// This reader loads from a buffer of bytes. Works great with a buffer returned by
 /// include_bytes!(...).
 ///
@@ -128,8 +119,6 @@ struct PackfileReaderInner {
     index_by_uuid: HashMap<AssetUuid, u32>,
     assets_by_path: HashMap<String, Vec<u32>>,
     runtime: bevy_tasks::IoTaskPool,
-    #[allow(dead_code)]
-    runtime_type: RuntimeType,
 }
 pub struct PackfileReader(Arc<PackfileReaderInner>);
 
@@ -166,29 +155,13 @@ impl PackfileReader {
 
         log::debug!("Loaded {} asset entries from packfile", entry_count);
 
-        #[cfg(target_arch = "wasm32")]
-        let runtime_type = RuntimeType::CurrentThread;
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let runtime_type = RuntimeType::MultiThread;
-
-        let runtime = match runtime_type {
-            // The CurrentThread codepath has not been verified as necessary for WASM, this needs to
-            // be verified as necessary and correct before it is used
-            RuntimeType::CurrentThread => {
-                unimplemented!("packfile_io needs to be updated to support wasm")
-            }
-            RuntimeType::MultiThread => {
-                bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build())
-            }
-        };
+        let runtime = bevy_tasks::IoTaskPool(bevy_tasks::TaskPoolBuilder::default().build());
 
         Ok(PackfileReader(Arc::new(PackfileReaderInner {
             reader: message_reader,
             index_by_uuid,
             assets_by_path,
             runtime,
-            runtime_type,
         })))
     }
 }
