@@ -16,6 +16,7 @@ mod asset_hub_service;
 mod capnp_db;
 mod daemon;
 mod error;
+mod extension_map;
 mod file_asset_source;
 mod file_tracker;
 mod serialized_asset;

@@ -378,7 +378,7 @@ mod tests {
         AssetDaemon::default()
             .with_db_path(tests_path.join("assets_db"))
             .with_address(daemon_address)
-            .with_importer("txt", TxtImporter)
+            .with_importer(&["txt"], TxtImporter)
             .with_asset_dirs(vec![tests_path.join("assets")])
             .run()
     }

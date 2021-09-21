@@ -9,7 +9,7 @@ fn main() {
     init_logging().expect("failed to init logging");
     std::thread::spawn(move || {
         AssetDaemon::default()
-            .with_importer("png", crate::image::ImageImporter)
+            .with_importer(&["png"], crate::image::ImageImporter)
             .with_db_path(".assets_db")
             .with_address("127.0.0.1:9999".parse().unwrap())
             .with_asset_dirs(vec![PathBuf::from("assets")])

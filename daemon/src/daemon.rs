@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
@@ -20,23 +19,20 @@ use std::rc::Rc;
 
 use crate::{
     artifact_cache::ArtifactCache, asset_hub, asset_hub_service, capnp_db::Environment,
-    error::Result, file_asset_source, file_tracker::FileTracker,
+    error::Result, extension_map::ExtensionMap, file_asset_source, file_tracker::FileTracker,
 };
 
 #[derive(Default)]
-pub struct ImporterMap(HashMap<String, Box<dyn BoxedImporter>>);
+pub struct ImporterMap(ExtensionMap<Box<dyn BoxedImporter>>);
 
 impl ImporterMap {
-    pub fn insert(&mut self, ext: &str, importer: Box<dyn BoxedImporter>) {
-        self.0.insert(ext.to_lowercase(), importer);
+    pub fn insert(&mut self, ext: &[&str], importer: Box<dyn BoxedImporter>) {
+        self.0.insert(ext, importer);
     }
 
     pub fn get_by_path<'a>(&'a self, path: &Path) -> Option<&'a dyn BoxedImporter> {
-        let lower_extension = path
-            .extension()
-            .map(|s| s.to_str().unwrap().to_lowercase())
-            .unwrap_or_else(|| "".to_string());
-        self.0.get(lower_extension.as_str()).map(|i| i.as_ref())
+        let importer = self.0.get(path)?;
+        Some(&**importer)
     }
 }
 
@@ -87,7 +83,7 @@ impl Default for AssetDaemon {
     fn default() -> Self {
         let mut importer_map = ImporterMap::default();
         for (ext, importer) in default_importers() {
-            importer_map.insert(ext, importer);
+            importer_map.insert(&[ext], importer);
         }
         Self {
             db_dir: PathBuf::from(".assets_db"),
@@ -111,25 +107,25 @@ impl AssetDaemon {
         self
     }
 
-    pub fn with_importer<B>(mut self, ext: &str, importer: B) -> Self
+    pub fn with_importer<B>(mut self, exts: &[&str], importer: B) -> Self
     where
         B: BoxedImporter + 'static,
     {
-        self.importers.insert(ext, Box::new(importer));
+        self.importers.insert(exts, Box::new(importer));
         self
     }
 
-    pub fn add_importer<B>(&mut self, ext: &str, importer: B)
+    pub fn add_importer<B>(&mut self, exts: &[&str], importer: B)
     where
         B: BoxedImporter + 'static,
     {
-        self.importers.insert(ext, Box::new(importer));
+        self.importers.insert(exts, Box::new(importer));
     }
 
     pub fn with_importers<B, I>(self, importers: I) -> Self
     where
         B: BoxedImporter + 'static,
-        I: IntoIterator<Item = (&'static str, B)>,
+        I: IntoIterator<Item = (&'static [&'static str], B)>,
     {
         importers.into_iter().fold(self, |this, (ext, importer)| {
             this.with_importer(ext, importer)
@@ -138,7 +134,7 @@ impl AssetDaemon {
 
     pub fn with_importers_boxed<I>(mut self, importers: I) -> Self
     where
-        I: IntoIterator<Item = (&'static str, Box<dyn BoxedImporter + 'static>)>,
+        I: IntoIterator<Item = (&'static [&'static str], Box<dyn BoxedImporter + 'static>)>,
     {
         for (ext, importer) in importers.into_iter() {
             self.importers.insert(ext, importer)
@@ -149,7 +145,7 @@ impl AssetDaemon {
     pub fn add_importers<B, I>(&mut self, importers: I)
     where
         B: BoxedImporter + 'static,
-        I: IntoIterator<Item = (&'static str, B)>,
+        I: IntoIterator<Item = (&'static [&'static str], B)>,
     {
         for (ext, importer) in importers {
             self.add_importer(ext, importer)
