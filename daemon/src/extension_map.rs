@@ -1,5 +1,41 @@
-use sequence_trie::SequenceTrie;
-use std::path::Path;
+use std::{borrow::Borrow, collections::HashMap, hash::Hash, path::Path};
+
+struct SequenceTrie<K, V> {
+    value: Option<V>,
+    children: HashMap<K, SequenceTrie<K, V>>,
+}
+impl<K, V> Default for SequenceTrie<K, V> {
+    fn default() -> Self {
+        Self {
+            value: Default::default(),
+            children: Default::default(),
+        }
+    }
+}
+impl<K: Eq + Hash, V> SequenceTrie<K, V> {
+    fn insert(&mut self, key: impl Iterator<Item = K>, value: V) -> Option<V> {
+        let node = key.fold(self, |node, k| {
+            node.children.entry(k).or_insert_with(SequenceTrie::default)
+        });
+        std::mem::replace(&mut node.value, Some(value))
+    }
+
+    fn get<'a, Q: ?Sized, I>(&self, key: I) -> Option<&V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + 'a,
+        I: Iterator<Item = &'a Q>,
+    {
+        let mut current = self;
+        for fragment in key {
+            match current.children.get(fragment.borrow()) {
+                Some(node) => current = node,
+                None => return None,
+            }
+        }
+        current.value.as_ref()
+    }
+}
 
 pub struct ExtensionMap<T> {
     map: SequenceTrie<String, usize>,
@@ -26,7 +62,7 @@ impl<T> ExtensionMap<T> {
 
     fn insert_inner(&mut self, extension: &str, idx: usize) {
         let key = extension.rsplit('.').map(|e| e.to_lowercase());
-        let already_in = self.map.insert_owned(key, idx).is_some();
+        let already_in = self.map.insert(key, idx).is_some();
         if already_in {
             panic!("extension '{}' already present", extension);
         }
