@@ -39,6 +39,7 @@ async-fs = "1.5.0"
 async-lock = { version = "2.1" }
 async-channel = { version = "1.4" }
 bevy_tasks = "0.5.0"
+sequence_trie = "0.3"
 
 [dev-dependencies]
 tempfile = "3.2.0"
