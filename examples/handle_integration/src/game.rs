@@ -13,10 +13,10 @@ struct Game {
     storage: GenericAssetStorage,
 }
 
-fn process(loader: &mut Loader, game: &Game, chan: &Receiver<RefOp>) {
+fn process(loader: &mut Loader, game: &mut Game, chan: &Receiver<RefOp>) {
     handle::process_ref_ops(loader, chan);
     loader
-        .process(&game.storage, &DefaultIndirectionResolver)
+        .process(&mut game.storage, &DefaultIndirectionResolver)
         .expect("failed to process loader");
 }
 
@@ -28,7 +28,7 @@ pub fn run() {
     // let file = std::fs::File::open(std::path::PathBuf::from("my.pack")).unwrap();
     // let file_reader = distill::loader::packfile_io::PackfileReader::new(file).unwrap();
     // let mut loader = Loader::new(Box::new(file_reader));
-    let game = Game {
+    let mut game = Game {
         storage: GenericAssetStorage::new(tx.clone(), loader.indirection_table()),
     };
     game.storage.add_storage::<Image>();
@@ -41,7 +41,7 @@ pub fn run() {
         // Clone and Drop. In a real implementation, you would probably create nicer wrappers for this.
         let handle = Handle::<BigPerf>::new((*tx).clone(), handle);
         loop {
-            process(&mut loader, &game, &rx);
+            process(&mut loader, &mut game, &rx);
             if let LoadStatus::Loaded = handle.load_status(&loader) {
                 break;
             }
@@ -61,7 +61,7 @@ pub fn run() {
         WeakHandle::new(custom_asset.handle_made_from_path.load_handle())
     };
     loop {
-        process(&mut loader, &game, &rx);
+        process(&mut loader, &mut game, &rx);
         if let LoadStatus::NotRequested = weak_handle.load_status(&loader) {
             break;
         }

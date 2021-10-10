@@ -19,7 +19,11 @@ use distill_schema::{
     data::{self, path_refs, source_metadata},
     parse_db_metadata,
 };
-use futures::{channel::mpsc::unbounded, lock::Mutex, stream::StreamExt};
+use futures::{
+    channel::mpsc::{unbounded, UnboundedReceiver},
+    lock::Mutex,
+    stream::StreamExt,
+};
 use log::{debug, error, info};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -1509,12 +1513,9 @@ impl FileAssetSource {
         );
     }
 
-    pub async fn run(&self) {
+    pub async fn run(&self, mut rx: UnboundedReceiver<FileTrackerEvent>) {
         let mut started = false;
         let mut update = false;
-
-        let (tx, mut rx) = unbounded();
-        self.tracker.register_listener(tx);
 
         while let Some(evt) = rx.next().await {
             log::debug!("Received file tracker event {:?}", evt);

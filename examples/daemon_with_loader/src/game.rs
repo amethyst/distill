@@ -1,8 +1,4 @@
-use std::{
-    cell::{Ref, RefCell},
-    collections::HashMap,
-    error::Error,
-};
+use std::{collections::HashMap, error::Error};
 
 use distill::{
     core::type_uuid::TypeUuid,
@@ -24,40 +20,33 @@ struct AssetState<A> {
     asset: A,
 }
 pub struct Storage<A> {
-    assets: RefCell<HashMap<LoadHandle, AssetState<A>>>,
-    uncommitted: RefCell<HashMap<LoadHandle, AssetState<A>>>,
+    assets: HashMap<LoadHandle, AssetState<A>>,
+    uncommitted: HashMap<LoadHandle, AssetState<A>>,
     indirection_table: IndirectionTable,
 }
 impl<A> Storage<A> {
     fn new(indirection_table: IndirectionTable) -> Self {
         Self {
-            assets: RefCell::new(HashMap::new()),
-            uncommitted: RefCell::new(HashMap::new()),
+            assets: HashMap::new(),
+            uncommitted: HashMap::new(),
             indirection_table,
         }
     }
 
-    pub fn get_asset(&self, handle: LoadHandle) -> Option<Ref<'_, A>> {
+    pub fn get_asset(&self, handle: LoadHandle) -> Option<&A> {
         let handle = if handle.is_indirect() {
             self.indirection_table.resolve(handle)?
         } else {
             handle
         };
-        let borrow = self.assets.borrow();
-        let asset = borrow.get(&handle);
-        if asset.is_some() {
-            Some(Ref::map(borrow, |a| {
-                &a.get(&handle).as_ref().unwrap().asset
-            }))
-        } else {
-            None
-        }
+        let asset = self.assets.get(&handle);
+        asset.map(|state| &state.asset)
     }
 }
 // Implementation of AssetStorage for the typed storage
 impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
     fn update_asset(
-        &self,
+        &mut self,
         _loader_info: &dyn LoaderInfoProvider,
         _asset_type_id: &AssetTypeId,
         data: Vec<u8>,
@@ -65,8 +54,7 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         load_op: AssetLoadOp,
         version: u32,
     ) -> Result<(), Box<dyn Error + Send + 'static>> {
-        let mut uncommitted = self.uncommitted.borrow_mut();
-        uncommitted.insert(
+        self.uncommitted.insert(
             load_handle,
             AssetState {
                 asset: bincode::deserialize::<A>(&data).expect("failed to deserialize asset"),
@@ -81,7 +69,7 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
     }
 
     fn commit_asset_version(
-        &self,
+        &mut self,
         _asset_type: &AssetTypeId,
         load_handle: LoadHandle,
         _version: u32,
@@ -90,28 +78,24 @@ impl<A: for<'a> serde::Deserialize<'a>> AssetStorage for Storage<A> {
         // It exists to avoid frames where an asset that was loaded is unloaded, which
         // could happen when hot reloading. To support this case, you must support having multiple
         // versions of an asset loaded at the same time.
-        let mut committed = self.assets.borrow_mut();
-        let mut uncommitted = self.uncommitted.borrow_mut();
-        committed.insert(
+        self.assets.insert(
             load_handle,
-            uncommitted
+            self.uncommitted
                 .remove(&load_handle)
                 .expect("asset not present when committing"),
         );
         log::info!("Commit {:?}", load_handle);
     }
 
-    fn free(&self, _asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
-        let mut uncommitted = self.uncommitted.borrow_mut();
-        if let Some(asset) = uncommitted.get(&load_handle) {
+    fn free(&mut self, _asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
+        if let Some(asset) = self.uncommitted.get(&load_handle) {
             if asset.version == version {
-                uncommitted.remove(&load_handle);
+                self.uncommitted.remove(&load_handle);
             }
         }
-        let mut committed = self.assets.borrow_mut();
-        if let Some(asset) = committed.get(&load_handle) {
+        if let Some(asset) = self.assets.get(&load_handle) {
             if asset.version == version {
-                committed.remove(&load_handle);
+                self.assets.remove(&load_handle);
             }
         }
         log::info!("Free {:?}", load_handle);
@@ -124,7 +108,7 @@ struct Game {
 // Untyped implementation of AssetStorage that finds the asset_type's storage and forwards the call
 impl AssetStorage for Game {
     fn update_asset(
-        &self,
+        &mut self,
         loader_info: &dyn LoaderInfoProvider,
         asset_type_id: &AssetTypeId,
         data: Vec<u8>,
@@ -133,7 +117,7 @@ impl AssetStorage for Game {
         version: u32,
     ) -> Result<(), Box<dyn Error + Send + 'static>> {
         self.storage
-            .get(asset_type_id)
+            .get_mut(asset_type_id)
             .expect("unknown asset type")
             .update_asset(
                 loader_info,
@@ -146,20 +130,20 @@ impl AssetStorage for Game {
     }
 
     fn commit_asset_version(
-        &self,
+        &mut self,
         asset_type: &AssetTypeId,
         load_handle: LoadHandle,
         version: u32,
     ) {
         self.storage
-            .get(asset_type)
+            .get_mut(asset_type)
             .expect("unknown asset type")
             .commit_asset_version(asset_type, load_handle, version)
     }
 
-    fn free(&self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
+    fn free(&mut self, asset_type_id: &AssetTypeId, load_handle: LoadHandle, version: u32) {
         self.storage
-            .get(asset_type_id)
+            .get_mut(asset_type_id)
             .expect("unknown asset type")
             .free(asset_type_id, load_handle, version)
     }
@@ -179,7 +163,7 @@ pub fn run() {
     let handle = loader.add_ref("6c5ae1ad-ae30-471b-985b-7d017265f19f");
     loop {
         loader
-            .process(&game, &DefaultIndirectionResolver)
+            .process(&mut game, &DefaultIndirectionResolver)
             .expect("failed to process loader");
         if let LoadStatus::Loaded = loader.get_load_status(handle) {
             break;
@@ -190,7 +174,7 @@ pub fn run() {
     loader.remove_ref(handle);
     loop {
         loader
-            .process(&game, &DefaultIndirectionResolver)
+            .process(&mut game, &DefaultIndirectionResolver)
             .expect("failed to process loader");
         if let LoadStatus::NotRequested = loader.get_load_status(handle) {
             break;
