@@ -4,6 +4,7 @@ use std::{fmt, io, path::PathBuf, str};
 pub enum Error {
     Notify(notify::Error),
     IO(io::Error),
+    #[cfg(feature = "ws")]
     Websocket(async_tungstenite::tungstenite::Error),
     RescanRequired,
     Lmdb(lmdb::Error),
@@ -30,6 +31,7 @@ impl std::error::Error for Error {
         match *self {
             Error::Notify(ref e) => Some(e),
             Error::IO(ref e) => Some(e),
+            #[cfg(feature = "ws")]
             Error::Websocket(ref e) => Some(e),
             Error::RescanRequired => None,
             Error::Lmdb(ref e) => Some(e),
@@ -55,6 +57,7 @@ impl fmt::Display for Error {
         match *self {
             Error::Notify(ref e) => e.fmt(f),
             Error::IO(ref e) => e.fmt(f),
+            #[cfg(feature = "ws")]
             Error::Websocket(ref e) => e.fmt(f),
             Error::RescanRequired => write!(f, "{}", self),
             Error::Lmdb(ref e) => e.fmt(f),
@@ -88,6 +91,7 @@ impl From<io::Error> for Error {
         Error::IO(err)
     }
 }
+#[cfg(feature = "ws")]
 impl From<async_tungstenite::tungstenite::Error> for Error {
     fn from(err: async_tungstenite::tungstenite::Error) -> Error {
         Error::Websocket(err)

@@ -265,11 +265,18 @@ impl AssetDaemon {
 
         let shutdown_tracker = tracker.clone();
 
-        let addr_ws = self.address_websocket;
-        let service_clone = Arc::clone(&service);
-        let mut service_ws_handle = local
-            .spawn(async move { service_clone.run_on_websocket(addr_ws).await.unwrap() })
-            .fuse();
+        #[cfg(feature = "ws")]
+        let mut service_ws_handle = {
+            let addr_ws = self.address_websocket;
+
+            let service_clone = Arc::clone(&service);
+            local
+                .spawn(async move { service_clone.run_on_websocket(addr_ws).await.unwrap() })
+                .fuse()
+        };
+        #[cfg(not(feature = "ws"))]
+        let mut service_ws_handle = futures::future::pending::<()>().fuse();
+
         let service_handle = local.spawn(async move { service.run(addr).await }).fuse();
 
         let (file_events_tx, file_events_rx) = unbounded();

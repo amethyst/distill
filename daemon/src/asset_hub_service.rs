@@ -27,7 +27,6 @@ use crate::{
     error::Error,
     file_asset_source::FileAssetSource,
     file_tracker::FileTracker,
-    websocket_async_io::accept_websocket_stream,
 };
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
@@ -628,7 +627,9 @@ impl AssetHubService {
         result.expect("Failed to run tcp listener");
     }
 
+    #[cfg(feature = "ws")]
     pub async fn run_on_websocket(&self, addr: std::net::SocketAddr) -> Result<()> {
+        use crate::websocket_async_io::accept_websocket_stream;
         use async_tungstenite::tungstenite;
 
         let listener = async_net::TcpListener::bind(addr).await?;

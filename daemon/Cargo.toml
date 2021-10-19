@@ -40,7 +40,7 @@ async-lock = { version = "2.1" }
 async-channel = { version = "1.4" }
 bevy_tasks = "0.5.0"
 
-async-tungstenite = "0.15"
+async-tungstenite =  { version = "0.15", optional = true }
 
 [dev-dependencies]
 tempfile = "3.2.0"
@@ -51,3 +51,4 @@ pin-project-lite = "0.2.6"
 [features]
 parallel_hash = ["rayon"]
 pretty_log = ["chrono", "fern"]
+ws = ["async-tungstenite"]
