@@ -77,6 +77,7 @@ struct PairImportResultMetadata<'a> {
 
 type SerializedAssetVec = SerializedAsset<Vec<u8>>;
 
+// Creates HashedSourcePair from SourcePairs
 #[cfg(feature = "parallel_hash")]
 fn hash_files<'a, T, I>(pairs: I) -> Vec<Result<HashedSourcePair>>
 where
@@ -110,6 +111,7 @@ where
     }))
 }
 
+// Creates HashedSourcePair from SourcePairs
 #[cfg(not(feature = "parallel_hash"))]
 fn hash_files<'a, T, I>(pairs: I) -> Vec<Result<HashedSourcePair>>
 where
@@ -146,6 +148,8 @@ where
         .collect()
 }
 
+// converts a relative path in one asset file pointing at another asset file to a canonicalized path
+// to that file from the root of the asset folder
 fn resolve_source_path(abs_source_path: &Path, path: &Path) -> PathBuf {
     let absolute_path = if path.is_relative() {
         // TODO check from root of asset folder as well?
@@ -187,7 +191,10 @@ impl FileAssetSource {
         })
     }
 
-    fn put_metadata<'a>(
+    // called from process_metadata_changes, inserts the given data, deleting anything that was
+    // previously inserted and now no longer needed. Returns a list of all affected assets (deleted
+    // and inserted assets)
+    fn put_source_metadata<'a>(
         &self,
         txn: &'a mut RwTransaction<'_>,
         path: &Path,
@@ -196,8 +203,11 @@ impl FileAssetSource {
     ) -> Result<Vec<AssetUuid>> {
         let metadata_assets = &result_metadata.assets;
         let mut affected_assets = Vec::new();
+
+        // Parse out the asset UUIDs from capnp message SourceMetadata.assets and the paths from
+        // SourceMetadata.pathRefs
         let (assets_to_remove, path_refs_to_remove): (Vec<AssetUuid>, Vec<PathBuf>) = self
-            .get_metadata(txn, path)
+            .get_source_metadata(txn, path)
             .map(|existing| {
                 let existing = existing.get().expect("capnp: Failed to read metadata");
                 let path_refs = existing
@@ -232,16 +242,21 @@ impl FileAssetSource {
             })
             .unwrap_or_default();
 
+        // Delete all the asset paths that were inserted by the previous metadata
         for asset in assets_to_remove {
             debug!("removing deleted asset {:?}", asset);
             self.delete_asset_path(txn, &asset);
             affected_assets.push(asset);
         }
+
         let mut deduped_path_refs = HashSet::new();
+
+        // Iterate through all the assets in the new metadata
         for asset in metadata_assets.iter() {
             debug!("updating asset {:?}", asset.id);
 
             match self.get_asset_path(txn, &asset.id) {
+                // This asset ID is already located somewhere else
                 Some(ref old_path) if old_path != path => {
                     error!(
                         "asset {:?} already in DB with path {} expected {}",
@@ -256,10 +271,14 @@ impl FileAssetSource {
 
             affected_assets.push(asset.id);
         }
+
+        // Delete all the path refs that were inserted by the previous metadata
         for path_ref in path_refs_to_remove {
             self.remove_path_ref(txn, path, &path_ref);
         }
 
+        // Find every path that exists in the new metadata (load_deps, build_deps). (Don't include
+        // references by UUID)
         let new_path_refs: Vec<_> = metadata_assets
             .iter()
             .filter_map(|x| x.artifact.as_ref())
@@ -278,13 +297,16 @@ impl FileAssetSource {
                 }
             })
             .collect();
+
+        // Insert all of them (avoiding duplicate inserptions)
         for path_ref in new_path_refs {
             if deduped_path_refs.insert(path_ref.clone()) {
                 self.add_path_ref(txn, path, path_ref);
             }
         }
-        let mut value_builder = capnp::message::Builder::new_default();
 
+        // Save the final SourceMetadata capnp object to the DB
+        let mut value_builder = capnp::message::Builder::new_default();
         {
             let mut value = value_builder.init_root::<source_metadata::Builder<'_>>();
 
@@ -351,7 +373,7 @@ impl FileAssetSource {
         Ok(affected_assets)
     }
 
-    pub fn get_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+    pub fn get_source_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
         path: &Path,
@@ -363,7 +385,7 @@ impl FileAssetSource {
     }
 
     #[allow(dead_code)]
-    pub fn iter_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
+    pub fn iter_source_metadata<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
     ) -> impl Iterator<Item = (PathBuf, MessageReader<'a, source_metadata::Owned>)> {
@@ -379,9 +401,10 @@ impl FileAssetSource {
             })
     }
 
-    fn delete_metadata(&self, txn: &mut RwTransaction<'_>, path: &Path) -> Vec<AssetUuid> {
+    fn delete_source_metadata(&self, txn: &mut RwTransaction<'_>, path: &Path) -> Vec<AssetUuid> {
+        // Get all assets that we know to be located at the given path
         let to_remove: Vec<AssetUuid> = self
-            .get_metadata(txn, path)
+            .get_source_metadata(txn, path)
             .map(|existing| {
                 let metadata = existing.get().expect("capnp: Failed to read metadata");
                 metadata
@@ -402,11 +425,13 @@ impl FileAssetSource {
             })
             .unwrap_or_default();
 
+        // Delete the path/asset association for the assets
         for asset in to_remove.iter() {
             debug!("remove asset {:?}", asset);
             self.delete_asset_path(txn, asset);
         }
 
+        // Delete the path/source metadata association
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         txn.delete(self.tables.path_to_metadata, &key)
@@ -414,6 +439,8 @@ impl FileAssetSource {
         to_remove
     }
 
+    // Given a "current directory" and a reference (that might be a relative path), return the
+    // appropriate imported asset ID.
     pub fn resolve_asset_ref<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
@@ -423,8 +450,10 @@ impl FileAssetSource {
         match asset_ref {
             AssetRef::Uuid(uuid) => Some(*uuid),
             AssetRef::Path(path) => {
+                //TODO: Add support for defining which asset is the "primary" asset when importing
+                // Also add support for naming assets so they can be referred to as /path/to/file#asset_name
                 let canon_path = resolve_source_path(source_path, path);
-                if let Some(metadata) = self.get_metadata(txn, &canon_path) {
+                if let Some(metadata) = self.get_source_metadata(txn, &canon_path) {
                     let assets = metadata
                         .get()
                         .map_err(crate::error::Error::Capnp)
@@ -453,6 +482,7 @@ impl FileAssetSource {
         }
     }
 
+    // Associate a path with an asset ID
     fn put_asset_path<'a>(
         &self,
         txn: &'a mut RwTransaction<'_>,
@@ -465,6 +495,7 @@ impl FileAssetSource {
             .expect("db: Failed to put asset path to asset_id_to_path table");
     }
 
+    // Given an asset ID, return the path to the source data that generated it
     pub fn get_asset_path<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
@@ -498,16 +529,21 @@ impl FileAssetSource {
         let list = message.init_root::<path_refs::Builder<'_>>();
         let mut new_size = 1;
         let mut paths = if let Some(existing_refs) = existing_refs {
+            // Handle the case where we already have an entry for this path
             let existing_refs = existing_refs.get().expect("capnp: failed to read message");
             let existing_refs = existing_refs
                 .get_paths()
                 .expect("capnp: failed to read paths");
 
+            // Bail if the path already exists in the message that was stored in the DB
             for existing_path in existing_refs.iter() {
                 if existing_path.expect("capnp: failed to read path ref") == path_ref_bytes {
                     return false; // already exists in the list
                 }
             }
+
+            // Copy the existing paths to the new message, and leave one extra slot to append the
+            // new path
             new_size += existing_refs.len();
             let mut paths = list.init_paths(new_size);
             for (idx, existing_path) in existing_refs.iter().enumerate() {
@@ -518,8 +554,11 @@ impl FileAssetSource {
             }
             paths
         } else {
+            // We don't have existing paths to copy over, so we just need space for the new path
             list.init_paths(1)
         };
+
+        // Write the new list of paths
         paths.set(new_size - 1, path_ref_bytes);
         txn.put(self.tables.reverse_path_refs, &key, &message)
             .expect("lmdb: failed to put path ref");
@@ -531,6 +570,7 @@ impl FileAssetSource {
         txn: &'a V,
         path: &Path,
     ) -> Vec<PathBuf> {
+        // Read the DB for a PathRefs message, convert the list of byte arrays to Vec<PathBuf>
         let key_str = path.to_string_lossy();
         let key = key_str.as_bytes();
         txn.get::<path_refs::Owned, &[u8]>(self.tables.reverse_path_refs, &key)
@@ -557,6 +597,7 @@ impl FileAssetSource {
     }
 
     fn remove_path_ref(&self, txn: &mut RwTransaction<'_>, source: &Path, path_ref: &Path) -> bool {
+        // Find the existing message in the DB
         let path_ref = resolve_source_path(source, path_ref);
         let key_str = path_ref.to_string_lossy();
         let key = key_str.as_bytes();
@@ -571,6 +612,7 @@ impl FileAssetSource {
                 .get_paths()
                 .expect("capnp: failed to read paths");
 
+            // Linear search for the path to be removed
             let mut remove_idx = None;
             for (idx, existing_path) in existing_refs.iter().enumerate() {
                 if existing_path.expect("capnp: failed to read path ref") == path_ref_bytes {
@@ -582,9 +624,12 @@ impl FileAssetSource {
                 Some(remove_idx) => {
                     let new_size = existing_refs.len() - 1;
                     if new_size == 0 {
+                        // The list of paths will now be empty, so we can delete the key from the DB
                         txn.delete(self.tables.reverse_path_refs, &key)
                             .expect("lmdb: failed to delete path ref");
                     } else {
+                        // Build a new PathRefs capnp message and copy all the paths from the old
+                        // message except the one we want to remove
                         let mut message = capnp::message::Builder::new_default();
                         let list = message.init_root::<path_refs::Builder<'_>>();
                         let mut paths = list.init_paths(new_size);
@@ -598,6 +643,9 @@ impl FileAssetSource {
                                 insert_idx += 1;
                             }
                         }
+
+                        // Overwrite the old message with the new message that doesn't have the path
+                        // we need to remove
                         txn.put(self.tables.reverse_path_refs, &key, &message)
                             .expect("db: failed to update path refs");
                     }
@@ -605,10 +653,12 @@ impl FileAssetSource {
                 }
             }
         } else {
+            // The message didn't exist, so there is nothing we need to delete
             false
         }
     }
 
+    // Given an asset ID, reimports the source file from which it was generated
     pub async fn regenerate_import_artifact<
         'a,
         V: DBTransaction<'a, T>,
@@ -619,6 +669,7 @@ impl FileAssetSource {
         id: &AssetUuid,
         scratch_buf: &mut Vec<u8>,
     ) -> Result<(u64, SerializedAssetVec)> {
+        // Find the path the asset is located at
         log::trace!("regenerate_import_artifact id {:?}", id);
         let path = self
             .get_asset_path(txn, id)
@@ -631,6 +682,8 @@ impl FileAssetSource {
             _marker: std::marker::PhantomData,
         };
 
+        // The asset could be one of many coming from the same source file, we need to re-import
+        // the full source file
         let mut import = SourcePairImport::new(path.clone());
         import.set_importer_from_map(&self.importers);
         import.set_importer_contexts(&self.importer_contexts);
@@ -653,12 +706,15 @@ impl FileAssetSource {
             .expect("importer context set required");
         let mut this_asset = None;
         let mut rw_txn = self.artifact_cache.rw_txn().await?;
+
+        // Get all the imported asset IDs from the source file
         let asset_ids = imported_assets
             .assets
             .iter()
             .map(|a| a.metadata.id)
             .collect::<Vec<_>>();
         for asset in imported_assets.assets {
+            // Get all the UUID build deps
             let mut build_deps = asset
                 .metadata
                 .artifact
@@ -673,6 +729,7 @@ impl FileAssetSource {
                         .collect()
                 })
                 .unwrap_or_else(Vec::new);
+            // Get all the UUID load deps
             let mut load_deps = asset
                 .metadata
                 .artifact
@@ -687,6 +744,8 @@ impl FileAssetSource {
                         .collect()
                 })
                 .unwrap_or_else(Vec::new);
+
+            // Get all the unresolved build/load refs (currently those based on paths)
             for unresolved_ref in asset.unresolved_build_refs.iter() {
                 if let Some(uuid) = self.resolve_asset_ref(txn, &path, unresolved_ref) {
                     context_set.resolve_ref(unresolved_ref, uuid);
@@ -709,11 +768,13 @@ impl FileAssetSource {
 
             let pair: Result<(u64, SerializedAssetVec)> = context_set
                 .scope(async {
+                    // Hash the asset/artifact
                     let hash = utils::calc_import_artifact_hash(
                         &asset.metadata.id,
                         import_hash,
                         load_deps.iter().chain(build_deps.iter()),
                     );
+                    // Create a serializable form of the asset
                     let serialized_asset = crate::serialized_asset::create(
                         hash,
                         asset.metadata.id,
@@ -725,11 +786,14 @@ impl FileAssetSource {
                         CompressionType::None,
                         scratch_buf,
                     )?;
+                    // Store it in the cache
                     self.artifact_cache.insert(&mut rw_txn, &serialized_asset);
                     Ok((hash, serialized_asset))
                 })
                 .await;
             let pair = pair?;
+
+            // If this is the asset we were looking for, set this_asset so we can return it later
             if asset_id == *id {
                 this_asset = Some(pair);
             }
@@ -747,6 +811,8 @@ impl FileAssetSource {
         }
     }
 
+    // Replaces any build_deps/load_deps that is unresolved (for example, because it's a path rather
+    // than a UUID) with a ref that is UUID-based
     fn resolve_metadata_asset_refs<'a, V: DBTransaction<'a, T>, T: lmdb::Transaction + 'a>(
         &self,
         txn: &'a V,
@@ -787,6 +853,10 @@ impl FileAssetSource {
         }
     }
 
+    // Given the result of importing some assets, update the DB. This includes deleting assets that
+    // no longer exist and inserting updates for the assets that remain or were added. We notify
+    // the asset_hub of the affected assets. We also have to rehash all the downstream assets that
+    // reference the changed asset (by path, possibly).
     fn process_metadata_changes(
         &self,
         txn: &mut RwTransaction<'_>,
@@ -798,7 +868,7 @@ impl FileAssetSource {
         // delete metadata for deleted source pairs
         for (path, _) in changes.iter().filter(|(_, change)| change.is_none()) {
             debug!("deleting metadata for {}", path.to_string_lossy());
-            for asset in self.delete_metadata(txn, path) {
+            for asset in self.delete_source_metadata(txn, path) {
                 affected_assets.entry(asset).or_insert(None);
             }
             if let Some(relative_path) = self.tracker.make_relative_path(path) {
@@ -835,7 +905,7 @@ impl FileAssetSource {
                 &result_metadata
             };
             let changed_assets = self
-                .put_metadata(txn, path, source_metadata, result_metadata)
+                .put_source_metadata(txn, path, source_metadata, result_metadata)
                 .expect("Failed to put metadata");
 
             for asset in changed_assets {
@@ -892,6 +962,7 @@ impl FileAssetSource {
                             .filter(|x| x.is_uuid())
                             .cloned()
                             .collect();
+                        //TODO: We might be able to remove these sorts because calc_import_artifact_hash sorts
                         a.load_deps.sort_unstable();
                         a.build_deps.sort_unstable();
                         a.id = ArtifactId(utils::calc_import_artifact_hash(
@@ -1001,15 +1072,17 @@ impl FileAssetSource {
         }
     }
 
+    // If the file state in the dirty files table matches the data we just imported, we can clear
+    // the dirty state. We avoid race conditions by using a write transaction
     fn ack_dirty_file_states(&self, txn: &mut RwTransaction<'_>, pair: &HashedSourcePair) {
         let mut skip_ack_dirty = false;
 
         {
-            let check_file_state = |s: &Option<&FileState>| -> bool {
-                match s {
-                    Some(source) => {
-                        let source_file_state = self.tracker.get_file_state(txn, &source.path);
-                        source_file_state.map_or(false, |s| s != **source)
+            let check_file_state = |f: &Option<&FileState>| -> bool {
+                match f {
+                    Some(f) => {
+                        let file_state = self.tracker.get_file_state(txn, &f.path);
+                        file_state.map_or(false, |s| s != **f)
                     }
                     None => false,
                 }
@@ -1031,6 +1104,10 @@ impl FileAssetSource {
         }
     }
 
+    // If we detect a file being renamed, update asset_id_to_path and path_to_metadata tables. The
+    // rename will also generate dirty file entries for the old and new path. Any assets that
+    // reference the pre-rename or post-rename path will be reprocessed when the dirty entries are
+    // processed.
     fn handle_rename_events(&self, txn: &mut RwTransaction<'_>) {
         let rename_events = self.tracker.read_rename_events(txn);
         debug!("rename events");
@@ -1042,7 +1119,7 @@ impl FileAssetSource {
             let mut existing_metadata = None;
 
             {
-                let metadata = self.get_metadata(txn, &evt.src);
+                let metadata = self.get_source_metadata(txn, &evt.src);
                 if let Some(metadata) = metadata {
                     let metadata = metadata.get().expect("capnp: Failed to get metadata");
                     let mut copy = capnp::message::Builder::new_default();
@@ -1060,6 +1137,7 @@ impl FileAssetSource {
                 }
             }
 
+            // Update the asset_id_to_path table
             for asset in asset_ids {
                 txn.delete(self.tables.asset_id_to_path, &asset)
                     .expect("db: Failed to delete from asset_id_to_path table");
@@ -1068,8 +1146,9 @@ impl FileAssetSource {
                     .expect("db: Failed to put to asset_id_to_path table");
             }
 
+            // Update the path_to_metadata table, if a metadata exists for this path
             if let Some(existing_metadata) = existing_metadata {
-                self.delete_metadata(txn, &evt.src);
+                self.delete_source_metadata(txn, &evt.src);
                 txn.put(self.tables.path_to_metadata, &dst, &existing_metadata)
                     .expect("db: Failed to put to path_to_metadata table");
             }
@@ -1080,6 +1159,9 @@ impl FileAssetSource {
         }
     }
 
+    // Scan all file metadata and compare them with the default importer state. (For example, the
+    // default options or the version number of the importer.) If a difference is detected, we will
+    // treat the file as dirty so that it's reimported.
     async fn check_for_importer_changes(&self) -> bool {
         let changed_paths: Vec<PathBuf> = {
             let txn = self.db.ro_txn().await.expect("db: Failed to open ro txn");
@@ -1088,7 +1170,7 @@ impl FileAssetSource {
                 .read_all_files(&txn)
                 .iter()
                 .filter_map(|file_state| {
-                    let metadata = self.get_metadata(&txn, &file_state.path);
+                    let metadata = self.get_source_metadata(&txn, &file_state.path);
                     let importer = self.importers.get_by_path(&file_state.path);
 
                     let changed = match (importer, metadata) {
@@ -1152,6 +1234,8 @@ impl FileAssetSource {
         has_changed_paths
     }
 
+    // Scan the dirty files list in the DB for source/meta file pairs. Also lookup the file state
+    // associated with the files.
     fn handle_dirty_files(&self, txn: &mut RwTransaction<'_>) -> HashMap<PathBuf, SourcePair> {
         let dirty_files = self.tracker.read_dirty_files(txn);
         let mut source_meta_pairs: HashMap<PathBuf, SourcePair> = HashMap::new();
@@ -1213,6 +1297,9 @@ impl FileAssetSource {
         let metadata_changes = Mutex::new(HashMap::new());
         let metadata_changes_ref = &metadata_changes;
 
+        // We fire off a bunch of tasks to import hashed files and cache them if they're fully
+        // resolved. We also create a task that will remove processed files from the dirty list
+        // (assuming the version of the file we processed still matches what is on disk)
         self.runtime.scope(|scope| {
             let local = async_executor::LocalExecutor::new();
             async_io::block_on(local.run(async {
@@ -1358,6 +1445,7 @@ impl FileAssetSource {
             }))
         });
 
+        // Notify asset hub of all the changed assets
         let mut change_batch = asset_hub::ChangeBatch::new();
         let txn = txn.into_inner();
 
@@ -1432,12 +1520,17 @@ impl FileAssetSource {
         while let Some(evt) = rx.next().await {
             log::debug!("Received file tracker event {:?}", evt);
             match evt {
+                // It's possible when we start that code changes to the importer require re-importing
+                // assets. (For example, if we bump the importer version number). The start message
+                // indicates that all directories have been scanned.
                 FileTrackerEvent::Start => {
                     started = true;
                     if update || self.check_for_importer_changes().await {
                         self.handle_update().await;
                     }
                 }
+                // The update message is debounced, so if we have files in constant state of change
+                // we should process a batch of them all at once
                 FileTrackerEvent::Update => {
                     update = true;
                     if started {
@@ -1464,6 +1557,7 @@ impl FileAssetSource {
             _marker: std::marker::PhantomData,
         };
         let meta_path = utils::to_meta_path(&path);
+        // First, do the export
         let result = source_pair_import::export_pair(
             assets,
             &cache,
@@ -1474,6 +1568,8 @@ impl FileAssetSource {
             &mut Vec::new(),
         )
         .await?;
+        // Since the asset changed, we need to update the database with the new state. This mostly
+        // happens in the process_metadata_changes call.
         let new_asset_metadata: Vec<AssetImportResultMetadata> = result
             .1
             .assets
@@ -1503,7 +1599,7 @@ impl FileAssetSource {
                 parse_db_metadata(
                     &self
                         .hub
-                        .get_metadata(&txn, &a.metadata.id)
+                        .get_asset_metadata(&txn, &a.metadata.id)
                         .expect("Expected asset metadata in DB after metadata update")
                         .get()
                         .expect("capnp: metadata read failed"),
@@ -1532,23 +1628,27 @@ where
     V: DBTransaction<'a, T>,
     T: lmdb::Transaction + 'a,
 {
+    // Populate the passed in SourceMetadata, which is essentially the state of the .meta file, with
+    // DB state if it exists. If it doesn't exist, this function doesn't do anything and returns
+    // Ok(())
     fn restore_source_metadata(
         &self,
         path: &Path,
         importer: &dyn BoxedImporter,
         metadata: &mut SourceMetadata,
     ) -> Result<()> {
-        let saved_metadata = self.file_asset_source.get_metadata(self.txn, path);
+        let saved_metadata = self.file_asset_source.get_source_metadata(self.txn, path);
         if let Some(saved_metadata) = saved_metadata {
             let saved_metadata = saved_metadata.get()?;
             metadata.version = saved_metadata.get_version();
-            let mut build_pipelines = HashMap::new();
-            for pair in saved_metadata.get_build_pipelines()?.iter() {
-                build_pipelines.insert(
-                    utils::uuid_from_slice(pair.get_key()?.get_id()?).ok_or(Error::UuidLength)?,
-                    utils::uuid_from_slice(pair.get_value()?.get_id()?).ok_or(Error::UuidLength)?,
-                );
-            }
+            //TODO: Dead code?
+            // let mut build_pipelines = HashMap::new();
+            // for pair in saved_metadata.get_build_pipelines()?.iter() {
+            //     build_pipelines.insert(
+            //         utils::uuid_from_slice(pair.get_key()?.get_id()?).ok_or(Error::UuidLength)?,
+            //         utils::uuid_from_slice(pair.get_value()?.get_id()?).ok_or(Error::UuidLength)?,
+            //     );
+            // }
             if saved_metadata.get_importer_options_type()? == metadata.importer_options.uuid() {
                 let mut deserializer = bincode::Deserializer::from_slice(
                     saved_metadata.get_importer_options()?,
@@ -1580,8 +1680,9 @@ where
         Ok(())
     }
 
+    // Returns metadata about the inputs and results of an import operation
     fn get_cached_metadata(&self, path: &Path) -> Result<Option<ImportResultMetadata>> {
-        let saved_metadata = self.file_asset_source.get_metadata(self.txn, path);
+        let saved_metadata = self.file_asset_source.get_source_metadata(self.txn, path);
         if let Some(saved_metadata) = saved_metadata {
             let saved_metadata = saved_metadata.get()?;
             let import_hash = Some(u64::from_le_bytes(utils::make_array(

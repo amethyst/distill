@@ -9,7 +9,6 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use distill_core::utils::{self, canonicalize_path};
 use distill_importer::SerializedAsset;
 use distill_schema::{
-    build_artifact_metadata,
     data::{
         artifact, asset_change_log_entry,
         asset_metadata::{self, latest_artifact},
@@ -80,20 +79,6 @@ struct AssetHubImpl {
     local: Rc<async_executor::LocalExecutor<'static>>,
 }
 
-fn build_artifact_message<T: AsRef<[u8]>>(
-    artifact: &SerializedAsset<T>,
-) -> capnp::message::Builder<capnp::message::HeapAllocator> {
-    let mut value_builder = capnp::message::Builder::new_default();
-    {
-        let mut m = value_builder.init_root::<artifact::Builder<'_>>();
-        let mut metadata = m.reborrow().init_metadata();
-        build_artifact_metadata(&artifact.metadata, &mut metadata);
-        let slice: &[u8] = artifact.data.as_ref();
-        m.reborrow().set_data(slice);
-    }
-    value_builder
-}
-
 fn artifact_to_serialized_asset<'a>(
     artifact: &artifact::Reader<'a>,
 ) -> Result<SerializedAsset<&'a [u8]>> {
@@ -104,6 +89,7 @@ fn artifact_to_serialized_asset<'a>(
     })
 }
 
+// Implementation of capnp Snapshot RPC object that is returned to the client
 impl AssetHubSnapshotImpl {
     async fn new(ctx: Arc<ServiceContext>) -> Self {
         Self {
@@ -122,7 +108,7 @@ impl AssetHubSnapshotImpl {
         let mut metadatas = Vec::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
-            let value = ctx.hub.get_metadata(txn, &id);
+            let value = ctx.hub.get_asset_metadata(txn, &id);
             if let Some(metadata) = value {
                 metadatas.push(metadata);
             }
@@ -149,7 +135,7 @@ impl AssetHubSnapshotImpl {
         let mut metadatas = HashMap::new();
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
-            let value = ctx.hub.get_metadata(txn, &id);
+            let value = ctx.hub.get_asset_metadata(txn, &id);
             if let Some(metadata) = value {
                 metadatas.insert(id, metadata);
             }
@@ -168,7 +154,7 @@ impl AssetHubSnapshotImpl {
             }
         }
         for id in missing_metadata {
-            let value = ctx.hub.get_metadata(txn, &id);
+            let value = ctx.hub.get_asset_metadata(txn, &id);
             if let Some(metadata) = value {
                 metadatas.insert(id, metadata);
             }
@@ -192,7 +178,7 @@ impl AssetHubSnapshotImpl {
         let ctx = self.txn.ctx();
         let txn = self.txn.txn();
         let mut metadatas = Vec::new();
-        for (_, value) in ctx.hub.get_metadata_iter(txn)?.capnp_iter_start() {
+        for (_, value) in ctx.hub.get_asset_metadata_iter(txn)?.capnp_iter_start() {
             let value = value?;
             let metadata = value.into_typed::<asset_metadata::Owned>();
             metadatas.push(metadata);
@@ -230,7 +216,7 @@ impl AssetHubSnapshotImpl {
         for id in params.get_assets()? {
             let id = utils::uuid_from_slice(id.get_id()?).ok_or(Error::UuidLength)?;
             log::trace!("{:?} get_import_artifacts for id {:?}", request_uuid, id);
-            let value = ctx.hub.get_metadata(txn, &id);
+            let value = ctx.hub.get_asset_metadata(txn, &id);
             if let Some(metadata) = value {
                 log::trace!("metadata available for id {:?}", id);
 
@@ -258,7 +244,9 @@ impl AssetHubSnapshotImpl {
                                 .regenerate_import_artifact(txn, &id, &mut scratch_buf)
                                 .await?;
                             log::trace!("finished regenerating import artifact for {:?}", id);
-                            let capnp_artifact = build_artifact_message(&artifact);
+                            //TODO: move artifact building to cache only
+                            let capnp_artifact =
+                                crate::artifact_cache::build_artifact_message(&artifact);
                             log::trace!("built artifact message for {:?}", id);
                             regen_artifacts.push(capnp_artifact);
                         }
@@ -393,14 +381,14 @@ impl AssetHubSnapshotImpl {
             if path.is_relative() {
                 for dir in ctx.file_tracker.get_watch_dirs() {
                     let canonicalized = canonicalize_path(&dir.join(&path));
-                    metadata = ctx.file_source.get_metadata(txn, &canonicalized);
+                    metadata = ctx.file_source.get_source_metadata(txn, &canonicalized);
                     if metadata.is_some() {
                         break;
                     }
                 }
             } else {
                 let canonicalized = canonicalize_path(&path);
-                metadata = ctx.file_source.get_metadata(txn, &canonicalized)
+                metadata = ctx.file_source.get_source_metadata(txn, &canonicalized)
             }
             if let Some(metadata) = metadata {
                 metadatas.push((request_path, metadata));
@@ -436,7 +424,7 @@ impl AssetHubSnapshotImpl {
         // TODO move the below parts into FileAssetSource
         let new_artifact = artifact_to_serialized_asset(&params.get_asset()?)?.to_vec();
         let asset_uuid = new_artifact.metadata.asset_id;
-        let asset_metadata = ctx.hub.get_metadata(txn, &asset_uuid);
+        let asset_metadata = ctx.hub.get_asset_metadata(txn, &asset_uuid);
         let mut scratch_buf = Vec::new();
         if let Some(asset_metadata) = asset_metadata {
             match asset_metadata.get()?.get_source()? {
@@ -445,7 +433,7 @@ impl AssetHubSnapshotImpl {
                     if let Some(path) = path {
                         let source_metadata = ctx
                             .file_source
-                            .get_metadata(txn, &path)
+                            .get_source_metadata(txn, &path)
                             .expect("inconsistent source metadata");
                         let source_metadata = source_metadata.get()?;
                         let mut assets = vec![new_artifact];
@@ -498,6 +486,11 @@ impl AssetHubSnapshotImpl {
     }
 }
 
+// Represents capnp interface AssetHub RPC object that is returned to the client. This RPC is
+// primarily used to get a Snapshot RPC object, which will hold open a read transaction so that
+// assets can be queried against a consistent state of the DB that doesn't change, even while assets
+// are added/modified/removed. The client can also pass us an RPC object we use as a callback,
+// allowing us to push notifications to the client with a new snapshot RPC object
 #[allow(clippy::unit_arg)]
 impl asset_hub::Server for AssetHubImpl {
     fn register_listener(
@@ -519,6 +512,8 @@ impl asset_hub::Server for AssetHubImpl {
         Promise::from_future(async { fut.await.map_err(|e| e.into()) })
     }
 }
+
+// Implementation of AssetHub RPC object
 impl AssetHubImpl {
     fn register_listener(
         &mut self,
@@ -677,6 +672,9 @@ impl AssetHubService {
     }
 }
 
+// Represents capnp interface Snapshot RPC object that is returned to the client. This RPC object
+// holds a read transaction to the DB, ensuring that it can always read a consistent state from the
+// daemon, even as assets are added/changed/deleted
 #[allow(clippy::unit_arg)]
 impl asset_hub::snapshot::Server for AssetHubSnapshotImpl {
     fn get_asset_metadata(

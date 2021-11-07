@@ -8,6 +8,8 @@ use crate::error::{Error, Result};
 
 pub type MessageReader<'a, T> = capnp::message::TypedReader<capnp::serialize::SliceSegments<'a>, T>;
 
+// Wrapper around lmdb with extra APIs for reading/writing capnp data and protection against
+// too many readers/writers (will block)
 pub struct Environment {
     env: lmdb::Environment,
     write_semaphore: Semaphore,

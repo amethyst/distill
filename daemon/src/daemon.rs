@@ -22,6 +22,7 @@ use crate::{
     error::Result, extension_map::ExtensionMap, file_asset_source, file_tracker::FileTracker,
 };
 
+// Container of all importers, can return an importer by a given path's filename extension
 #[derive(Default)]
 pub struct ImporterMap(ExtensionMap<Box<dyn BoxedImporter>>);
 

@@ -12,19 +12,35 @@ use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher
 use crate::error::{Error, Result};
 use futures::channel::mpsc::UnboundedSender;
 
+// Wraps the notify crate:
+// - supports symlinks
+// - encapsulates notify so other systems don't use it directly
+// - generates update messages for all files on startup
 /// The purpose of DirWatcher is to provide enough information to
 /// determine which files may be candidates for going through the asset import process.
 /// It handles updating watches for directories behind symlinks and scans directories on create/delete.
 pub struct DirWatcher {
+    // the watcher object from the notify crate
     watcher: RecommendedWatcher,
+
+    // Symlinks we have discovered and where they point
     symlink_map: HashMap<PathBuf, PathBuf>,
+
+    // Refcount of all dirs being watched. We call unwatch on the watcher when it hits 0
     watch_refs: HashMap<PathBuf, i32>,
+
+    // All dirs being watched
     dirs: Vec<PathBuf>,
+
+    // Channel for events from the watcher (and we insert events ourselves to indicate shutdown)
     rx: Receiver<DebouncedEvent>,
     tx: Sender<DebouncedEvent>,
+
+    // The final output of this struct goes here
     asset_tx: UnboundedSender<FileEvent>,
 }
 
+// When dropped, sends an exit "error" message via the same channel we receive messages from notify
 pub struct StopHandle {
     tx: Sender<DebouncedEvent>,
 }
@@ -51,6 +67,8 @@ pub enum FileEvent {
     // Unwatch indicates that a new directory has stopped being watched, probably due to a symlink being removed
     Unwatch(PathBuf),
 }
+
+// Sanitizes file metadata
 pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
     let modify_time = metadata.modified().unwrap_or(UNIX_EPOCH);
     let since_epoch = modify_time
@@ -65,6 +83,7 @@ pub(crate) fn file_metadata(metadata: &fs::Metadata) -> FileMetadata {
 }
 
 impl DirWatcher {
+    // Starts a watcher running on the given paths
     pub fn from_path_iter<'a, T>(paths: T, chan: UnboundedSender<FileEvent>) -> Result<DirWatcher>
     where
         T: IntoIterator<Item = &'a Path>,
@@ -94,12 +113,14 @@ impl DirWatcher {
         Ok(asset_watcher)
     }
 
+    // Returns a StopHandle that will halt watching when it's dropped
     pub fn stop_handle(&self) -> StopHandle {
         StopHandle {
             tx: self.tx.clone(),
         }
     }
 
+    // Visit all files, call handle_notify_event() passing the event created by the provided callback
     fn scan_directory<F>(&mut self, dir: &Path, evt_create: &F) -> Result<()>
     where
         F: Fn(PathBuf) -> DebouncedEvent,
@@ -153,6 +174,7 @@ impl DirWatcher {
     }
 
     pub fn run(&mut self) {
+        // Emit a Create for every path recursively
         for dir in &self.dirs.clone() {
             if let Err(err) = self.scan_directory(dir, &|path| DebouncedEvent::Create(path)) {
                 self.asset_tx
@@ -164,6 +186,7 @@ impl DirWatcher {
         loop {
             match self.rx.recv() {
                 Ok(event) => match self.handle_notify_event(event, false) {
+                    // By default, just proxy the event into the channel
                     Ok(maybe_event) => {
                         if let Some(evt) = maybe_event {
                             log::debug!("File event: {:?}", evt);
@@ -171,6 +194,8 @@ impl DirWatcher {
                         }
                     }
                     Err(err) => match err {
+                        // If notify cannot assure correct modification events (sometimes due to overflowing a queue,
+                        // may be a limit on the OS) we have to reset to good state bu scanning everything
                         Error::RescanRequired => {
                             for dir in &self.dirs.clone() {
                                 if let Err(err) =
@@ -239,6 +264,8 @@ impl DirWatcher {
         Ok(false)
     }
 
+    // Called when we receive about changes, most of the time we will detect that the path is not
+    // a symlink and do nothing
     fn handle_updated_symlink(
         &mut self,
         src: Option<&PathBuf>,
@@ -247,6 +274,7 @@ impl DirWatcher {
         let mut recognized_symlink = false;
         if let Some(src) = src {
             if self.symlink_map.contains_key(src) {
+                // This was previous a symlink. Remove the watch, and maybe clean up the watch
                 let to_unwatch = self.symlink_map[src].clone();
                 match self.unwatch(&to_unwatch) {
                     Ok(unwatched) => {
@@ -300,6 +328,7 @@ impl DirWatcher {
         Ok(recognized_symlink)
     }
 
+    // Handles events from notify, and manually triggered from calling scan_directory()
     fn handle_notify_event(
         &mut self,
         event: DebouncedEvent,
@@ -309,6 +338,8 @@ impl DirWatcher {
             DebouncedEvent::Create(path) | DebouncedEvent::Write(path) => {
                 let path = canonicalize_path(&path);
                 self.handle_updated_symlink(Option::None, Some(&path))?;
+
+                // Try to get info on this file, following the symlink if necessary
                 let metadata_result = match fs::metadata(&path) {
                     Err(ref e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
                     Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {
@@ -324,6 +355,8 @@ impl DirWatcher {
                         file_metadata(&metadata),
                     ))),
                 };
+
+                // If metadata hit NotFound/PermissionDenied, get metadata without trying to follow symlink
                 match metadata_result {
                     Ok(None) => {
                         if let Ok(metadata) = fs::symlink_metadata(&path) {

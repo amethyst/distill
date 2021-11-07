@@ -62,6 +62,7 @@ impl<T: 'static> LocalKey<T> {
     /// Sets a value `T` as the task-local value for the future `F`.
     ///
     /// On completion of `scope`, the task-local will be dropped.
+    #[allow(dead_code)]
     pub async fn scope<F>(&'static self, value: T, f: F) -> F::Output
     where
         F: Future,
@@ -80,6 +81,7 @@ impl<T: 'static> LocalKey<T> {
     ///
     /// This function will panic if not called within the context
     /// of a future containing a task-local with the corresponding key.
+    #[allow(dead_code)]
     pub fn with<F, R>(&'static self, f: F) -> R
     where
         F: FnOnce(&T) -> R,
