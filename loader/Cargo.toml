@@ -21,17 +21,17 @@ dashmap = "4.0.1"
 serde = { version = "1", features = ["derive"], optional = true }
 uuid = { version = "0.8.2", optional = true }
 thread_local = { version = "1.0", optional = true }
-async-io = { version = "1.4.1", optional = true }
 async-executor = { version = "1.4.1", optional = true }
-async-net = { version = "1.6.0", optional = true }
 bevy_tasks = { version = "0.5.0", optional = true }
 pin-project-lite = "0.2.6"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 memmap = { version = "0.7", optional = true }
+async-net = { version = "1.6.0", optional = true }
 instant = { version = "0.1" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+websocket-async-io = { version = "1.0", optional = true }
 instant = { version = "0.1", features = ["wasm-bindgen"] }
 
 [features]
@@ -53,9 +53,9 @@ rpc_io = [
     "capnp-rpc",
     "futures-util",
     "invalidate_path",
-    "async-io",
     "async-executor",
-    "async-net"
+    "async-net",
+    "websocket-async-io"
 ]
 invalidate_path = ["distill-core/path_utils"]
 handle = ["serde", "uuid"]

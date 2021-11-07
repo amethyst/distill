@@ -22,6 +22,8 @@ mod file_tracker;
 mod serialized_asset;
 mod source_pair_import;
 mod watcher;
+#[cfg(feature = "ws")]
+mod websocket_async_io;
 
 // This module is only used from test code
 #[cfg(test)]

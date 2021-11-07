@@ -53,6 +53,7 @@ const DAEMON_VERSION: u32 = 2;
 pub struct AssetDaemon {
     pub db_dir: PathBuf,
     pub address: SocketAddr,
+    pub address_websocket: SocketAddr,
     pub importers: ImporterMap,
     pub importer_contexts: Vec<Box<dyn ImporterContext>>,
     pub asset_dirs: Vec<PathBuf>,
@@ -88,6 +89,7 @@ impl Default for AssetDaemon {
         Self {
             db_dir: PathBuf::from(".assets_db"),
             address: "127.0.0.1:9999".parse().unwrap(),
+            address_websocket: "127.0.0.1:9998".parse().unwrap(),
             importers: importer_map,
             importer_contexts: default_importer_contexts(),
             asset_dirs: vec![PathBuf::from("assets")],
@@ -263,6 +265,18 @@ impl AssetDaemon {
 
         let shutdown_tracker = tracker.clone();
 
+        #[cfg(feature = "ws")]
+        let mut service_ws_handle = {
+            let addr_ws = self.address_websocket;
+
+            let service_clone = Arc::clone(&service);
+            local
+                .spawn(async move { service_clone.run_on_websocket(addr_ws).await.unwrap() })
+                .fuse()
+        };
+        #[cfg(not(feature = "ws"))]
+        let mut service_ws_handle = futures::future::pending::<()>().fuse();
+
         let service_handle = local.spawn(async move { service.run(addr).await }).fuse();
 
         let (file_events_tx, file_events_rx) = unbounded();
@@ -282,6 +296,7 @@ impl AssetDaemon {
         loop {
             futures::select! {
                 _done = &mut service_handle => panic!("ServiceHandle panicked"),
+                _done = &mut service_ws_handle => panic!("ServiceWebsocketHandle panicked"),
                 _done = &mut tracker_handle => panic!("FileTracker panicked"),
                 _done = &mut asset_source_handle => panic!("AssetSource panicked"),
                 done = &mut rx_fuse => match done {

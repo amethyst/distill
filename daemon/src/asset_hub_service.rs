@@ -18,7 +18,7 @@ use distill_schema::{
     parse_artifact_metadata, parse_db_asset_ref,
     service::asset_hub,
 };
-use futures::{AsyncReadExt, TryFutureExt};
+use futures::AsyncReadExt;
 
 use crate::{
     artifact_cache::ArtifactCache,
@@ -31,7 +31,7 @@ use crate::{
 
 // crate::Error has `impl From<crate::Error> for capnp::Error`
 type Promise<T> = capnp::capability::Promise<T, capnp::Error>;
-type Result<T> = std::result::Result<T, Error>;
+type Result<T, E = Error> = std::result::Result<T, E>;
 
 struct ServiceContext {
     hub: Arc<AssetHub>,
@@ -594,7 +594,7 @@ impl AssetHubService {
                 let ctx = self.ctx.clone();
 
                 std::thread::spawn(|| {
-                    log::info!("async_net::TcpListener accepted");
+                    log::debug!("async_net::TcpListener accepted");
 
                     stream.set_nodelay(true).unwrap();
                     let (reader, writer) = stream.split();
@@ -615,7 +615,7 @@ impl AssetHubService {
                     );
 
                     let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.client));
-                    async_io::block_on(local.run(rpc_system.map_err(|_| ()))).unwrap();
+                    async_io::block_on(local.run(rpc_system)).unwrap();
                 });
             }
         }
@@ -625,6 +625,55 @@ impl AssetHubService {
         // NOTE(kabergstrom): It also seems to happen when the main thread
         // is aborted and this is run on a background thread
         result.expect("Failed to run tcp listener");
+    }
+
+    #[cfg(feature = "ws")]
+    pub async fn run_on_websocket(&self, addr: std::net::SocketAddr) -> Result<()> {
+        use crate::websocket_async_io::accept_websocket_stream;
+        use async_tungstenite::tungstenite;
+
+        let listener = async_net::TcpListener::bind(addr).await?;
+
+        loop {
+            let (stream, _) = listener.accept().await?;
+            let ctx = Arc::clone(&self.ctx);
+
+            let (reader, writer) = match accept_websocket_stream(stream).await {
+                Ok(res) => res,
+                Err(tungstenite::Error::ConnectionClosed) => continue,
+                Err(err) => {
+                    log::error!("failed to accept websocket connection: {}", err);
+                    continue;
+                }
+            };
+
+            std::thread::spawn(|| {
+                log::debug!("websocket connection accepted");
+
+                let local = Rc::new(async_executor::LocalExecutor::new());
+                let service_impl = AssetHubImpl {
+                    ctx,
+                    local: local.clone(),
+                };
+
+                let hub_impl: asset_hub::Client = capnp_rpc::new_client(service_impl);
+
+                let network = twoparty::VatNetwork::new(
+                    reader,
+                    writer,
+                    rpc_twoparty_capnp::Side::Server,
+                    Default::default(),
+                );
+
+                let rpc_system = RpcSystem::new(Box::new(network), Some(hub_impl.client));
+                match async_io::block_on(local.run(rpc_system)) {
+                    Ok(()) => {}
+                    Err(e) if e.description == tungstenite::Error::ConnectionClosed.to_string() => {
+                    }
+                    Err(other) => panic!("{}", other),
+                }
+            });
+        }
     }
 }
 
