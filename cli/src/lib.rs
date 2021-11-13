@@ -66,9 +66,7 @@ pub async fn create_context(
         reader,
         writer,
         rpc_twoparty_capnp::Side::Client,
-        *ReaderOptions::new()
-            .nesting_limit(64)
-            .traversal_limit_in_words(Some(256 * 1024 * 1024)),
+        *distill_schema::default_capnp_reader_options(),
     ));
 
     let mut rpc_system = RpcSystem::new(rpc_network, None);

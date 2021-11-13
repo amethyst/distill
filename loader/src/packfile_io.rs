@@ -109,9 +109,10 @@ impl Drop for PackfileMessageReaderBuffer {
 fn capnp_reader_from_slice<'a>(
     mut slice: &mut &'a [u8],
 ) -> Result<capnp::message::Reader<SliceSegments<'a>>, capnp::Error> {
-    let mut options = capnp::message::ReaderOptions::new();
-    options.traversal_limit_in_words(Some(1 << 31));
-    capnp::serialize::read_message_from_flat_slice(&mut slice, options)
+    capnp::serialize::read_message_from_flat_slice(
+        &mut slice,
+        distill_schema::default_capnp_reader_options_unbounded(),
+    )
 }
 
 struct PackfileReaderInner {
