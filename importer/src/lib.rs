@@ -15,6 +15,7 @@ mod serialized_asset;
 #[cfg(feature = "serde_importers")]
 mod ron_importer;
 use std::io::{Read, Write};
+use std::path::Path;
 
 pub use distill_core::{
     importer_context::{ImporterContext, ImporterContextHandle},
@@ -61,6 +62,10 @@ impl ImportOp {
     }
 }
 
+pub enum ImportSource<'a> {
+    File(&'a Path),
+}
+
 /// Importers parse file formats and produce assets.
 pub trait Importer: Send + 'static {
     /// Returns the version of the importer.
@@ -83,6 +88,10 @@ pub trait Importer: Send + 'static {
     /// This is primarily used to ensure IDs are stable between imports
     /// by storing generated AssetUuids with mappings to format-internal identifiers.
     type State: Serialize + Send + 'static;
+
+    fn default_options(&self, _import_source: ImportSource) -> Option<Self::Options> {
+        None
+    }
 
     /// Reads the given bytes and produces assets.
     fn import(
@@ -128,6 +137,8 @@ pub trait AsyncImporter: Send + 'static {
     /// by storing generated AssetUuids with mappings to format-internal identifiers.
     type State: Serialize + Send + 'static;
 
+    fn default_options<'a>(&'a self, _import_source: ImportSource) -> Option<Self::Options>;
+
     /// Reads the given bytes and produces assets.
     fn import<'a>(
         &'a self,
@@ -168,6 +179,10 @@ impl<T: Importer + Sync> AsyncImporter for T {
 
     fn version(&self) -> u32 {
         <T as Importer>::version(self)
+    }
+
+    fn default_options<'a>(&'a self, import_source: ImportSource) -> Option<Self::Options> {
+        <T as Importer>::default_options(self, import_source)
     }
 
     /// Reads the given bytes and produces assets.

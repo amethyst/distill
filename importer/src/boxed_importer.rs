@@ -3,7 +3,10 @@ use erased_serde::Deserializer;
 use futures::{future::BoxFuture, AsyncRead, AsyncWrite};
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Result, AsyncImporter, ExportAsset, ImportOp, ImporterValue, SerdeObj};
+use crate::{
+    error::Result, AsyncImporter, ExportAsset, ImportOp, ImportSource, ImporterValue, IntoSerdeObj,
+    SerdeObj,
+};
 
 /// Version of the SourceMetadata struct.
 /// Used for forward compatibility to enable changing the .meta file format
@@ -38,7 +41,8 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync + 'static {
         state: Box<dyn SerdeObj>,
         assets: Vec<ExportAsset>,
     ) -> BoxFuture<'a, Result<BoxedExportInputs>>;
-    fn default_options(&self) -> Box<dyn SerdeObj>;
+    fn default_options_boxed(&self, import_source: ImportSource) -> Box<dyn SerdeObj>;
+    fn options_type_uuid(&self) -> [u8; 16];
     fn default_state(&self) -> Box<dyn SerdeObj>;
     fn version(&self) -> u32;
     fn deserialize_metadata(
@@ -145,8 +149,14 @@ where
         })
     }
 
-    fn default_options(&self) -> Box<dyn SerdeObj> {
-        Box::new(O::default())
+    fn default_options_boxed(&self, import_source: ImportSource) -> Box<dyn SerdeObj> {
+        self.default_options(import_source)
+            .map(|x| Box::new(x).into_serde_obj())
+            .unwrap_or_else(|| Box::new(O::default()))
+    }
+
+    fn options_type_uuid(&self) -> [u8; 16] {
+        O::default().uuid()
     }
 
     fn default_state(&self) -> Box<dyn SerdeObj> {

@@ -9,8 +9,8 @@ use std::{
 
 use distill_core::{utils, ArtifactId, AssetRef, AssetTypeId, AssetUuid, CompressionType};
 use distill_importer::{
-    ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportOp, ImportedAsset,
-    ImporterContext, ImporterContextHandle, SerdeObj, SerializedAsset,
+    ArtifactMetadata, AssetMetadata, BoxedImporter, ExportAsset, ImportOp, ImportSource,
+    ImportedAsset, ImporterContext, ImporterContextHandle, SerdeObj, SerializedAsset,
     SourceMetadata as ImporterSourceMetadata, SOURCEMETADATA_VERSION,
 };
 use distill_schema::data;
@@ -311,7 +311,11 @@ impl<'a> SourcePairImport<'a> {
 
     // Try to read the SourceMetadata from DB, but create a default SourceMetadata if the data
     // cannot be found
-    pub fn generate_source_metadata<C: SourceMetadataCache>(&mut self, metadata_cache: &C) {
+    pub fn generate_source_metadata<C: SourceMetadataCache>(
+        &mut self,
+        metadata_cache: &C,
+        import_source: ImportSource<'_>,
+    ) {
         let importer = self
             .importer
             // TODO(happens): Do we need to handle this?
@@ -319,7 +323,7 @@ impl<'a> SourcePairImport<'a> {
 
         let mut default_metadata = SourceMetadata {
             version: SOURCEMETADATA_VERSION,
-            importer_options: importer.default_options(),
+            importer_options: importer.default_options_boxed(import_source),
             importer_state: importer.default_state(),
         };
 
@@ -781,7 +785,10 @@ pub(crate) async fn import_pair<'a, C: SourceMetadataCache>(
                 debug!("file has no importer registered");
                 Ok(Some((import, None)))
             } else {
-                import.generate_source_metadata(metadata_cache);
+                import.generate_source_metadata(
+                    metadata_cache,
+                    ImportSource::File(&import.source.clone()),
+                );
                 import.get_result_metadata_from_cache(metadata_cache)?;
                 if import.needs_source_import(scratch_buf)? {
                     debug!("running importer for source file..");
@@ -948,7 +955,7 @@ pub(crate) async fn export_pair<'a, C: SourceMetadataCache>(
                     op.read_source_metadata_from_file(scratch_buf).await?;
                 } else {
                     // read metadata from db cache
-                    op.generate_source_metadata(metadata_cache);
+                    op.generate_source_metadata(metadata_cache, ImportSource::File(&source_path));
                 }
                 let exported_assets = op.export_source(scratch_buf, assets).await?;
                 op.write_metadata()?;
