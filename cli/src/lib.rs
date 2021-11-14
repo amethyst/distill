@@ -1,7 +1,6 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
 
 use async_trait::async_trait;
-use capnp::message::ReaderOptions;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use distill_schema::{
     data, pack,
@@ -66,7 +65,7 @@ pub async fn create_context(
         reader,
         writer,
         rpc_twoparty_capnp::Side::Client,
-        *distill_schema::default_capnp_reader_options(),
+        distill_schema::default_capnp_reader_options(),
     ));
 
     let mut rpc_system = RpcSystem::new(rpc_network, None);

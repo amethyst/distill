@@ -70,6 +70,7 @@ mod tests {
     use distill_importer::{
         AsyncImporter, ImportOp, ImportedAsset, ImporterValue, Result as ImportResult,
     };
+    use distill_loader::rpc_io::RpcConnectionType;
     use distill_loader::{
         rpc_io::RpcIO,
         storage::{
@@ -255,7 +256,9 @@ mod tests {
 
         let (daemon_handle, tx) = spawn_daemon(&daemon_address);
 
-        let mut loader = Loader::new(Box::new(RpcIO::new(daemon_address).unwrap()));
+        let mut loader = Loader::new(Box::new(
+            RpcIO::new(RpcConnectionType::TCP(daemon_address)).unwrap(),
+        ));
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset.txt"
             "b24d209d-6622-4d78-a983-731e8b76f04d",
@@ -295,7 +298,9 @@ mod tests {
 
         let (daemon_handle, tx) = spawn_daemon(&daemon_address);
 
-        let mut loader = Loader::new(Box::new(RpcIO::new(daemon_address).unwrap()));
+        let mut loader = Loader::new(Box::new(
+            RpcIO::new(RpcConnectionType::TCP(daemon_address)).unwrap(),
+        ));
         let handle = loader.add_ref(
             // asset uuid of "tests/assets/asset_a.txt"
             "d83bb247-2710-4c10-83df-d7daa53e19bf",
