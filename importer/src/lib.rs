@@ -137,7 +137,7 @@ pub trait AsyncImporter: Send + 'static {
     /// by storing generated AssetUuids with mappings to format-internal identifiers.
     type State: Serialize + Send + 'static;
 
-    fn default_options<'a>(&'a self, _import_source: ImportSource<'_>) -> Option<Self::Options> {
+    fn default_options(&self, _import_source: ImportSource<'_>) -> Option<Self::Options> {
         None
     }
 
@@ -183,7 +183,7 @@ impl<T: Importer + Sync> AsyncImporter for T {
         <T as Importer>::version(self)
     }
 
-    fn default_options<'a>(&'a self, import_source: ImportSource<'_>) -> Option<Self::Options> {
+    fn default_options(&self, import_source: ImportSource<'_>) -> Option<Self::Options> {
         <T as Importer>::default_options(self, import_source)
     }
 
