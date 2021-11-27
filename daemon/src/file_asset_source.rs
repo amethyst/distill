@@ -1514,8 +1514,8 @@ impl FileAssetSource {
     }
 
     pub async fn run(&self, mut rx: UnboundedReceiver<FileTrackerEvent>) {
-        let mut started = false;
         let mut update = false;
+        let mut unscanned_dirs = self.tracker.get_watch_dirs();
 
         while let Some(evt) = rx.next().await {
             log::debug!("Received file tracker event {:?}", evt);
@@ -1523,9 +1523,11 @@ impl FileAssetSource {
                 // It's possible when we start that code changes to the importer require re-importing
                 // assets. (For example, if we bump the importer version number). The start message
                 // indicates that all directories have been scanned.
-                FileTrackerEvent::Start => {
-                    started = true;
-                    if update || self.check_for_importer_changes().await {
+                FileTrackerEvent::ScanFinished(path) => {
+                    unscanned_dirs.retain(|p| p != &path);
+                    if (update && unscanned_dirs.is_empty())
+                        || self.check_for_importer_changes().await
+                    {
                         self.handle_update().await;
                     }
                 }
@@ -1533,7 +1535,7 @@ impl FileAssetSource {
                 // we should process a batch of them all at once
                 FileTrackerEvent::Update => {
                     update = true;
-                    if started {
+                    if unscanned_dirs.is_empty() {
                         self.handle_update().await;
                     }
                 }

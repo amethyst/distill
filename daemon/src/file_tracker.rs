@@ -44,11 +44,11 @@ struct FileTrackerTables {
     /// Contains SequenceNum -> DirtyFileInfo
     rename_file_events: lmdb::Database,
 }
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum FileTrackerEvent {
     // Sent when we finish scanning all directories on startup, meaning we can drop any data in the
     // db that wasn't found during the scan
-    Start,
+    ScanFinished(PathBuf),
     // Debounced event that indicates there are dirty files ready for processing
     Update,
 }
@@ -148,8 +148,8 @@ impl ListenersList {
     }
 
     fn send_event(&mut self, event: FileTrackerEvent) {
-        self.listeners.retain(|listener| {
-            match listener.unbounded_send(event) {
+        self.listeners.retain(move |listener| {
+            match listener.unbounded_send(event.clone()) {
                 Ok(()) => {
                     debug!("Sent to listener");
                     true
@@ -432,7 +432,7 @@ mod events {
                     }
                 }
                 debug!("scan end: {}", path.to_string_lossy());
-                return Ok(Some(FileTrackerEvent::Start));
+                return Ok(Some(FileTrackerEvent::ScanFinished(path)));
             }
             FileEvent::Watch(path) => {
                 let mut watch_dirs = watch_dirs.write().expect("watch_dirs lock poisoned");

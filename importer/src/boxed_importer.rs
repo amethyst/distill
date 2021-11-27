@@ -41,7 +41,7 @@ pub trait BoxedImporter: TypeUuidDynamic + Send + Sync + 'static {
         state: Box<dyn SerdeObj>,
         assets: Vec<ExportAsset>,
     ) -> BoxFuture<'a, Result<BoxedExportInputs>>;
-    fn default_options_boxed(&self, import_source: ImportSource) -> Box<dyn SerdeObj>;
+    fn default_options_boxed(&self, import_source: ImportSource<'_>) -> Box<dyn SerdeObj>;
     fn options_type_uuid(&self) -> [u8; 16];
     fn default_state(&self) -> Box<dyn SerdeObj>;
     fn version(&self) -> u32;
@@ -149,7 +149,7 @@ where
         })
     }
 
-    fn default_options_boxed(&self, import_source: ImportSource) -> Box<dyn SerdeObj> {
+    fn default_options_boxed(&self, import_source: ImportSource<'_>) -> Box<dyn SerdeObj> {
         self.default_options(import_source)
             .map(|x| Box::new(x).into_serde_obj())
             .unwrap_or_else(|| Box::new(O::default()))
